@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | Morning Rush Hour Demand Model
+  ═════════════════════════════════════════
+  Simulates a typical busy Accra junction during 07:00–09:00 AM (7200 seconds).
+
+  Traffic Pattern (Accra-realistic):
+  ┌──────────────┬────────────┬──────────────────────────────────────────┐
+  │ Route        │ veh/hr     │ Rationale                                │
+  ├──────────────┼────────────┼──────────────────────────────────────────┤
+  │ N → S        │  900       │ Main inbound commuter flow into CBD      │
+  │ S → N        │  300       │ Light counter-flow                       │
+  │ W → N        │  310       │ Residential estate feeding main road     │
+  │ E → W        │  270       │ Cross-street moderate flow               │
+  │ W → E        │  130       │ Low cross-street reverse                 │
+  │ (turns)      │  90–200    │ Mixed turning traffic                    │
+  └──────────────┴────────────┴──────────────────────────────────────────┘
+
+  Emergency Vehicle Scenarios (Phase 1 Baseline):
+    ambulance_1 — departs North t=130s  → arrives junction ~t=166s
+                  At t=166, cycle offset=70 → EW_GREEN (NS_RED) ✓
+                  Expected wait ≈ 26s before NS_GREEN resumes at t=192s
+
+    ambulance_2 — departs West  t=700s  (different approach, mid-sim)
+    ambulance_3 — departs South t=1800s (30 min in, varied scenario)
+
+  NOTE: In Phase 2, the AI controller will preempt the signal immediately
+  when an emergency vehicle is detected, reducing wait to near zero.
+-->
+<routes>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       VEHICLE TYPES
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Standard passenger car (Toyota Corolla / Kia Rio — common in Accra) -->
+  <vType id="car"
+         accel="2.6"
+         decel="4.5"
+         emergencyDecel="9.0"
+         sigma="0.5"
+         length="4.5"
+         minGap="2.5"
+         maxSpeed="13.89"
+         guiShape="passenger"
+         color="0.6,0.6,0.9"/>
+
+  <!-- Trotro (shared minibus) — extremely common in Accra, slower + longer -->
+  <vType id="trotro"
+         accel="1.8"
+         decel="3.5"
+         emergencyDecel="7.0"
+         sigma="0.7"
+         length="7.0"
+         minGap="3.0"
+         maxSpeed="11.11"
+         guiShape="bus/city"
+         color="1.0,0.8,0.0"/>
+
+  <!-- Emergency vehicle (ambulance) — red, fast, should not wait -->
+  <vType id="emergency"
+         accel="3.5"
+         decel="6.0"
+         emergencyDecel="9.0"
+         sigma="0.1"
+         length="5.5"
+         minGap="2.0"
+         maxSpeed="16.67"
+         guiShape="emergency"
+         color="1.0,0.0,0.0"
+         speedFactor="1.2"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES
+       Format: space-separated edge IDs the vehicle traverses.
+       Vehicles travel: [incoming edge] → junction J0 → [outgoing edge]
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- From North -->
+  <route id="route_NS" edges="N2J J2S"/>   <!-- North → South  (MAIN corridor, straight) -->
+  <route id="route_NE" edges="N2J J2E"/>   <!-- North → East   (right turn) -->
+  <route id="route_NW" edges="N2J J2W"/>   <!-- North → West   (left turn) -->
+
+  <!-- From South -->
+  <route id="route_SN" edges="S2J J2N"/>   <!-- South → North  (straight) -->
+  <route id="route_SE" edges="S2J J2E"/>   <!-- South → East   (left turn) -->
+  <route id="route_SW" edges="S2J J2W"/>   <!-- South → West   (right turn) -->
+
+  <!-- From East -->
+  <route id="route_EW" edges="E2J J2W"/>   <!-- East  → West   (CROSS street, straight) -->
+  <route id="route_EN" edges="E2J J2N"/>   <!-- East  → North  (right turn) -->
+  <route id="route_ES" edges="E2J J2S"/>   <!-- East  → South  (left turn) -->
+
+  <!-- From West -->
+  <route id="route_WE" edges="W2J J2E"/>   <!-- West  → East   (straight) -->
+  <route id="route_WN" edges="W2J J2N"/>   <!-- West  → North  (right turn) -->
+  <route id="route_WS" edges="W2J J2S"/>   <!-- West  → South  (left turn) -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TRAFFIC FLOWS — Morning Rush 07:00–09:00 AM (t=0 to t=7200s)
+
+       N-S corridor is the primary arterial → heavy inbound flow.
+       E-W side street → moderate/light flow.
+       Mix of cars and trotros on main routes.
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- ── North → South (HEAVIEST — CBD-bound commuters) ──────── -->
+  <flow id="flow_NS"   type="car"    route="route_NS"
+        begin="0" end="7200" vehsPerHour="820"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_NS_t" type="trotro" route="route_NS"
+        begin="0" end="7200" vehsPerHour="80"
+        departLane="best" departSpeed="max"/>
+
+  <!-- ── South → North (lighter reverse flow) ────────────────── -->
+  <flow id="flow_SN"   type="car"    route="route_SN"
+        begin="0" end="7200" vehsPerHour="270"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_SN_t" type="trotro" route="route_SN"
+        begin="0" end="7200" vehsPerHour="30"
+        departLane="best" departSpeed="max"/>
+
+  <!-- ── North/South turning movements ───────────────────────── -->
+  <flow id="flow_NE" type="car" route="route_NE"
+        begin="0" end="7200" vehsPerHour="130"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_NW" type="car" route="route_NW"
+        begin="0" end="7200" vehsPerHour="90"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_SE" type="car" route="route_SE"
+        begin="0" end="7200" vehsPerHour="120"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_SW" type="car" route="route_SW"
+        begin="0" end="7200" vehsPerHour="200"
+        departLane="best" departSpeed="max"/>
+
+  <!-- ── East → West (moderate cross-street) ─────────────────── -->
+  <flow id="flow_EW" type="car" route="route_EW"
+        begin="0" end="7200" vehsPerHour="270"
+        departLane="best" departSpeed="max"/>
+
+  <!-- ── West → East / West → North (residential feeder) ─────── -->
+  <flow id="flow_WE" type="car" route="route_WE"
+        begin="0" end="7200" vehsPerHour="130"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_WN" type="car" route="route_WN"
+        begin="0" end="7200" vehsPerHour="310"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_WS" type="car" route="route_WS"
+        begin="0" end="7200" vehsPerHour="90"
+        departLane="best" departSpeed="max"/>
+
+  <!-- ── East turning movements ───────────────────────────────── -->
+  <flow id="flow_EN" type="car" route="route_EN"
+        begin="0" end="7200" vehsPerHour="160"
+        departLane="best" departSpeed="max"/>
+  <flow id="flow_ES" type="car" route="route_ES"
+        begin="0" end="7200" vehsPerHour="100"
+        departLane="best" departSpeed="max"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       EMERGENCY VEHICLE SCENARIOS
+
+       These specific vehicles test how the FIXED TIMER handles
+       emergency vehicles. In Phase 2 (AI controller), emergency
+       vehicles will trigger immediate signal preemption.
+
+       Timing analysis for ambulance_1 (NS approach):
+         Cycle = 96s  (45s NS-green + 3s yellow + 45s EW-green + 3s yellow)
+         Depart t=130s → travel 500m at ~13.89 m/s → arrives ~t=166s
+         t=166: cycle offset = 166 mod 96 = 70 → EW_GREEN phase (offsets 48–92)
+         → NS is RED when ambulance arrives → it must wait
+         NS_GREEN resumes at t=192 → expected wait ≈ 26 seconds
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Ambulance 1: From North, heading South — timed to hit NS RED light -->
+  <vehicle id="ambulance_1" type="emergency" route="route_NS"
+           depart="130" departLane="0" departSpeed="max"
+           color="1,0,0"/>
+
+  <!-- Ambulance 2: From West, heading North — mid-simulation test -->
+  <vehicle id="ambulance_2" type="emergency" route="route_WN"
+           depart="700" departLane="0" departSpeed="max"
+           color="1,0,0"/>
+
+  <!-- Ambulance 3: From South, heading North — 30 min into rush hour -->
+  <vehicle id="ambulance_3" type="emergency" route="route_SN"
+           depart="1800" departLane="0" departSpeed="max"
+           color="1,0,0"/>
+
+</routes>

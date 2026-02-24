@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# SUMO generated files (rebuild with build_network.py)
+simulation/intersection.net.xml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Training artefacts — checkpoints can be large; commit selectively
+ai/checkpoints/
+ai/best_model.pth
+ai/trained_model.pth
+
+# Simulation output (generated at runtime)
+data/baseline_results.csv
+data/baseline_tuned_results.csv
+data/ai_results.csv
+data/training_log.csv
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp

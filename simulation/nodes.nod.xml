@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | Intersection Node Definitions
+  ════════════════════════════════════════
+  Defines the five nodes of the 4-way intersection:
+    J0  — central junction (traffic-light controlled)
+    N/S — north/south road endpoints (500m from center)
+    E/W — east/west road endpoints  (500m from center)
+
+  Coordinate system: metres, origin at junction centre.
+  These files are fed to `netconvert` by scripts/build_network.py
+  to produce simulation/intersection.net.xml.
+-->
+<nodes>
+    <!-- Central junction: traffic-light type triggers auto TL generation -->
+    <node id="J0" x="0"    y="0"    type="traffic_light"/>
+
+    <!-- Arm endpoints — "priority" lets the junction manage right-of-way -->
+    <node id="N"  x="0"    y="500"  type="priority"/>
+    <node id="S"  x="0"    y="-500" type="priority"/>
+    <node id="E"  x="500"  y="0"    type="priority"/>
+    <node id="W"  x="-500" y="0"    type="priority"/>
+</nodes>
