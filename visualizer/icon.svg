@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="16" fill="#1a1a2e"/>
+  <circle cx="64" cy="38" r="8" fill="#ff3333"/>
+  <circle cx="64" cy="58" r="8" fill="#ffcc00"/>
+  <circle cx="64" cy="78" r="8" fill="#33ff55"/>
+  <text x="64" y="110" text-anchor="middle" fill="#ffffff" font-size="14" font-family="sans-serif">ATCS</text>
+</svg>

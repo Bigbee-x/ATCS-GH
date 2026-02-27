@@ -1,0 +1,6 @@
+res://scripts/Intersection.gd
+res://scripts/UI.gd
+res://scripts/VehicleManager.gd
+res://scripts/Main.gd
+res://scripts/AudioManager.gd
+res://scripts/WebSocketClient.gd

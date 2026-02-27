@@ -1,0 +1,13 @@
+63f7b34db8d8cdea90c76aacccf841ec
+::res://::1772160335
+icon.svg::CompressedTexture2D::5966679043286302898::1772142758::1772151799::1::::<><><>0<>0<>151f856e510aa43a247ee045f43ffa51<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
+README.md::TextFile::-1::1772142789::0::1::::<><><>0<>0<><>::
+::res://assets/::1772142794
+::res://scenes/::1772142439
+Main.tscn::PackedScene::-1::1772142439::0::1::::<><><>0<>0<><>::res://scripts/Main.gd<>res://scripts/WebSocketClient.gd<>res://scripts/Intersection.gd<>res://scripts/VehicleManager.gd<>res://scripts/UI.gd
+::res://scripts/::1772158390
+Intersection.gd::GDScript::7104825548431263289::1772158212::0::1::::<>Node3D<><>0<>0<><>::
+Main.gd::GDScript::943421980698236805::1772158390::0::1::::<>Node3D<><>0<>0<><>::
+UI.gd::GDScript::3237562742785656613::1772158357::0::1::::<>Control<><>0<>0<><>::
+VehicleManager.gd::GDScript::5683506739320710755::1772158291::0::1::::<>Node3D<><>0<>0<><>::
+WebSocketClient.gd::GDScript::1733995520747529361::1772158252::0::1::::WebSocketClient<>Node<><>0<>0<><>::

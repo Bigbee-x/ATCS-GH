@@ -15,6 +15,9 @@ numpy>=1.24.0       # numerical operations
 # ── Phase 2 (DQN AI controller) ──────────────────────────────
 torch>=2.0.0        # DQN neural network (uses MPS on Apple Silicon automatically)
 
+# ── Phase 2.5 (3D Visualizer bridge) ───────────────────────────
+websockets>=12.0    # WebSocket server for Godot 4 3D visualizer
+
 # ── Phase 3 (future — install when ready) ────────────────────
 # gymnasium>=0.29.0         # standard RL environment interface
 # stable-baselines3>=2.0.0  # PPO / SAC alternatives to custom DQN
