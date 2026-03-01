@@ -11,17 +11,21 @@ extends Node3D
 ##   SUMO West  (X-) → Godot -X
 ##   Road surface sits at Y = 0
 ##
-## Phase-to-light mapping (from SUMO tlLogic for junction J0):
-##   Phase 0 (NS_GREEN):  N/S = GREEN,  E/W = RED
-##   Phase 1 (NS_YELLOW): N/S = YELLOW, E/W = RED
-##   Phase 2 (EW_GREEN):  N/S = RED,    E/W = GREEN
-##   Phase 3 (EW_YELLOW): N/S = RED,    E/W = YELLOW
+## Phase-to-light mapping (6 phases):
+##   Phase 0 (NS_THROUGH): N/S straight = GREEN,  E/W = RED
+##   Phase 1 (NS_LEFT):    N/S left arrow = GREEN, E/W = RED
+##   Phase 2 (NS_YELLOW):  N/S = YELLOW, E/W = RED
+##   Phase 3 (EW_THROUGH): E/W straight = GREEN,  N/S = RED
+##   Phase 4 (EW_LEFT):    E/W left arrow = GREEN, N/S = RED
+##   Phase 5 (EW_YELLOW):  E/W = YELLOW, N/S = RED
 
 # ── Phase constants (must match Python traffic_env.py) ───────────────────────
-const NS_GREEN  := 0
-const NS_YELLOW := 1
-const EW_GREEN  := 2
-const EW_YELLOW := 3
+const NS_THROUGH := 0
+const NS_LEFT    := 1
+const NS_YELLOW  := 2
+const EW_THROUGH := 3
+const EW_LEFT    := 4
+const EW_YELLOW  := 5
 
 # ── Road geometry constants ──────────────────────────────────────────────────
 const ROAD_LENGTH     := 30.0   # Length of each road arm (Godot units)
@@ -47,6 +51,14 @@ var _mat_red_on: StandardMaterial3D
 var _mat_yellow_on: StandardMaterial3D
 var _mat_green_on: StandardMaterial3D
 
+# ── Turn arrow materials ───────────────────────────────────────────────────
+var _mat_arrow_on: StandardMaterial3D
+var _mat_arrow_off: StandardMaterial3D
+
+# ── Lane congestion overlays ──────────────────────────────────────────────
+## Maps lane_id (e.g. "N2J_0") to {mesh: MeshInstance3D, mat: StandardMaterial3D}
+var _lane_overlays: Dictionary = {}
+
 # ── Emergency state ──────────────────────────────────────────────────────────
 var _emergency_active: bool = false
 var _emergency_pulse_time: float = 0.0
@@ -66,6 +78,7 @@ func _ready() -> void:
 	_build_road_arm("east",  Vector3(1, 0, 0), EW_ROAD_WIDTH)
 	_build_road_arm("west",  Vector3(-1, 0, 0), EW_ROAD_WIDTH)
 	_build_traffic_lights()
+	_build_lane_overlays()
 	_build_watermark()
 	_build_emergency_overlay()
 	_build_stop_lines()
@@ -93,35 +106,41 @@ func _process(delta: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func update_lights(data: Dictionary) -> void:
-	## Update traffic light colors based on the current phase from the server.
+	## Update traffic light colors and turn arrows based on phase from server.
 	var phase: int = data.get("phase", 0)
 	_emergency_active = data.get("emergency", {}).get("active", false)
 
-	# Determine light state for each approach pair
-	var ns_state: String  # "red", "yellow", or "green"
-	var ew_state: String
+	# Determine light state and arrow state for each approach pair
+	var ns_state: String = "red"
+	var ew_state: String = "red"
+	var ns_arrow: bool = false
+	var ew_arrow: bool = false
 
 	match phase:
-		NS_GREEN:
+		NS_THROUGH:
 			ns_state = "green"
-			ew_state = "red"
+		NS_LEFT:
+			ns_state = "red"
+			ns_arrow = true
 		NS_YELLOW:
 			ns_state = "yellow"
-			ew_state = "red"
-		EW_GREEN:
-			ns_state = "red"
+		EW_THROUGH:
 			ew_state = "green"
-		EW_YELLOW:
-			ns_state = "red"
-			ew_state = "yellow"
-		_:
-			ns_state = "red"
+		EW_LEFT:
 			ew_state = "red"
+			ew_arrow = true
+		EW_YELLOW:
+			ew_state = "yellow"
 
 	_set_light("north", ns_state)
 	_set_light("south", ns_state)
 	_set_light("east",  ew_state)
 	_set_light("west",  ew_state)
+
+	_set_arrow("north", ns_arrow)
+	_set_arrow("south", ns_arrow)
+	_set_arrow("east",  ew_arrow)
+	_set_arrow("west",  ew_arrow)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -174,6 +193,17 @@ func _create_materials() -> void:
 	_mat_green_on.emission_enabled = true
 	_mat_green_on.emission = Color(0.0, 1.0, 0.2)
 	_mat_green_on.emission_energy_multiplier = 4.0
+
+	# Turn arrow ON (green arrow, emissive)
+	_mat_arrow_on = StandardMaterial3D.new()
+	_mat_arrow_on.albedo_color = Color(0.0, 1.0, 0.3)
+	_mat_arrow_on.emission_enabled = true
+	_mat_arrow_on.emission = Color(0.0, 1.0, 0.3)
+	_mat_arrow_on.emission_energy_multiplier = 5.0
+
+	# Turn arrow OFF (dim)
+	_mat_arrow_off = StandardMaterial3D.new()
+	_mat_arrow_off.albedo_color = Color(0.08, 0.08, 0.08)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -384,6 +414,34 @@ func _build_traffic_lights() -> void:
 				"glow": glow,
 			}
 
+		# Turn arrow indicator (small box below the main signal)
+		var arrow_housing := CSGBox3D.new()
+		arrow_housing.size = Vector3(0.35, 0.4, 0.22)
+		arrow_housing.position = Vector3(0, 2.45, 0.12)
+		arrow_housing.material = _mat_pole
+		arrow_housing.name = "ArrowHousing"
+		pole_root.add_child(arrow_housing)
+
+		# Arrow shape: small left-pointing triangle using CSGBox3D
+		var arrow_mesh := CSGBox3D.new()
+		arrow_mesh.size = Vector3(0.18, 0.18, 0.04)
+		arrow_mesh.position = Vector3(0, 2.45, 0.26)
+		arrow_mesh.material = _mat_arrow_off
+		arrow_mesh.name = "Arrow"
+		pole_root.add_child(arrow_mesh)
+
+		var arrow_glow := OmniLight3D.new()
+		arrow_glow.position = Vector3(0, 2.45, 0.26)
+		arrow_glow.light_energy = 0.0
+		arrow_glow.light_color = Color(0, 1, 0.3)
+		arrow_glow.omni_range = 2.0
+		arrow_glow.omni_attenuation = 2.0
+		arrow_glow.shadow_enabled = false
+		arrow_glow.name = "ArrowGlow"
+		pole_root.add_child(arrow_glow)
+
+		approach_lights["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
+
 		_lights[approach] = approach_lights
 
 
@@ -418,6 +476,87 @@ func _set_light(approach: String, active_color: String) -> void:
 		else:
 			mesh.material = _mat_light_off
 			glow.light_energy = 0.0
+
+
+func _set_arrow(approach: String, is_on: bool) -> void:
+	## Set the turn arrow indicator on/off for an approach.
+	if not _lights.has(approach):
+		return
+	var bulbs: Dictionary = _lights[approach]
+	if not bulbs.has("arrow"):
+		return
+	var arrow_mesh: CSGBox3D = bulbs["arrow"]["mesh"]
+	var arrow_glow: OmniLight3D = bulbs["arrow"]["glow"]
+	if is_on:
+		arrow_mesh.material = _mat_arrow_on
+		arrow_glow.light_energy = 3.0
+	else:
+		arrow_mesh.material = _mat_arrow_off
+		arrow_glow.light_energy = 0.0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# LANE CONGESTION OVERLAYS
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _build_lane_overlays() -> void:
+	## Build semi-transparent overlay strips on each incoming lane.
+	## Color shifts green→yellow→red based on queue density.
+	var half_junc: float = JUNCTION_SIZE / 2.0
+	var ns_lane_w: float = NS_ROAD_WIDTH / 4.0
+	var ew_lane_w: float = EW_ROAD_WIDTH / 2.0
+
+	# Lane configs: lane_id → {pos, size}
+	# N/S roads have 2 lanes each, E/W roads have 1 lane each
+	var lane_configs: Dictionary = {
+		"N2J_0": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"N2J_1": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"S2J_0": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"S2J_1": {"pos": Vector3(-ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"E2J_0": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -ew_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, ew_lane_w * 1.8)},
+		"W2J_0": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, ew_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, ew_lane_w * 1.8)},
+	}
+
+	for lane_id in lane_configs:
+		var cfg: Dictionary = lane_configs[lane_id]
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.0, 0.8, 0.0, 0.0)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.no_depth_test = true
+
+		var overlay := CSGBox3D.new()
+		overlay.size = cfg["size"]
+		overlay.position = cfg["pos"]
+		overlay.material = mat
+		overlay.name = "LaneOverlay_%s" % lane_id
+		add_child(overlay)
+
+		_lane_overlays[lane_id] = {"mesh": overlay, "mat": mat}
+
+
+func update_lane_overlays(data: Dictionary) -> void:
+	## Update lane overlay colors based on per-lane queue data.
+	## data should contain "lane_data" key with per-lane metrics.
+	var lane_data: Dictionary = data.get("lane_data", {})
+	if lane_data.is_empty():
+		return
+
+	for lane_id in _lane_overlays:
+		if not lane_data.has(lane_id):
+			continue
+		var ld: Dictionary = lane_data[lane_id]
+		var queue: float = float(ld.get("queue", 0))
+		var density: float = clampf(queue / 20.0, 0.0, 1.0)
+		var mat: StandardMaterial3D = _lane_overlays[lane_id]["mat"]
+		# Color: green → yellow → red as density increases
+		var col: Color
+		if density < 0.5:
+			col = Color(0.0, 0.8, 0.0).lerp(Color(1.0, 0.85, 0.0), density * 2.0)
+		else:
+			col = Color(1.0, 0.85, 0.0).lerp(Color(1.0, 0.1, 0.0), (density - 0.5) * 2.0)
+		col.a = density * 0.3
+		mat.albedo_color = col
 
 
 # ═════════════════════════════════════════════════════════════════════════════

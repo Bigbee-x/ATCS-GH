@@ -39,7 +39,7 @@ from traffic_env import TrafficEnv, STATE_SIZE, ACTION_SIZE
 from dqn_agent   import DQNAgent
 
 # ── Training configuration ────────────────────────────────────────────────────
-DEFAULT_EPISODES  = 75
+DEFAULT_EPISODES  = 300
 CHECKPOINT_FREQ   = 10          # save checkpoint every N episodes
 LOG_FILE          = PROJECT_ROOT / "data"  / "training_log.csv"
 CHECKPOINT_DIR    = PROJECT_ROOT / "ai"    / "checkpoints"

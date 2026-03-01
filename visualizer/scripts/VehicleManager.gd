@@ -15,9 +15,11 @@ extends Node3D
 ##   SUMO angle   ->  Godot rotation.y = deg_to_rad(angle - 180)
 
 # ── Vehicle geometry ─────────────────────────────────────────────────────────
-const CAR_SIZE       := Vector3(1.2, 0.5, 2.2)
-const TROTRO_SIZE    := Vector3(1.2, 0.65, 3.2)
-const AMBULANCE_SIZE := Vector3(1.3, 0.6, 2.6)
+## Sizes tuned so cars look clear in the junction focal area and acceptably
+## close (bumper-to-bumper) on the compressed roads.
+const CAR_SIZE       := Vector3(0.6, 0.3, 1.0)
+const TROTRO_SIZE    := Vector3(0.6, 0.4, 1.4)
+const AMBULANCE_SIZE := Vector3(1.6, 0.8, 3.2)
 const VEHICLE_Y      := 0.35
 
 # ── SUMO → Godot coordinate transform ────────────────────────────────────────
@@ -171,24 +173,26 @@ func clear_all() -> void:
 
 func _sumo_to_godot(sx: float, sy: float) -> Vector3:
 	## Piecewise linear mapping from SUMO 2D → Godot 3D.
-	## Junction area uses junction scale, road area uses road scale.
-	## This ensures cars on the road appear on the road, not in the junction.
+	## Uses per-axis junction boundaries (junction is NOT square in SUMO).
+	## N/S edges at ±7.2 from center, E/W edges at ±10.4 from center.
 	var dx: float = sx - SUMO_ORIGIN_X
 	var dz: float = sy - SUMO_ORIGIN_Y
-	return Vector3(_map_axis(dx), VEHICLE_Y, _map_axis(dz))
+	var gx: float = _map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)
+	var gz: float = _map_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
+	return Vector3(gx, VEHICLE_Y, gz)
 
 
-func _map_axis(d: float) -> float:
+func _map_axis(d: float, junc_half: float, road_len: float) -> float:
 	## Map one axis: SUMO distance from center → Godot distance from center.
 	var s: float = 1.0 if d >= 0.0 else -1.0
 	var a: float = absf(d)
-	if a <= SUMO_JUNC_HALF:
+	if a <= junc_half:
 		## Inside junction area: scale so junction edges align
-		return s * a * (GODOT_JUNC_HALF / SUMO_JUNC_HALF)
+		return s * a * (GODOT_JUNC_HALF / junc_half)
 	else:
-		## On road: junction edge maps to junction edge, then road scales separately
-		var road_d: float = a - SUMO_JUNC_HALF
-		return s * (GODOT_JUNC_HALF + road_d * (GODOT_ROAD_LEN / SUMO_ROAD_LEN))
+		## On road: junction edge → junction edge, then road scales separately
+		var road_d: float = a - junc_half
+		return s * (GODOT_JUNC_HALF + road_d * (GODOT_ROAD_LEN / road_len))
 
 
 func _sumo_angle_to_godot(angle_deg: float) -> float:
@@ -345,61 +349,94 @@ func _acquire_ambulance() -> Node3D:
 
 
 func _make_ambulance_node() -> Node3D:
-	## Build ambulance: white body, red stripe, pulsing emissive light bar.
+	## Build ambulance: bright red body, white cross, pulsing light bar + glow.
+	## Designed to be unmistakable among regular traffic.
 	var root := Node3D.new()
 	root.name = "Ambulance"
 
-	# Body — white
+	# Body — bright red (highly visible against dark road)
 	var body := CSGBox3D.new()
 	body.size = AMBULANCE_SIZE
 	var body_mat := StandardMaterial3D.new()
-	body_mat.albedo_color = Color(0.95, 0.95, 0.95)
-	body_mat.metallic = 0.2
+	body_mat.albedo_color = Color(0.9, 0.05, 0.05)
+	body_mat.emission_enabled = true
+	body_mat.emission = Color(0.4, 0.0, 0.0)
+	body_mat.emission_energy_multiplier = 1.5
+	body_mat.metallic = 0.3
 	body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	body.material = body_mat
 	body.name = "Body"
 	root.add_child(body)
 
-	# Red stripe
-	var stripe := CSGBox3D.new()
-	stripe.size = Vector3(AMBULANCE_SIZE.x + 0.02, 0.12, AMBULANCE_SIZE.z + 0.02)
-	stripe.position = Vector3(0, 0.08, 0)
-	var stripe_mat := StandardMaterial3D.new()
-	stripe_mat.albedo_color = Color(0.9, 0.05, 0.05)
-	stripe_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	stripe.material = stripe_mat
-	stripe.name = "Stripe"
-	root.add_child(stripe)
+	# White cross stripe (horizontal)
+	var stripe_h := CSGBox3D.new()
+	stripe_h.size = Vector3(AMBULANCE_SIZE.x + 0.02, 0.18, 0.5)
+	stripe_h.position = Vector3(0, 0.12, 0)
+	var cross_mat := StandardMaterial3D.new()
+	cross_mat.albedo_color = Color(1.0, 1.0, 1.0)
+	cross_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	stripe_h.material = cross_mat
+	stripe_h.name = "CrossH"
+	root.add_child(stripe_h)
 
-	# Light bar — emissive, pulsing red/blue
+	# White cross stripe (vertical along length)
+	var stripe_v := CSGBox3D.new()
+	stripe_v.size = Vector3(0.35, 0.18, AMBULANCE_SIZE.z + 0.02)
+	stripe_v.position = Vector3(0, 0.12, 0)
+	var cross_mat_v := StandardMaterial3D.new()
+	cross_mat_v.albedo_color = Color(1.0, 1.0, 1.0)
+	cross_mat_v.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	stripe_v.material = cross_mat_v
+	stripe_v.name = "CrossV"
+	root.add_child(stripe_v)
+
+	# Light bar — emissive, pulsing red/blue (child index 3)
 	var light_bar := CSGBox3D.new()
-	light_bar.size = Vector3(0.7, 0.12, 0.3)
-	light_bar.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.06, 0)
+	light_bar.size = Vector3(1.0, 0.16, 0.4)
+	light_bar.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.1, 0)
 	var light_mat := StandardMaterial3D.new()
 	light_mat.albedo_color = Color(1, 0, 0)
 	light_mat.emission_enabled = true
 	light_mat.emission = Color(1, 0, 0)
-	light_mat.emission_energy_multiplier = 6.0
+	light_mat.emission_energy_multiplier = 8.0
 	light_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	light_bar.material = light_mat
 	light_bar.name = "LightBar"
 	root.add_child(light_bar)
 
+	# OmniLight3D — visible glow that lights up surrounding road
+	var glow := OmniLight3D.new()
+	glow.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.3, 0)
+	glow.light_color = Color(1, 0, 0)
+	glow.light_energy = 5.0
+	glow.omni_range = 8.0
+	glow.omni_attenuation = 1.5
+	glow.shadow_enabled = false
+	glow.name = "SirenGlow"
+	root.add_child(glow)
+
 	return root
 
 
 func _pulse_light_bar(amb_node: Node3D) -> void:
-	## Animate the light bar between red and blue.
-	if amb_node.get_child_count() < 3:
-		return
-	var light_bar := amb_node.get_child(2) as CSGBox3D
+	## Animate the light bar and glow between red and blue.
+	var light_bar: CSGBox3D = null
+	var glow_light: OmniLight3D = null
+	for child in amb_node.get_children():
+		if child.name == "LightBar" and child is CSGBox3D:
+			light_bar = child
+		elif child.name == "SirenGlow" and child is OmniLight3D:
+			glow_light = child
 	if light_bar == null or light_bar.material == null:
 		return
-	var mat: StandardMaterial3D = light_bar.material
 	var pulse: float = (sin(_pulse_time) + 1.0) / 2.0
 	var color: Color = Color(1, 0, 0).lerp(Color(0, 0, 1), pulse)
+	var mat: StandardMaterial3D = light_bar.material
 	mat.emission = color
 	mat.albedo_color = color
+	if glow_light:
+		glow_light.light_color = color
+		glow_light.light_energy = 3.0 + 4.0 * pulse
 
 
 # ═════════════════════════════════════════════════════════════════════════════

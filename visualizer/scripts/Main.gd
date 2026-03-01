@@ -74,6 +74,7 @@ func _on_state_updated(data: Dictionary) -> void:
 
 	# Update each subsystem with the full data packet
 	intersection.update_lights(data)
+	intersection.update_lane_overlays(data)
 	vehicle_manager.update_vehicles(data)
 	audio_manager.update_audio(data)
 	ui.update_display(data)

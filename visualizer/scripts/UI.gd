@@ -361,13 +361,15 @@ func update_display(data: Dictionary) -> void:
 	# Phase
 	_lbl_phase.text = "Phase: %s" % data.get("phase_name", "—")
 
-	# AI decision
+	# AI decision (5 actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT)
 	var decision: String = data.get("ai_decision", "—")
 	_lbl_ai_decision.text = "AI: %s" % decision
-	if decision == "SWITCH":
-		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_ORANGE)
-	else:
+	if decision == "HOLD":
 		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_GREEN)
+	elif decision.ends_with("LEFT"):
+		_lbl_ai_decision.add_theme_color_override("font_color", Color(0.3, 0.7, 1.0))
+	else:
+		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_ORANGE)
 
 	# Reward
 	var reward: float = data.get("reward", 0.0)

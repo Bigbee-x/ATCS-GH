@@ -9,8 +9,9 @@ Architecture:
   ReplayBuffer — circular experience replay buffer
   DQNAgent     — full DQN agent (double DQN, target network, ε-greedy)
 
-The agent observes a 17-dimensional state vector from the SUMO simulation
-and outputs one of two actions: keep current green phase, or switch.
+The agent observes a 33-dimensional state vector (per-lane queues, speeds,
+wait times, approach queues, phase one-hot, timer, emergency flags) and
+outputs one of five actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT.
 
 Phase 2 → Phase 3 extension points are marked with # [EXTEND].
 """
@@ -41,7 +42,7 @@ class DQNetwork(nn.Module):
     def __init__(self,
                  state_size:    int,
                  action_size:   int,
-                 hidden_sizes:  list[int] = (128, 128)):
+                 hidden_sizes:  list[int] = (256, 256)):
         super().__init__()
 
         layers: list[nn.Module] = []
@@ -139,19 +140,19 @@ class DQNAgent:
 
     # ── Hyperparameters ───────────────────────────────────────────────────────
     GAMMA              = 0.95      # Discount factor (future vs immediate reward)
-    LEARNING_RATE      = 1e-3      # Adam optimiser learning rate
-    BATCH_SIZE         = 64        # Mini-batch size for each gradient update
-    BUFFER_SIZE        = 100_000   # Replay buffer capacity (≈14 episodes of experience)
+    LEARNING_RATE      = 5e-4      # Adam optimiser learning rate (lower for 5-action space)
+    BATCH_SIZE         = 128       # Mini-batch size for each gradient update
+    BUFFER_SIZE        = 100_000   # Replay buffer capacity
     TARGET_UPDATE_FREQ = 200       # Hard target network sync interval (steps)
     MIN_BUFFER_SIZE    = 1_000     # Steps to collect before learning starts
     EPSILON_START      = 1.0       # Full exploration at episode 1
     EPSILON_MIN        = 0.05      # Minimum exploration (5% random actions)
-    EPSILON_DECAY      = 0.92      # Multiplicative decay applied after each episode
-    #   After episode: 10 → ε≈0.43  |  20 → ε≈0.19  |  30 → ε≈0.08  |  37 → ε=0.05
+    EPSILON_DECAY      = 0.975     # Slow decay for thorough 5-action exploration
+    #   After episode: 20 → ε≈0.60  |  60 → ε≈0.22  |  115 → ε≈0.05
 
     def __init__(self,
-                 state_size:  int = 17,
-                 action_size: int = 2,
+                 state_size:  int = 33,
+                 action_size: int = 5,
                  device:      str | None = None):
 
         self.state_size  = state_size
@@ -182,7 +183,7 @@ class DQNAgent:
         self.step_count = 0     # Global step counter (used for target net sync)
 
         print(f"[DQN] Initialised on {self.device}")
-        print(f"      Architecture: {state_size} → 128 → 128 → {action_size}")
+        print(f"      Architecture: {state_size} → 256 → 256 → {action_size}")
         print(f"      Parameters  : {sum(p.numel() for p in self.policy_net.parameters()):,}")
 
     # ── Action Selection ──────────────────────────────────────────────────────

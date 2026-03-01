@@ -84,9 +84,11 @@ import websockets
 
 from dqn_agent import DQNAgent
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, EMERGENCY_TYPE,
-    NS_GREEN, NS_YELLOW, EW_GREEN, EW_YELLOW, PHASE_NAMES,
-    EDGE_TO_GREEN, STATE_SIZE, ACTION_SIZE,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
+    PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
+    EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_DURATION, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
     TrafficEnv,
@@ -141,12 +143,12 @@ async def ws_handler(websocket):
                 if data.get("action") == "force_green":
                     approach = data.get("approach", "").lower()
                     # Map approach name to target green phase
-                    # North and South share NS_GREEN; East and West share EW_GREEN
+                    # North and South share NS_THROUGH; East and West share EW_THROUGH
                     approach_to_phase = {
-                        "north": NS_GREEN,
-                        "south": NS_GREEN,
-                        "east":  EW_GREEN,
-                        "west":  EW_GREEN,
+                        "north": NS_THROUGH,
+                        "south": NS_THROUGH,
+                        "east":  EW_THROUGH,
+                        "west":  EW_THROUGH,
                     }
                     if approach in approach_to_phase:
                         pending_override = {
@@ -304,24 +306,25 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     override = pending_override
                     pending_override = None
                     target = override["target_phase"]
-                    # Force switch if not already on the target phase
-                    if target != env._phase and env._phase in (NS_GREEN, EW_GREEN):
-                        action = 1   # Switch
-                    else:
-                        action = 0   # Already on correct phase (or in yellow)
+                    # Find the action index that maps to this target phase
+                    action = ACTION_HOLD
+                    for act_idx, phase in ACTION_TO_PHASE.items():
+                        if phase == target:
+                            action = act_idx
+                            break
                     print(f"[SIM] Override applied: {override['approach']} → "
-                          f"action={action}")
+                          f"action={ACTION_NAMES[action]}")
 
                 elif mode == SimMode.AI and agent is not None:
                     action = agent.select_action(state)
 
                 elif mode == SimMode.DEMO:
-                    # Random action with bias toward keeping (70% keep, 30% switch)
-                    action = 0 if random.random() < 0.7 else 1
+                    # Random action: 60% HOLD, 10% each for the 4 switch actions
+                    action = 0 if random.random() < 0.6 else random.randint(1, 4)
 
                 else:
                     # Manual mode default: keep current phase
-                    action = 0
+                    action = ACTION_HOLD
 
                 # ── Step the simulation (per-second for smooth animation) ─
                 # Call env.step() for AI/reward logic (advances 5 SUMO steps)
@@ -334,11 +337,12 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                 # --- Phase 1: Apply action to env (same as env.step start) ---
                 preempted, forced_phase = env._check_emergency_preemption()
                 if preempted:
-                    actual_action = 1 if forced_phase != env._phase else 0
-                    if actual_action == 1:
+                    if forced_phase != env._phase and env._can_switch():
                         env._initiate_switch(target_green=forced_phase)
-                elif action == 1 and env._can_switch():
-                    env._initiate_switch()
+                elif action != ACTION_HOLD and env._can_switch():
+                    target = ACTION_TO_PHASE.get(action)
+                    if target is not None and target != env._phase:
+                        env._initiate_switch(target_green=target)
 
                 # --- Phase 2: Step SUMO one second at a time, broadcasting ---
                 block_arrived = 0
@@ -396,9 +400,10 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     prev_total_queue=env._prev_total_queue,
                     n_arrived=block_arrived,
                     n_emerg_waiting=0,
-                    switched_too_soon=(action == 1 and not preempted
+                    switched_too_soon=(action != ACTION_HOLD and not preempted
                                       and env._phase_timer < MIN_GREEN_DURATION),
                     queue_distribution=final_queues,
+                    wait_distribution=final_waits,
                 )
                 env._prev_total_queue = total_queue
 
@@ -430,6 +435,17 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                         break
 
                 vehicle_data = _collect_vehicle_data()
+
+                # Collect per-lane sensor data for visualiser overlays
+                lane_metrics = env._collect_lane_metrics()
+                lane_data = {}
+                for lane_id in INCOMING_LANES:
+                    lm = lane_metrics[lane_id]
+                    lane_data[lane_id] = {
+                        "queue": int(lm["queue"]),
+                        "speed": round(lm["speed"], 2),
+                        "wait":  round(lm["wait"], 1),
+                    }
 
                 # ── Build full state broadcast packet ─────────────────────
                 packet = {
@@ -473,12 +489,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     },
 
                     # AI decision
-                    "ai_decision": "SWITCH" if action == 1 else "HOLD",
+                    "ai_decision": ACTION_NAMES[action] if action < len(ACTION_NAMES) else "UNKNOWN",
                     "reward": round(reward, 1),
                     "total_reward": round(env.episode_total_reward, 1),
 
                     # Per-vehicle positions
                     "vehicles": vehicle_data,
+
+                    # Per-lane sensor data (for congestion overlays)
+                    "lane_data": lane_data,
 
                     # Meta
                     "mode": mode,
