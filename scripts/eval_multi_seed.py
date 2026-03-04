@@ -169,7 +169,8 @@ def _install_ai_tl_program():
 
 # -- Single-seed evaluation ---------------------------------------------------
 
-def run_one_seed(agent: DQNAgent, seed: int) -> dict:
+def run_one_seed(agent: DQNAgent, seed: int,
+                 route_file: str | None = None) -> dict:
     """Run one 7200s evaluation episode with a given SUMO seed."""
     sumo_cmd = [
         find_sumo_binary(),
@@ -179,6 +180,8 @@ def run_one_seed(agent: DQNAgent, seed: int) -> dict:
         "--quit-on-end",
         "--seed", str(seed),
     ]
+    if route_file is not None:
+        sumo_cmd += ["--route-files", str(route_file)]
     traci.start(sumo_cmd)
     _install_ai_tl_program()
 
@@ -255,6 +258,8 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-seed AI evaluation")
     parser.add_argument("--seeds", type=int, default=5, help="Number of seeds (default: 5)")
     parser.add_argument("--model", type=str, default=str(DEFAULT_MODEL))
+    parser.add_argument("--scenario", type=str, default=None,
+                        help="Demand scenario name (e.g. evening_rush). Uses default routes if not set.")
     args = parser.parse_args()
 
     model_path = Path(args.model)
@@ -276,10 +281,14 @@ def main():
     print(f"\n  {'Seed':>6}  {'Avg Wait':>9}  {'Peak Q':>7}  {'Completed':>10}  {'Throughput':>11}  {'Time':>6}")
     print("  " + "-" * 58)
 
+    route_file = None
+    if args.scenario:
+        route_file = str(SIM_DIR / "scenarios" / f"{args.scenario}.rou.xml")
+
     results = []
     for seed in seed_list:
         t0 = time.time()
-        r = run_one_seed(agent, seed)
+        r = run_one_seed(agent, seed, route_file=route_file)
         elapsed = time.time() - t0
         results.append(r)
         print(f"  {seed:>6}  {r['avg_wait']:>8.2f}s  {r['peak_queue']:>7}  "

@@ -238,7 +238,8 @@ def _get_yellow_for_phase(phase: int) -> int:
 # -- Main runner ---------------------------------------------------------------
 
 def run_ai(model_path: str | Path = DEFAULT_MODEL,
-           gui: bool = False) -> None:
+           gui: bool = False,
+           route_file: str | None = None) -> None:
     """Run a single 2-hour episode with the trained DQN agent."""
     model_path = Path(model_path)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -272,6 +273,8 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
         "--no-warnings",
         "--quit-on-end",
     ]
+    if route_file is not None:
+        sumo_cmd += ["--route-files", str(route_file)]
     traci.start(sumo_cmd)
     print("\n[TraCI] Connected")
 
@@ -449,5 +452,12 @@ if __name__ == "__main__":
         "--gui", action="store_true",
         help="Launch SUMO with GUI"
     )
+    parser.add_argument(
+        "--scenario", type=str, default=None,
+        help="Demand scenario name (e.g. evening_rush). Uses default routes if not set."
+    )
     args = parser.parse_args()
-    run_ai(model_path=args.model, gui=args.gui)
+    route_file = None
+    if args.scenario:
+        route_file = str(SIM_DIR / "scenarios" / f"{args.scenario}.rou.xml")
+    run_ai(model_path=args.model, gui=args.gui, route_file=route_file)

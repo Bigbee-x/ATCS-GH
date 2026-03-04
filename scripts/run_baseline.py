@@ -235,7 +235,8 @@ def configure_fixed_timer(tl_id: str,
 # ── Simulation Runner ─────────────────────────────────────────────────────────
 
 def run_simulation(gui: bool = False,
-                   preset: str = "naive") -> tuple[list[dict], dict]:
+                   preset: str = "naive",
+                   route_file: str | None = None) -> tuple[list[dict], dict]:
     """
     Main simulation loop.
 
@@ -281,6 +282,8 @@ def run_simulation(gui: bool = False,
         "--no-warnings",
         "--quit-on-end",
     ]
+    if route_file is not None:
+        sumo_cmd += ["--route-files", str(route_file)]
 
     print("\n" + "═" * 60)
     print(f"  ATCS-GH Phase 1 — Baseline Fixed-Timer Simulation ({preset})")
@@ -459,6 +462,15 @@ if __name__ == "__main__":
         help="Use demand-proportional 55s/35s green split instead of naive 45s/45s. "
              "Saves to data/baseline_tuned_results.csv",
     )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Demand scenario name (e.g. evening_rush). Uses default routes if not set.",
+    )
     args = parser.parse_args()
     preset = "tuned" if args.tuned else "naive"
-    run_simulation(gui=args.gui, preset=preset)
+    route_file = None
+    if args.scenario:
+        route_file = str(SIM_DIR / "scenarios" / f"{args.scenario}.rou.xml")
+    run_simulation(gui=args.gui, preset=preset, route_file=route_file)

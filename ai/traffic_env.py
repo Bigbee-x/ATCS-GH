@@ -232,9 +232,11 @@ class TrafficEnv:
         (or rely on reset() to do it automatically).
     """
 
-    def __init__(self, gui: bool = False, verbose: bool = False):
-        self.gui     = gui
-        self.verbose = verbose
+    def __init__(self, gui: bool = False, verbose: bool = False,
+                 route_file: str | None = None):
+        self.gui        = gui
+        self.verbose    = verbose
+        self.route_file = route_file  # Override route file (None = use sumocfg default)
 
         # Internal state (reset every episode)
         self._connected        = False
@@ -599,6 +601,8 @@ class TrafficEnv:
             "--no-warnings",
             "--quit-on-end",
         ]
+        if self.route_file is not None:
+            cmd += ["--route-files", str(self.route_file)]
         if seed is not None:
             cmd += ["--seed", str(seed)]
 
