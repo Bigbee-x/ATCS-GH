@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ATCS-GH | Intersection Node Definitions
-  ════════════════════════════════════════
-  Defines the five nodes of the 4-way intersection:
-    J0  — central junction (traffic-light controlled)
-    N/S — north/south road endpoints (500m from center)
-    E/W — east/west road endpoints  (500m from center)
+  ATCS-GH | Achimota/Neoplan Junction — Node Definitions
+  ══════════════════════════════════════════════════════
+  Real-world calibration: Achimota/Neoplan Junction, N6 Nsawam Road, Accra
+  GPS: 5.6216 N, 0.2193 W
+
+  Junction layout (local metre coordinates, origin at junction centre):
+    J0 — central signalised junction (Achimota/Neoplan)
+    N  — Achimota Forest Rd toward Nsawam (500m north)
+    S  — Achimota Forest Rd toward Accra CBD (500m south)
+    E  — Aggrey Street eastbound (500m east)
+    W  — Guggisberg Street westbound (500m west)
 
   Coordinate system: metres, origin at junction centre.
   These files are fed to `netconvert` by scripts/build_network.py

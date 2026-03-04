@@ -27,12 +27,13 @@ const EW_THROUGH := 3
 const EW_LEFT    := 4
 const EW_YELLOW  := 5
 
-# ── Road geometry constants ──────────────────────────────────────────────────
+# ── Road geometry constants (Achimota/Neoplan Junction calibration) ──────────
 const ROAD_LENGTH     := 30.0   # Length of each road arm (Godot units)
-const NS_ROAD_WIDTH   := 6.4    # 2 lanes per direction (~1.6 each)
-const EW_ROAD_WIDTH   := 3.2    # 1 lane per direction
+const NS_ROAD_WIDTH   := 6.4    # Achimota Forest Rd: 2 lanes per direction
+const E_ROAD_WIDTH    := 6.4    # Aggrey Street: 2 lanes per direction
+const W_ROAD_WIDTH    := 3.2    # Guggisberg Street: 1 lane per direction
 const ROAD_THICKNESS  := 0.1    # Road surface height
-const JUNCTION_SIZE   := 8.0    # Central square junction size
+const JUNCTION_SIZE   := 10.0   # Central junction (wider for asymmetric E/W)
 const SIDEWALK_HEIGHT := 0.15   # Raised sidewalk height
 const SIDEWALK_WIDTH  := 1.5    # Sidewalk width alongside road
 
@@ -56,7 +57,7 @@ var _mat_arrow_on: StandardMaterial3D
 var _mat_arrow_off: StandardMaterial3D
 
 # ── Lane congestion overlays ──────────────────────────────────────────────
-## Maps lane_id (e.g. "N2J_0") to {mesh: MeshInstance3D, mat: StandardMaterial3D}
+## Maps lane_id (e.g. "ACH_N2J_0") to {mesh: MeshInstance3D, mat: StandardMaterial3D}
 var _lane_overlays: Dictionary = {}
 
 # ── Emergency state ──────────────────────────────────────────────────────────
@@ -75,8 +76,8 @@ func _ready() -> void:
 	_build_junction()
 	_build_road_arm("north", Vector3(0, 0, 1), NS_ROAD_WIDTH)
 	_build_road_arm("south", Vector3(0, 0, -1), NS_ROAD_WIDTH)
-	_build_road_arm("east",  Vector3(1, 0, 0), EW_ROAD_WIDTH)
-	_build_road_arm("west",  Vector3(-1, 0, 0), EW_ROAD_WIDTH)
+	_build_road_arm("east",  Vector3(1, 0, 0), E_ROAD_WIDTH)
+	_build_road_arm("west",  Vector3(-1, 0, 0), W_ROAD_WIDTH)
 	_build_traffic_lights()
 	_build_lane_overlays()
 	_build_watermark()
@@ -311,8 +312,8 @@ func _build_stop_lines() -> void:
 		# approach, position, size
 		["north", Vector3(0, 0.11, half_junc - 0.1), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
 		["south", Vector3(0, 0.11, -(half_junc - 0.1)), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
-		["east",  Vector3(half_junc - 0.1, 0.11, 0), Vector3(0.2, 0.02, EW_ROAD_WIDTH * 0.45)],
-		["west",  Vector3(-(half_junc - 0.1), 0.11, 0), Vector3(0.2, 0.02, EW_ROAD_WIDTH * 0.45)],
+		["east",  Vector3(half_junc - 0.1, 0.11, 0), Vector3(0.2, 0.02, E_ROAD_WIDTH * 0.45)],
+		["west",  Vector3(-(half_junc - 0.1), 0.11, 0), Vector3(0.2, 0.02, W_ROAD_WIDTH * 0.45)],
 	]
 
 	for cfg in configs:
@@ -344,11 +345,11 @@ func _build_traffic_lights() -> void:
 			"rot_y": PI,  # Faces north
 		},
 		"east": {
-			"pos": Vector3(half_junc, 0, (EW_ROAD_WIDTH / 4.0 + 0.5)),
+			"pos": Vector3(half_junc, 0, (E_ROAD_WIDTH / 4.0 + 0.5)),
 			"rot_y": -PI / 2.0,  # Faces west
 		},
 		"west": {
-			"pos": Vector3(-half_junc, 0, -(EW_ROAD_WIDTH / 4.0 + 0.5)),
+			"pos": Vector3(-half_junc, 0, -(W_ROAD_WIDTH / 4.0 + 0.5)),
 			"rot_y": PI / 2.0,  # Faces east
 		},
 	}
@@ -504,17 +505,19 @@ func _build_lane_overlays() -> void:
 	## Color shifts green→yellow→red based on queue density.
 	var half_junc: float = JUNCTION_SIZE / 2.0
 	var ns_lane_w: float = NS_ROAD_WIDTH / 4.0
-	var ew_lane_w: float = EW_ROAD_WIDTH / 2.0
+	var e_lane_w: float = E_ROAD_WIDTH / 4.0
+	var w_lane_w: float = W_ROAD_WIDTH / 2.0
 
-	# Lane configs: lane_id → {pos, size}
-	# N/S roads have 2 lanes each, E/W roads have 1 lane each
+	# Lane configs: lane_id -> {pos, size}
+	# N/S: 2 lanes each, E (Aggrey St): 2 lanes, W (Guggisberg): 1 lane
 	var lane_configs: Dictionary = {
-		"N2J_0": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"N2J_1": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"S2J_0": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"S2J_1": {"pos": Vector3(-ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"E2J_0": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -ew_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, ew_lane_w * 1.8)},
-		"W2J_0": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, ew_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, ew_lane_w * 1.8)},
+		"ACH_N2J_0": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_N2J_1": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_S2J_0": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_S2J_1": {"pos": Vector3(-ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"AGG_E2J_0": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
+		"AGG_E2J_1": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
+		"GUG_W2J_0": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, -w_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
 	}
 
 	for lane_id in lane_configs:

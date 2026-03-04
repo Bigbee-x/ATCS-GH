@@ -86,16 +86,17 @@ from dqn_agent import DQNAgent
 from traffic_env import (
     TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
+    NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
     STATE_SIZE, ACTION_SIZE,
-    DECISION_INTERVAL, MIN_GREEN_DURATION, YELLOW_DURATION,
+    DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
     TrafficEnv,
 )
 
-# Outgoing edges (junction → direction)
-OUTGOING_EDGES = ["J2N", "J2S", "J2E", "J2W"]
+# Outgoing edges (junction -> direction)
+OUTGOING_EDGES = ["ACH_J2N", "ACH_J2S", "AGG_J2E", "GUG_J2W"]
 
 
 # ── Simulation modes ────────────────────────────────────────────────────────
@@ -401,7 +402,10 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     n_arrived=block_arrived,
                     n_emerg_waiting=0,
                     switched_too_soon=(action != ACTION_HOLD and not preempted
-                                      and env._phase_timer < MIN_GREEN_DURATION),
+                                      and env._phase_timer < (
+                                          MIN_GREEN_LEFT
+                                          if env._phase in (NS_LEFT, EW_LEFT)
+                                          else MIN_GREEN_THROUGH)),
                     queue_distribution=final_queues,
                     wait_distribution=final_waits,
                 )
@@ -463,18 +467,18 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Per-approach queues
                     "queues": {
-                        "north": edge_metrics["N2J"]["queue"],
-                        "south": edge_metrics["S2J"]["queue"],
-                        "east":  edge_metrics["E2J"]["queue"],
-                        "west":  edge_metrics["W2J"]["queue"],
+                        "north": edge_metrics["ACH_N2J"]["queue"],
+                        "south": edge_metrics["ACH_S2J"]["queue"],
+                        "east":  edge_metrics["AGG_E2J"]["queue"],
+                        "west":  edge_metrics["GUG_W2J"]["queue"],
                     },
 
                     # Per-approach wait times
                     "wait_times": {
-                        "north": round(edge_metrics["N2J"]["wait"], 1),
-                        "south": round(edge_metrics["S2J"]["wait"], 1),
-                        "east":  round(edge_metrics["E2J"]["wait"], 1),
-                        "west":  round(edge_metrics["W2J"]["wait"], 1),
+                        "north": round(edge_metrics["ACH_N2J"]["wait"], 1),
+                        "south": round(edge_metrics["ACH_S2J"]["wait"], 1),
+                        "east":  round(edge_metrics["AGG_E2J"]["wait"], 1),
+                        "west":  round(edge_metrics["GUG_W2J"]["wait"], 1),
                     },
 
                     # Aggregate stats

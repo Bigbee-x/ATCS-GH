@@ -114,21 +114,35 @@ YELLOW_DURATION = 3        # Yellow clearance phase (seconds)
 
 # ── Timer presets ────────────────────────────────────────────────────────────
 # Naive:  equal green split (45/45) — the original Phase 1 baseline
-# Tuned:  demand-proportional split (55/35) — a fair comparison for Phase 2
+# Tuned:  demand-proportional split (60/30) — a fair comparison for Phase 2
 #
-# Demand analysis from routes.rou.xml:
-#   N/S approaches: ~1,740 veh/hr (62%)   →  55s green
-#   E/W approaches: ~1,060 veh/hr (38%)   →  35s green
-#   Total cycle: 55 + 3 + 35 + 3 = 96s (unchanged)
+# Achimota demand analysis from routes.rou.xml:
+#   N/S approaches (Achimota Forest Rd): ~1,520 veh/hr (67%)  →  60s green
+#   E/W approaches (Aggrey + Guggisberg): ~  750 veh/hr (33%)  →  30s green
+#   Total cycle: 60 + 3 + 30 + 3 = 96s (unchanged)
 TIMER_PRESETS = {
     "naive": {"ns_green": 45, "ew_green": 45, "label": "45s/45s equal split"},
-    "tuned": {"ns_green": 55, "ew_green": 35, "label": "55s/35s demand-proportional"},
+    "tuned": {"ns_green": 60, "ew_green": 30, "label": "60s/30s demand-proportional"},
 }
 
 # Human-readable phase names indexed by SUMO phase index (0–3)
-# These correspond to the phases netconvert auto-generates for a 4-way junction:
-#   0 = NS_GREEN, 1 = NS_YELLOW, 2 = EW_GREEN, 3 = EW_YELLOW
 PHASE_NAMES = {0: "NS_GREEN", 1: "NS_YELLOW", 2: "EW_GREEN", 3: "EW_YELLOW"}
+
+# Explicit signal strings for the baseline fixed timer (15 connections).
+# Connection order from net.xml:
+#   0-3:  ACH_N2J (N→W right, N→S through×2, N→E left)
+#   4-6:  AGG_E2J (E→N right, E→W through, E→S left)
+#   7-10: ACH_S2J (S→E right, S→N through×2, S→W left)
+#   11-14: GUG_W2J (W→S right, W→E through×2, W→N left)
+#
+# Baseline gives ALL movements green in their direction simultaneously
+# (no separate protected left-turn phases — that's the AI's advantage).
+BASELINE_SIGNALS = {
+    "NS_GREEN":  "GGGGrrrGGGGrrrr",   # N/S all green, E/W red
+    "NS_YELLOW": "yyyyrrryyyyrrrr",    # N/S yellow, E/W red
+    "EW_GREEN":  "rrrrGGGrrrrGGGG",    # E/W all green, N/S red
+    "EW_YELLOW": "rrrryyyrrrryyyy",    # E/W yellow, N/S red
+}
 
 
 # ── SUMO Binary Detection ─────────────────────────────────────────────────────
@@ -165,16 +179,16 @@ def configure_fixed_timer(tl_id: str,
                           ew_green: int = 45,
                           program_label: str = "fixed_timer") -> list:
     """
-    Override the auto-generated traffic light with a fixed timer.
+    Override the auto-generated traffic light with an explicit 4-phase fixed timer.
 
-    SUMO's netconvert generates a default TL program for junction J0.
-    We read those phases (which already have the correct state strings — one
-    character per connection at the junction) and override the phase durations.
+    We define the signal strings directly rather than relying on SUMO's
+    auto-generated phases, which may contain extra sub-phases for protected
+    left turns.
 
-    Phase structure after this call:
-      Phase 0: NS_GREEN  — ns_green seconds  (N/S vehicles have right of way)
+    Phase structure:
+      Phase 0: NS_GREEN  — ns_green seconds  (all N/S movements green)
       Phase 1: NS_YELLOW — 3 seconds          (N/S clearing)
-      Phase 2: EW_GREEN  — ew_green seconds   (E/W vehicles have right of way)
+      Phase 2: EW_GREEN  — ew_green seconds   (all E/W movements green)
       Phase 3: EW_YELLOW — 3 seconds          (E/W clearing)
 
     Args:
@@ -186,29 +200,16 @@ def configure_fixed_timer(tl_id: str,
     Returns:
         List of configured Phase objects (for logging/debugging).
     """
-    logics = traci.trafficlight.getAllProgramLogics(tl_id)
-    if not logics:
-        print(f"[WARNING] No TL logic found for '{tl_id}' — using SUMO default")
-        return []
-
-    current_logic = logics[0]
-    original_phases = current_logic.phases
-
-    # Build durations: green phases get alternating ns_green / ew_green,
-    # yellow phases always get YELLOW_DURATION.
-    green_durations = [ns_green, ew_green]
-    green_idx = 0
+    phase_plan = [
+        ("NS_GREEN",  ns_green,       BASELINE_SIGNALS["NS_GREEN"]),
+        ("NS_YELLOW", YELLOW_DURATION, BASELINE_SIGNALS["NS_YELLOW"]),
+        ("EW_GREEN",  ew_green,       BASELINE_SIGNALS["EW_GREEN"]),
+        ("EW_YELLOW", YELLOW_DURATION, BASELINE_SIGNALS["EW_YELLOW"]),
+    ]
 
     new_phases = []
-    for phase in original_phases:
-        state = phase.state
-        is_yellow = ("y" in state.lower()) and ("G" not in state) and ("g" not in state)
-        if is_yellow:
-            duration = YELLOW_DURATION
-        else:
-            duration = green_durations[green_idx]
-            green_idx = min(green_idx + 1, len(green_durations) - 1)
-        new_phases.append(traci.trafficlight.Phase(duration, state))
+    for _name, dur, state in phase_plan:
+        new_phases.append(traci.trafficlight.Phase(dur, state))
 
     new_logic = traci.trafficlight.Logic(
         programID         = program_label,
@@ -224,10 +225,9 @@ def configure_fixed_timer(tl_id: str,
     cycle = sum(p.duration for p in new_phases)
     print(f"[TL]  Fixed timer '{program_label}' set on junction '{tl_id}' "
           f"({len(new_phases)} phases, {cycle}s cycle)")
-    for i, p in enumerate(new_phases):
-        name = PHASE_NAMES.get(i, f"phase_{i}")
-        print(f"      Phase {i} ({name:12s}): {p.duration:3.0f}s  "
-              f"state={p.state[:20]}{'…' if len(p.state) > 20 else ''}")
+    for i, (name, _dur, _state) in enumerate(phase_plan):
+        p = new_phases[i]
+        print(f"      Phase {i} ({name:12s}): {p.duration:3.0f}s  state={p.state}")
 
     return new_phases
 
@@ -382,10 +382,10 @@ def print_report(sim_time: int, stats: dict, *,
         return
 
     edge_labels = {
-        "N2J": "North → (main, 2-lane)",
-        "S2J": "South → (main, 2-lane)",
-        "E2J": "East  → (side, 1-lane)",
-        "W2J": "West  → (side, 1-lane)",
+        "ACH_N2J": "Achimota Forest Rd from Nsawam (2-lane)",
+        "ACH_S2J": "Achimota Forest Rd from CBD    (2-lane)",
+        "AGG_E2J": "Aggrey Street                  (2-lane)",
+        "GUG_W2J": "Guggisberg Street              (1-lane)",
     }
 
     avg_wait    = stats["overall_avg_wait"]

@@ -9,9 +9,11 @@ Architecture:
   ReplayBuffer — circular experience replay buffer
   DQNAgent     — full DQN agent (double DQN, target network, ε-greedy)
 
-The agent observes a 33-dimensional state vector (per-lane queues, speeds,
+The agent observes a 38-dimensional state vector (per-lane queues, speeds,
 wait times, approach queues, phase one-hot, timer, emergency flags) and
-outputs one of five actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT.
+outputs one of seven actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH,
+EW_LEFT, NS_ALL, EW_ALL.
+Calibrated to the Achimota/Neoplan Junction, N6 Nsawam Road, Accra.
 
 Phase 2 → Phase 3 extension points are marked with # [EXTEND].
 """
@@ -146,13 +148,13 @@ class DQNAgent:
     TARGET_UPDATE_FREQ = 200       # Hard target network sync interval (steps)
     MIN_BUFFER_SIZE    = 1_000     # Steps to collect before learning starts
     EPSILON_START      = 1.0       # Full exploration at episode 1
-    EPSILON_MIN        = 0.05      # Minimum exploration (5% random actions)
+    EPSILON_MIN        = 0.01      # Minimal exploration (1% random — prevents cascading bad switches)
     EPSILON_DECAY      = 0.975     # Slow decay for thorough 5-action exploration
     #   After episode: 20 → ε≈0.60  |  60 → ε≈0.22  |  115 → ε≈0.05
 
     def __init__(self,
-                 state_size:  int = 33,
-                 action_size: int = 5,
+                 state_size:  int = 38,
+                 action_size: int = 7,
                  device:      str | None = None):
 
         self.state_size  = state_size
@@ -183,7 +185,7 @@ class DQNAgent:
         self.step_count = 0     # Global step counter (used for target net sync)
 
         print(f"[DQN] Initialised on {self.device}")
-        print(f"      Architecture: {state_size} → 256 → 256 → {action_size}")
+        print(f"      Architecture: {state_size} -> 256 -> 256 -> {action_size}")
         print(f"      Parameters  : {sum(p.numel() for p in self.policy_net.parameters()):,}")
 
     # ── Action Selection ──────────────────────────────────────────────────────
@@ -255,7 +257,7 @@ class DQNAgent:
 
         self.optimiser.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
+        nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)
         self.optimiser.step()
 
         self.step_count += 1

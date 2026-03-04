@@ -1,5 +1,5 @@
 extends Node3D
-## Main controller for the ATCS-GH 3D Visualizer.
+## Main controller for the ATCS-GH 3D Visualizer (Achimota/Neoplan Junction).
 ##
 ## Responsibilities:
 ##   1. Wire WebSocket client signals to Intersection, VehicleManager, and UI

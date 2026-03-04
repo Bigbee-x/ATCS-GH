@@ -1,38 +1,38 @@
 #!/usr/bin/env python3
 """
-ATCS-GH Phase 2 | Traffic Environment
-═══════════════════════════════════════
+ATCS-GH | Traffic Environment — Achimota/Neoplan Junction
+══════════════════════════════════════════════════════════
 Gym-style SUMO environment for training the DQN agent.
+Calibrated to the Achimota/Neoplan Junction on the N6 Nsawam Road, Accra.
+GPS: 5.6216 N, 0.2193 W  |  Part of ATMC smart signal network.
 
 Design principles:
-  • Agent decides every DECISION_INTERVAL simulation seconds (5s default).
-    SUMO still runs at 1-second resolution internally — only the decision
-    frequency is reduced for training efficiency.
-  • A custom "ai_control" TL program (1M-second phase durations) prevents
+  - Agent decides every DECISION_INTERVAL simulation seconds (5s default).
+    SUMO still runs at 1-second resolution internally.
+  - A custom "ai_control" TL program (1M-second phase durations) prevents
     SUMO from ever auto-advancing phases. The agent is the sole controller.
-  • Emergency preemption is a HARD SAFETY LAYER inside step() — the agent's
-    action is silently overridden when an ambulance is on a red approach.
-    This guarantees the AI never learns to ignore emergencies.
-  • SUMO seed is parameterised so each training episode can use a different
-    seed, preventing the DQN from overfitting to one arrival sequence.
+  - Emergency preemption is a HARD SAFETY LAYER inside step().
+  - SUMO seed is parameterised for varied training episodes.
 
-State vector (33 dims):
-  [lq_0..lq_5,                  6  per-lane queue counts      (÷ MAX_QUEUE_LANE)
-   ls_0..ls_5,                  6  per-lane mean speeds       (÷ MAX_SPEED)
-   lw_0..lw_5,                  6  per-lane wait times        (÷ MAX_WAIT)
-   q_N, q_S, q_E, q_W,         4  approach queue totals      (÷ MAX_QUEUE)
-   ph_0..ph_5,                  6  one-hot phase encoding (6 phases)
-   t_phase,                     1  normalised time in phase   (÷ MAX_PHASE_T)
+State vector (38 dims):
+  [lq_0..lq_6,                  7  per-lane queue counts      (/ MAX_QUEUE_LANE)
+   ls_0..ls_6,                  7  per-lane mean speeds       (/ MAX_SPEED)
+   lw_0..lw_6,                  7  per-lane wait times        (/ MAX_WAIT)
+   q_N, q_S, q_E, q_W,         4  approach queue totals      (/ MAX_QUEUE)
+   ph_0..ph_7,                  8  one-hot phase encoding (8 phases)
+   t_phase,                     1  normalised time in phase   (/ MAX_PHASE_T)
    em_N, em_S, em_E, em_W]     4  emergency vehicle flags (binary)
 
-  Lanes: N2J_0, N2J_1, S2J_0, S2J_1, E2J_0, W2J_0
+  Lanes: ACH_N2J_0/1, ACH_S2J_0/1, AGG_E2J_0/1, GUG_W2J_0
 
-Actions (5):
-  0 → keep current phase  (HOLD)
-  1 → switch to NS_THROUGH (N/S straight + right)
-  2 → switch to NS_LEFT    (N/S protected left turn)
-  3 → switch to EW_THROUGH (E/W straight + right)
-  4 → switch to EW_LEFT    (E/W protected left turn)
+Actions (7):
+  0 -> keep current phase  (HOLD)
+  1 -> switch to NS_THROUGH (N/S straight + right)
+  2 -> switch to NS_LEFT    (N/S protected left turn)
+  3 -> switch to EW_THROUGH (E/W straight + right)
+  4 -> switch to EW_LEFT    (E/W protected left turn)
+  5 -> switch to NS_ALL     (N/S all movements — unprotected)
+  6 -> switch to EW_ALL     (E/W all movements — unprotected)
 """
 
 import os
@@ -95,56 +95,69 @@ SIM_DIR      = PROJECT_ROOT / "simulation"
 CONFIG_FILE  = SIM_DIR / "intersection.sumocfg"
 
 TL_ID          = "J0"
-INCOMING_EDGES = ["N2J", "S2J", "E2J", "W2J"]
-INCOMING_LANES = ["N2J_0", "N2J_1", "S2J_0", "S2J_1", "E2J_0", "W2J_0"]
+INCOMING_EDGES = ["ACH_N2J", "ACH_S2J", "AGG_E2J", "GUG_W2J"]
+INCOMING_LANES = [
+    "ACH_N2J_0", "ACH_N2J_1",   # Achimota Forest Rd from Nsawam (2 lanes)
+    "ACH_S2J_0", "ACH_S2J_1",   # Achimota Forest Rd from CBD    (2 lanes)
+    "AGG_E2J_0", "AGG_E2J_1",   # Aggrey Street from east        (2 lanes)
+    "GUG_W2J_0",                 # Guggisberg Street from west    (1 lane)
+]
 EMERGENCY_TYPE = "emergency"
 
-# Phase indices — 6 phases for through + left-turn separation
-# Connection mapping (18 movements from intersection.net.xml):
-#   pos 0-4:   N2J → right(0), straight(1,2), left(3), uturn(4)
-#   pos 5-8:   E2J → right(5), straight(6), left(7), uturn(8)
-#   pos 9-13:  S2J → right(9), straight(10,11), left(12), uturn(13)
-#   pos 14-17: W2J → right(14), straight(15), left(16), uturn(17)
+# Phase indices -- 6 phases for through + left-turn separation
+# Connection mapping (15 movements from intersection.net.xml):
+#   pos 0-3:   ACH_N2J -> right(0), straight(1,2), left(3)
+#   pos 4-6:   AGG_E2J -> right(4), straight(5), left(6)
+#   pos 7-10:  ACH_S2J -> right(7), straight(8,9), left(10)
+#   pos 11-14: GUG_W2J -> right(11), straight(12,13), left(14)
 NS_THROUGH = 0   # N/S straight + right protected, left blocked
 NS_LEFT    = 1   # N/S left protected, right permissive
 NS_YELLOW  = 2   # N/S clearing
 EW_THROUGH = 3   # E/W straight + right protected, left blocked
 EW_LEFT    = 4   # E/W left protected, right permissive
 EW_YELLOW  = 5   # E/W clearing
+NS_ALL     = 6   # N/S all movements green (unprotected, matches baseline)
+EW_ALL     = 7   # E/W all movements green (unprotected, matches baseline)
 
-NUM_PHASES = 6
+NUM_PHASES = 8
 
 PHASE_NAMES = {
     0: "NS_THROUGH", 1: "NS_LEFT", 2: "NS_YELLOW",
     3: "EW_THROUGH", 4: "EW_LEFT", 5: "EW_YELLOW",
+    6: "NS_ALL",     7: "EW_ALL",
 }
 
-# 18-character signal state strings for setRedYellowGreenState()
+# 15-character signal state strings for setRedYellowGreenState()
+# Positions: N(0-3) E(4-6) S(7-10) W(11-14)
 PHASE_SIGNALS = {
-    NS_THROUGH: "GGGrrrrrrGGGrrrrrr",  # N/S: right+straight=G, left+uturn=r
-    NS_LEFT:    "grrGgrrrrgrrGgrrrr",   # N/S: left=G, right=g(permissive)
-    NS_YELLOW:  "yyyyyrrrryyyyyrrrr",   # N/S: all yellow, E/W: red
-    EW_THROUGH: "rrrrrGGrrrrrrrGGrr",   # E/W: right+straight=G, left+uturn=r
-    EW_LEFT:    "rrrrrgrGgrrrrrgrGg",   # E/W: left=G, right=g(permissive)
-    EW_YELLOW:  "rrrrryyyyrrrrryyyy",   # E/W: all yellow, N/S: red
+    NS_THROUGH: "GGGrrrrGGGrrrrr",  # N/S: right+straight=G, left=r; E/W: all red
+    NS_LEFT:    "grrGrrrgrrGrrrr",   # N/S: left=G, right=g(permissive); E/W: red
+    NS_YELLOW:  "yyyyrrryyyyrrrr",   # N/S: all yellow; E/W: red
+    EW_THROUGH: "rrrrGGrrrrrGGGr",   # E/W: right+straight=G, left=r; N/S: red
+    EW_LEFT:    "rrrrgrGrrrrgrrG",   # E/W: left=G, right=g(permissive); N/S: red
+    EW_YELLOW:  "rrrryyyrrrryyyy",   # E/W: all yellow; N/S: red
+    NS_ALL:     "GGGGrrrGGGGrrrr",   # N/S: ALL movements green; E/W: red
+    EW_ALL:     "rrrrGGGrrrrGGGG",   # E/W: ALL movements green; N/S: red
 }
 
 # Green phases (non-yellow)
-GREEN_PHASES = {NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT}
+GREEN_PHASES = {NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT, NS_ALL, EW_ALL}
 
 # Which edges get green in each green phase
 PHASE_TO_EDGES = {
-    NS_THROUGH: ["N2J", "S2J"],
-    NS_LEFT:    ["N2J", "S2J"],
-    EW_THROUGH: ["E2J", "W2J"],
-    EW_LEFT:    ["E2J", "W2J"],
+    NS_THROUGH: ["ACH_N2J", "ACH_S2J"],
+    NS_LEFT:    ["ACH_N2J", "ACH_S2J"],
+    EW_THROUGH: ["AGG_E2J", "GUG_W2J"],
+    EW_LEFT:    ["AGG_E2J", "GUG_W2J"],
+    NS_ALL:     ["ACH_N2J", "ACH_S2J"],
+    EW_ALL:     ["AGG_E2J", "GUG_W2J"],
 }
 # Which green phases serve each incoming edge (for emergency preemption)
 EDGE_TO_GREENS = {
-    "N2J": [NS_THROUGH, NS_LEFT],
-    "S2J": [NS_THROUGH, NS_LEFT],
-    "E2J": [EW_THROUGH, EW_LEFT],
-    "W2J": [EW_THROUGH, EW_LEFT],
+    "ACH_N2J": [NS_THROUGH, NS_LEFT, NS_ALL],
+    "ACH_S2J": [NS_THROUGH, NS_LEFT, NS_ALL],
+    "AGG_E2J": [EW_THROUGH, EW_LEFT, EW_ALL],
+    "GUG_W2J": [EW_THROUGH, EW_LEFT, EW_ALL],
 }
 
 # Action constants
@@ -153,6 +166,8 @@ ACTION_NS_THROUGH = 1
 ACTION_NS_LEFT    = 2
 ACTION_EW_THROUGH = 3
 ACTION_EW_LEFT    = 4
+ACTION_NS_ALL     = 5
+ACTION_EW_ALL     = 6
 
 # Map action index → target green phase
 ACTION_TO_PHASE = {
@@ -160,9 +175,12 @@ ACTION_TO_PHASE = {
     ACTION_NS_LEFT:    NS_LEFT,
     ACTION_EW_THROUGH: EW_THROUGH,
     ACTION_EW_LEFT:    EW_LEFT,
+    ACTION_NS_ALL:     NS_ALL,
+    ACTION_EW_ALL:     EW_ALL,
 }
 
-ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT"]
+ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
+                "NS_ALL", "EW_ALL"]
 
 # ── State normalisation ───────────────────────────────────────────────────────
 MAX_QUEUE      = 50.0    # vehicles per approach (per edge, all lanes summed)
@@ -173,14 +191,14 @@ MAX_PHASE_T    = 96.0    # one full 96-second TL cycle
 
 # ── Environment parameters ────────────────────────────────────────────────────
 DECISION_INTERVAL  = 5     # SUMO seconds between agent decisions
-MIN_GREEN_THROUGH  = 15    # seconds before through-phase switch (anti-flicker)
+MIN_GREEN_THROUGH  = 10    # seconds before through/all-phase switch (anti-flicker)
 MIN_GREEN_LEFT     = 8     # left-turn phases serve fewer vehicles — shorter hold
 YELLOW_DURATION    = 3     # seconds of yellow clearance
 SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 
 # Exported constants for use by train_agent.py / run_ai.py
-STATE_SIZE  = 33
-ACTION_SIZE = 5
+STATE_SIZE  = 38   # 7*3 + 4 + 8(phases) + 1 + 4
+ACTION_SIZE = 7
 
 # ── Reward weights ────────────────────────────────────────────────────────────
 # These are tuned so the baseline fixed-timer scores ≈ -2000 per episode
@@ -282,10 +300,11 @@ class TrafficEnv:
           • Per-step metrics are accumulated for reward computation.
 
         Args:
-            action: 0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT
+            action: 0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT,
+                    5=NS_ALL, 6=EW_ALL
 
         Returns:
-            next_state  — 33-dim normalised state vector
+            next_state  — 38-dim normalised state vector
             reward      — scalar reward for this decision block
             done        — True if episode has ended
             info        — diagnostic dict (phase, arrived, queues, preempted, ...)
@@ -351,16 +370,15 @@ class TrafficEnv:
         total_queue = float(sum(final_queues))
         self.total_arrived += block_arrived
 
+        min_g = (MIN_GREEN_LEFT if self._phase in (NS_LEFT, EW_LEFT)
+                 else MIN_GREEN_THROUGH)
         reward = self._compute_reward(
             total_queue        = total_queue,
             prev_total_queue   = self._prev_total_queue,
             n_arrived          = block_arrived,
             n_emerg_waiting    = block_emerg_max,
             switched_too_soon  = (action != ACTION_HOLD and not preempted
-                                  and self._phase_timer < (
-                                      MIN_GREEN_LEFT
-                                      if self._phase in (NS_LEFT, EW_LEFT)
-                                      else MIN_GREEN_THROUGH)),
+                                  and self._phase_timer < min_g),
             queue_distribution = final_queues,
             wait_distribution  = final_waits,
         )
@@ -420,11 +438,11 @@ class TrafficEnv:
     # ── State Construction ────────────────────────────────────────────────────
 
     def _build_state(self) -> np.ndarray:
-        """Construct the 33-dimensional normalised state vector."""
+        """Construct the 38-dimensional normalised state vector."""
         lane_m = self._collect_lane_metrics()
         edge_m = self._collect_edge_metrics()
 
-        # Per-lane features (6 lanes × 3 = 18 dims)
+        # Per-lane features (7 lanes x 3 = 21 dims)
         lane_queues = np.array([lane_m[l]["queue"] for l in INCOMING_LANES], dtype=np.float32)
         lane_speeds = np.array([lane_m[l]["speed"] for l in INCOMING_LANES], dtype=np.float32)
         lane_waits  = np.array([lane_m[l]["wait"]  for l in INCOMING_LANES], dtype=np.float32)
@@ -443,14 +461,14 @@ class TrafficEnv:
         emerg_flags = self._get_emergency_flags()
 
         state = np.concatenate([
-            lane_queues / MAX_QUEUE_LANE,   # 6 values
-            lane_speeds / MAX_SPEED,         # 6 values
-            lane_waits  / MAX_WAIT,          # 6 values
+            lane_queues / MAX_QUEUE_LANE,   # 7 values
+            lane_speeds / MAX_SPEED,         # 7 values
+            lane_waits  / MAX_WAIT,          # 7 values
             approach_queues / MAX_QUEUE,     # 4 values
-            phase_vec,                       # 6 values
+            phase_vec,                       # 8 values
             [t_norm],                        # 1 value
             emerg_flags,                     # 4 values
-        ])                                   # = 33 total
+        ])                                   # = 38 total
         return state.astype(np.float32)
 
     # ── Reward Computation ────────────────────────────────────────────────────
@@ -521,10 +539,9 @@ class TrafficEnv:
         """True if the current green phase has run long enough to switch."""
         if self._in_yellow or self._phase not in GREEN_PHASES:
             return False
-        min_green = (MIN_GREEN_LEFT
-                     if self._phase in (NS_LEFT, EW_LEFT)
-                     else MIN_GREEN_THROUGH)
-        return self._phase_timer >= min_green
+        if self._phase in (NS_LEFT, EW_LEFT):
+            return self._phase_timer >= MIN_GREEN_LEFT
+        return self._phase_timer >= MIN_GREEN_THROUGH
 
     def _initiate_switch(self, target_green: int | None = None) -> None:
         """
@@ -537,7 +554,7 @@ class TrafficEnv:
             return
 
         # Determine the yellow phase that clears the current green
-        if self._phase in (NS_THROUGH, NS_LEFT):
+        if self._phase in (NS_THROUGH, NS_LEFT, NS_ALL):
             yellow = NS_YELLOW
         else:
             yellow = EW_YELLOW
@@ -595,7 +612,7 @@ class TrafficEnv:
 
         The long-duration program prevents SUMO from auto-advancing.
         All actual signal changes go through setRedYellowGreenState()
-        with our custom 18-character PHASE_SIGNALS strings.
+        with our custom 15-character PHASE_SIGNALS strings.
         """
         logics = traci.trafficlight.getAllProgramLogics(TL_ID)
         if not logics:

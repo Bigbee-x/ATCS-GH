@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """
-ATCS-GH Phase 2 | AI Controller — Inference Runner
-════════════════════════════════════════════════════
-Runs the trained DQN agent on the same 2-hour morning rush scenario
-used for the Phase 1 baseline, producing an identical report format
-for direct comparison.
-
-Key differences from run_baseline.py:
-  • Traffic light is controlled by the DQN agent (not a fixed timer)
-  • Agent makes a phase decision every DECISION_INTERVAL seconds
-  • Emergency preemption is active (hardcoded safety layer)
-  • MetricsLogger still runs at 1-second resolution for precise metrics
+ATCS-GH | AI Controller -- Inference Runner (Achimota/Neoplan Junction)
+=======================================================================
+Runs the trained DQN agent on the 2-hour morning rush scenario,
+producing a report for comparison with the fixed-timer baseline.
 
 Usage:
-    python scripts/run_ai.py                              # use trained_model.pth
-    python scripts/run_ai.py --model ai/best_model.pth   # use best checkpoint
-    python scripts/run_ai.py --gui                        # open SUMO-GUI window
+    python scripts/run_ai.py                              # use best_model.pth
+    python scripts/run_ai.py --model ai/best_model.pth    # specific checkpoint
+    python scripts/run_ai.py --gui                        # open SUMO-GUI
 """
 
 import os
@@ -23,11 +16,12 @@ import sys
 import time
 import shutil
 import argparse
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 
 
-# ── SUMO / TraCI setup ────────────────────────────────────────────────────────
+# -- SUMO / TraCI setup -------------------------------------------------------
 
 def _setup_sumo() -> str:
     home = os.environ.get("SUMO_HOME")
@@ -70,20 +64,23 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "ai"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from dqn_agent    import DQNAgent
+from dqn_agent     import DQNAgent
 from metrics_logger import MetricsLogger
 
-# Also import phase/edge constants from traffic_env
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, EMERGENCY_TYPE,
-    NS_GREEN, NS_YELLOW, EW_GREEN, EW_YELLOW, PHASE_NAMES,
-    EDGE_TO_GREEN, STATE_SIZE, ACTION_SIZE,
-    DECISION_INTERVAL, MIN_GREEN_DURATION, YELLOW_DURATION,
-    MAX_QUEUE, MAX_WAIT, MAX_PHASE_T,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
+    NS_ALL, EW_ALL,
+    PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
+    EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    STATE_SIZE, ACTION_SIZE,
+    DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
+    MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
+    NUM_PHASES,
 )
 
 
-# ── Paths and constants ───────────────────────────────────────────────────────
+# -- Paths and constants ------------------------------------------------------
 
 SIM_DIR         = PROJECT_ROOT / "simulation"
 DATA_DIR        = PROJECT_ROOT / "data"
@@ -92,15 +89,11 @@ NETWORK_FILE    = SIM_DIR / "intersection.net.xml"
 DEFAULT_MODEL   = PROJECT_ROOT / "ai" / "best_model.pth"
 OUTPUT_CSV      = DATA_DIR / "ai_results.csv"
 
-SIM_DURATION    = 7200     # seconds (matches baseline)
+SIM_DURATION    = 7200
 BASELINE_CSV    = DATA_DIR / "baseline_results.csv"
 
 
 def _load_baseline_stats() -> dict:
-    """
-    Load baseline metrics dynamically from Phase 1 CSV.
-    Falls back to hardcoded values if the CSV is missing.
-    """
     fallback = {"avg_wait": 399.12, "peak_queue": 185, "avg_throughput": 37.9}
     if not BASELINE_CSV.exists():
         print(f"[WARN] Baseline CSV not found ({BASELINE_CSV.name}), using fallback values.")
@@ -128,41 +121,44 @@ def _load_baseline_stats() -> dict:
 BASELINE = _load_baseline_stats()
 
 
-# ── Helper: build state vector ────────────────────────────────────────────────
+# -- Helper: build 36-dim state vector ----------------------------------------
 
 def build_state(phase: int,
                 phase_timer: int,
-                in_yellow: bool) -> "np.ndarray":
-    """
-    Build the 17-dimensional normalised state vector directly from TraCI.
-    Mirrors traffic_env.TrafficEnv._build_state().
-    """
-    import numpy as np
+                _in_yellow: bool) -> np.ndarray:
+    """Build the 38-dimensional normalised state vector from TraCI."""
+    # Per-lane features (7 lanes x 3 = 21 dims)
+    lane_queues = np.zeros(len(INCOMING_LANES), dtype=np.float32)
+    lane_speeds = np.zeros(len(INCOMING_LANES), dtype=np.float32)
+    lane_waits  = np.zeros(len(INCOMING_LANES), dtype=np.float32)
 
-    queues = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-    waits  = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-
-    for i, edge in enumerate(INCOMING_EDGES):
-        total_q = 0
-        total_w = 0.0
-        n_lanes = 0
+    for i, lane_id in enumerate(INCOMING_LANES):
         try:
-            n_lanes = traci.edge.getLaneNumber(edge)
-            for idx in range(n_lanes):
-                lid     = f"{edge}_{idx}"
-                total_q += traci.lane.getLastStepHaltingNumber(lid)
-                total_w += traci.lane.getWaitingTime(lid)
+            lane_queues[i] = float(traci.lane.getLastStepHaltingNumber(lane_id))
+            lane_speeds[i] = float(traci.lane.getLastStepMeanSpeed(lane_id))
+            lane_waits[i]  = float(traci.lane.getWaitingTime(lane_id))
         except traci.exceptions.TraCIException:
             pass
-        queues[i] = float(total_q)
-        waits[i]  = float(total_w / max(n_lanes, 1))
 
-    phase_vec = np.zeros(4, dtype=np.float32)
+    # Per-approach queues (4 dims)
+    approach_queues = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
+    for i, edge in enumerate(INCOMING_EDGES):
+        try:
+            n_lanes = traci.edge.getLaneNumber(edge)
+            total_q = 0
+            for idx in range(n_lanes):
+                total_q += traci.lane.getLastStepHaltingNumber(f"{edge}_{idx}")
+            approach_queues[i] = float(total_q)
+        except traci.exceptions.TraCIException:
+            pass
+
+    # Phase one-hot (8 dims)
+    phase_vec = np.zeros(NUM_PHASES, dtype=np.float32)
     phase_vec[phase] = 1.0
 
     t_norm = np.float32(min(phase_timer / MAX_PHASE_T, 1.0))
 
-    # Emergency flags
+    # Emergency flags (4 dims)
     emerg = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
     for i, edge in enumerate(INCOMING_EDGES):
         try:
@@ -174,42 +170,41 @@ def build_state(phase: int,
             pass
 
     state = np.concatenate([
-        queues / MAX_QUEUE,
-        waits  / MAX_WAIT,
-        phase_vec,
-        [t_norm],
-        emerg,
-    ])
+        lane_queues / MAX_QUEUE_LANE,   # 7
+        lane_speeds / MAX_SPEED,         # 7
+        lane_waits  / MAX_WAIT,          # 7
+        approach_queues / MAX_QUEUE,     # 4
+        phase_vec,                       # 8
+        [t_norm],                        # 1
+        emerg,                           # 4
+    ])                                   # = 38
     return state.astype(np.float32)
 
 
-# ── Helper: emergency preemption ─────────────────────────────────────────────
+# -- Helper: emergency preemption ---------------------------------------------
 
 def check_emergency_preemption(phase: int,
                                 in_yellow: bool,
                                 next_green: int | None) -> tuple[bool, int | None]:
-    """
-    Mirror of TrafficEnv._check_emergency_preemption().
-    Returns (preempt, target_green_phase).
-    """
+    """Mirror of TrafficEnv._check_emergency_preemption()."""
     for edge in INCOMING_EDGES:
         try:
             for vid in traci.edge.getLastStepVehicleIDs(edge):
                 if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
                     continue
-                target_green = EDGE_TO_GREEN[edge]
+                green_options = EDGE_TO_GREENS[edge]
                 already_serving = (
-                    phase == target_green
-                    or (in_yellow and next_green == target_green)
+                    phase in green_options
+                    or (in_yellow and next_green in green_options)
                 )
                 if not already_serving:
-                    return True, target_green
+                    return True, green_options[0]
         except traci.exceptions.TraCIException:
             pass
     return False, None
 
 
-# ── Binary detection ──────────────────────────────────────────────────────────
+# -- Binary detection ----------------------------------------------------------
 
 def find_sumo_binary(gui: bool = False) -> str:
     name = "sumo-gui" if gui else "sumo"
@@ -223,21 +218,31 @@ def find_sumo_binary(gui: bool = False) -> str:
     sys.exit(1)
 
 
-# ── Main runner ───────────────────────────────────────────────────────────────
+# -- Phase control helpers ----------------------------------------------------
+
+def _can_switch(phase: int, phase_timer: int, in_yellow: bool) -> bool:
+    if in_yellow or phase not in GREEN_PHASES:
+        return False
+    min_green = (MIN_GREEN_LEFT
+                 if phase in (NS_LEFT, EW_LEFT)
+                 else MIN_GREEN_THROUGH)
+    return phase_timer >= min_green
+
+
+def _get_yellow_for_phase(phase: int) -> int:
+    if phase in (NS_THROUGH, NS_LEFT, NS_ALL):
+        return NS_YELLOW
+    return EW_YELLOW
+
+
+# -- Main runner ---------------------------------------------------------------
 
 def run_ai(model_path: str | Path = DEFAULT_MODEL,
            gui: bool = False) -> None:
-    """
-    Run a single 2-hour episode with the trained DQN agent.
-
-    Control loop runs at 1-second resolution (for MetricsLogger precision).
-    Agent makes a phase decision every DECISION_INTERVAL seconds.
-    Emergency preemption is always active.
-    """
+    """Run a single 2-hour episode with the trained DQN agent."""
     model_path = Path(model_path)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Pre-flight checks
     if not NETWORK_FILE.exists():
         print(f"[ERROR] Network not built. Run: python scripts/build_network.py")
         sys.exit(1)
@@ -246,22 +251,20 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
         print(f"  Train first:  python scripts/train_agent.py")
         sys.exit(1)
 
-    # Load agent
     agent = DQNAgent(state_size=STATE_SIZE, action_size=ACTION_SIZE)
     agent.load(model_path)
-    agent.set_eval_mode()   # ε=0, pure exploitation
+    agent.set_eval_mode()
 
-    print("\n" + "═" * 62)
-    print("  ATCS-GH Phase 2 — AI Inference Run")
-    print("═" * 62)
+    print("\n" + "=" * 62)
+    print("  ATCS-GH -- AI Inference Run (Achimota/Neoplan Junction)")
+    print("=" * 62)
     print(f"  Model   : {model_path}")
     print(f"  Mode    : {'GUI (visual)' if gui else 'Headless (fast)'}")
     print(f"  Duration: {SIM_DURATION}s (2 hours)")
-    print(f"  Decision: every {DECISION_INTERVAL}s | min green: {MIN_GREEN_DURATION}s")
+    print(f"  Decision: every {DECISION_INTERVAL}s | min green: {MIN_GREEN_THROUGH}s/{MIN_GREEN_LEFT}s")
     print(f"  Output  : {OUTPUT_CSV}")
-    print("═" * 62)
+    print("=" * 62)
 
-    # Launch SUMO
     sumo_cmd = [
         find_sumo_binary(gui),
         "-c",            str(CONFIG_FILE),
@@ -272,80 +275,74 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
     traci.start(sumo_cmd)
     print("\n[TraCI] Connected")
 
-    # Install ai_control TL program (same as in TrafficEnv)
     _install_ai_tl_program()
 
     # Phase control state
-    phase         = NS_GREEN
-    phase_timer   = 0        # seconds in current phase
+    phase         = NS_THROUGH
+    phase_timer   = 0
     in_yellow     = False
     yellow_cd     = 0
-    next_green    = EW_GREEN  # phase after current yellow ends
+    next_green    = EW_THROUGH
 
-    # Decision step counter (agent decides every DECISION_INTERVAL steps)
     steps_in_block = 0
-
-    # Metrics
     logger     = MetricsLogger(output_path=OUTPUT_CSV)
     wall_start = time.time()
     last_pct   = -1
+    step_num   = 0
 
     print(f"\n[SIM] Running {SIM_DURATION} steps... (Ctrl+C to abort)\n")
 
     try:
         for step_num in range(1, SIM_DURATION + 1):
 
-            # ── Agent decision (every DECISION_INTERVAL seconds) ──────────────
+            # -- Agent decision (every DECISION_INTERVAL seconds) ------
             if steps_in_block == 0:
-                state  = build_state(phase, phase_timer, in_yellow)
+                state = build_state(phase, phase_timer, in_yellow)
 
-                # Emergency preemption check (safety layer — overrides agent)
                 preempt, target_green = check_emergency_preemption(
                     phase, in_yellow, next_green if in_yellow else None
                 )
                 if preempt and target_green is not None:
-                    action = 1 if target_green != phase else 0
-                    if action == 1 and not in_yellow:
-                        # Force immediate switch towards target green
-                        yellow = NS_YELLOW if phase == NS_GREEN else EW_YELLOW
+                    if target_green != phase and not in_yellow:
+                        yellow_phase = _get_yellow_for_phase(phase)
                         next_green = target_green
-                        traci.trafficlight.setPhase(TL_ID, yellow)
-                        phase     = yellow
+                        traci.trafficlight.setRedYellowGreenState(
+                            TL_ID, PHASE_SIGNALS[yellow_phase])
+                        phase     = yellow_phase
                         in_yellow = True
                         yellow_cd = YELLOW_DURATION
                 else:
                     action = agent.select_action(state)
-                    # Apply agent action: switch if allowed
-                    if (action == 1
-                            and not in_yellow
-                            and phase in (NS_GREEN, EW_GREEN)
-                            and phase_timer >= MIN_GREEN_DURATION):
-                        yellow     = NS_YELLOW if phase == NS_GREEN else EW_YELLOW
-                        next_green = EW_GREEN  if phase == NS_GREEN else NS_GREEN
-                        traci.trafficlight.setPhase(TL_ID, yellow)
-                        phase     = yellow
-                        in_yellow = True
-                        yellow_cd = YELLOW_DURATION
 
-            # ── Yellow transition handling ─────────────────────────────────────
+                    if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
+                        target = ACTION_TO_PHASE[action]
+                        if target != phase:
+                            yellow_phase = _get_yellow_for_phase(phase)
+                            next_green = target
+                            traci.trafficlight.setRedYellowGreenState(
+                                TL_ID, PHASE_SIGNALS[yellow_phase])
+                            phase     = yellow_phase
+                            in_yellow = True
+                            yellow_cd = YELLOW_DURATION
+
+            # -- Yellow transition handling ----------------------------
             if in_yellow:
                 yellow_cd -= 1
                 if yellow_cd <= 0:
-                    traci.trafficlight.setPhase(TL_ID, next_green)
-                    phase     = next_green
-                    in_yellow = False
+                    traci.trafficlight.setRedYellowGreenState(
+                        TL_ID, PHASE_SIGNALS[next_green])
+                    phase       = next_green
+                    in_yellow   = False
                     phase_timer = 0
 
-            # ── Advance simulation ─────────────────────────────────────────────
+            # -- Advance simulation ------------------------------------
             traci.simulationStep()
             phase_timer    += 1
             steps_in_block  = (steps_in_block + 1) % DECISION_INTERVAL
 
-            # ── Log this step (1-second resolution) ────────────────────────────
             phase_name = PHASE_NAMES.get(phase, f"phase_{phase}")
             logger.step(current_time=float(step_num), tl_phase_name=phase_name)
 
-            # ── Progress ───────────────────────────────────────────────────────
             pct = int(step_num / SIM_DURATION * 100)
             if pct % 10 == 0 and pct != last_pct:
                 elapsed = time.time() - wall_start
@@ -370,7 +367,7 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
 
 
 def _install_ai_tl_program() -> None:
-    """Install the 1M-second ai_control TL program (prevents SUMO auto-advance)."""
+    """Install ai_control TL program and set initial phase."""
     logics = traci.trafficlight.getAllProgramLogics(TL_ID)
     if not logics:
         return
@@ -384,93 +381,65 @@ def _install_ai_tl_program() -> None:
     )
     traci.trafficlight.setProgramLogic(TL_ID, ai_logic)
     traci.trafficlight.setProgram(TL_ID, "ai_control")
-    traci.trafficlight.setPhase(TL_ID, NS_GREEN)
+    traci.trafficlight.setRedYellowGreenState(TL_ID, PHASE_SIGNALS[NS_THROUGH])
     print("[TL]  'ai_control' program installed (AI controls all phase transitions)")
 
 
-# ── Terminal report ───────────────────────────────────────────────────────────
+# -- Terminal report -----------------------------------------------------------
 
 def print_report(sim_time: int, stats: dict, model_path: Path) -> None:
-    """
-    Formatted report matching run_baseline.py output exactly,
-    with an added Phase 1 vs Phase 2 comparison section.
-    """
     if not stats:
         print("[Report] No statistics available.")
         return
 
     edge_labels = {
-        "N2J": "North → (main, 2-lane)",
-        "S2J": "South → (main, 2-lane)",
-        "E2J": "East  → (side, 1-lane)",
-        "W2J": "West  → (side, 1-lane)",
+        "ACH_N2J": "Achimota Forest Rd from Nsawam (2-lane)",
+        "ACH_S2J": "Achimota Forest Rd from CBD    (2-lane)",
+        "AGG_E2J": "Aggrey Street                  (2-lane)",
+        "GUG_W2J": "Guggisberg Street              (1-lane)",
     }
 
     avg_wait   = stats["overall_avg_wait"]
     bl_wait    = BASELINE["avg_wait"]
     delta_pct  = (avg_wait - bl_wait) / bl_wait * 100
-    direction  = "▼ BETTER" if delta_pct < 0 else "▲ WORSE"
+    direction  = "BETTER" if delta_pct < 0 else "WORSE"
 
-    print("\n" + "═" * 62)
-    print("  ATCS-GH  |  AI SIMULATION REPORT  |  Phase 2")
-    print("═" * 62)
+    print("\n" + "=" * 62)
+    print("  ATCS-GH  |  AI REPORT  |  Achimota/Neoplan Junction")
+    print("=" * 62)
     print(f"  Generated  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model      : {model_path.name}")
-    print(f"  Simulated  : {sim_time}s  ({sim_time/3600:.2f} hours)")
+    print(f"  Simulated  : {sim_time}s  ({float(sim_time)/3600:.2f} hours)")
     print(f"  Controller : DQN agent  (decision every {DECISION_INTERVAL}s)")
     print()
-    print(f"  ┌── OVERALL PERFORMANCE ────────────────────────────┐")
-    print(f"  │  Vehicles completed journey   : {stats['total_completed']:>8,}           │")
-    print(f"  │  Average wait time (all lanes): {avg_wait:>7.2f}s           │")
-    print(f"  │  Peak queue length            : {stats['peak_queue']:>8} vehicles      │")
-    print(f"  │  Average throughput           : {stats['avg_throughput']:>7.1f} veh/min       │")
-    print(f"  │  Peak throughput              : {stats['peak_throughput']:>7.0f} veh/min       │")
-    print(f"  └───────────────────────────────────────────────────┘")
+    print(f"  Overall avg wait  : {avg_wait:>7.2f}s")
+    print(f"  Peak queue        : {stats['peak_queue']:>8} vehicles")
+    print(f"  Avg throughput    : {stats['avg_throughput']:>7.1f} veh/min")
+    print(f"  Vehicles completed: {stats['total_completed']:>8,}")
     print()
 
-    print(f"  ┌── LANE PERFORMANCE ───────────────────────────────┐")
-    print(f"  │  {'Approach':<30}  {'Avg Wait':>8}  {'Max Queue':>9}  │")
-    print(f"  │  {'─'*30}  {'─'*8}  {'─'*9}  │")
+    print(f"  Per-approach:")
     for edge, label in edge_labels.items():
         es      = stats["edge_stats"].get(edge, {})
         samples = es.get("samples", 0)
         avg_w   = round(es["total_wait"] / samples, 2) if samples > 0 else 0.0
         max_q   = es.get("max_queue", 0)
-        print(f"  │  {label:<30}  {avg_w:>7.2f}s  {max_q:>9}  │")
-    print(f"  └───────────────────────────────────────────────────┘")
+        print(f"    {label}  wait={avg_w:.1f}s  max_q={max_q}")
     print()
 
-    emerg = stats.get("emergency_log", {})
-    if emerg:
-        print(f"  ┌── EMERGENCY VEHICLE PERFORMANCE ──────────────────┐")
-        print(f"  │  {'Vehicle':<15}  {'Route':<12}  {'Max Wait at Red':>16}  │")
-        print(f"  │  {'─'*15}  {'─'*12}  {'─'*16}  │")
-        for vid, info in sorted(emerg.items()):
-            print(f"  │  {vid:<15}  {info['route']:<12}  {info['max_wait']:>14.1f}s  │")
-        print(f"  └───────────────────────────────────────────────────┘")
-        print()
-
-    print(f"  ┌── PHASE 1 vs PHASE 2 COMPARISON ──────────────────┐")
-    print(f"  │  Metric                Phase 1 (Fixed)  Phase 2 (AI)  │")
-    print(f"  │  ─────────────────     ──────────────   ───────────   │")
-    print(f"  │  Avg wait time         {bl_wait:>10.1f}s   "
-          f"{avg_wait:>8.1f}s  │")
-    print(f"  │  Peak queue            {BASELINE['peak_queue']:>12}    {stats['peak_queue']:>10}   │")
-    print(f"  │  Avg throughput        {BASELINE['avg_throughput']:>9} v/m   "
-          f"{stats['avg_throughput']:>7.1f} v/m  │")
-    print(f"  │                                                      │")
-    print(f"  │  Wait time change:  {direction}  {abs(delta_pct):>5.1f}%               │")
-    print(f"  └───────────────────────────────────────────────────┘")
+    print(f"  Baseline (fixed timer) : {bl_wait:.1f}s")
+    print(f"  AI controller          : {avg_wait:.1f}s")
+    print(f"  Change                 : {direction} {abs(delta_pct):.1f}%")
     print()
-    print(f"  Results saved → data/ai_results.csv")
-    print("═" * 62 + "\n")
+    print(f"  Results saved -> data/ai_results.csv")
+    print("=" * 62 + "\n")
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# -- Entry point ---------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH Phase 2: Run the trained AI traffic controller"
+        description="ATCS-GH: Run the trained AI traffic controller"
     )
     parser.add_argument(
         "--model", type=str, default=str(DEFAULT_MODEL),

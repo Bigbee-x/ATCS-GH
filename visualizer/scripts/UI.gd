@@ -163,11 +163,12 @@ func _build_right_panel() -> void:
 	vbox.add_child(HSeparator.new())
 
 	# Approach panels
-	for approach in ["North (N2J)", "South (S2J)", "East (E2J)", "West (W2J)"]:
-		var key: String = approach.split(" ")[0].to_lower()
-		var ap: Dictionary = _build_approach_indicator(approach)
+	var approach_labels: Dictionary = {"north": "Nsawam (N)", "south": "CBD (S)", "east": "Aggrey St (E)", "west": "Guggisberg (W)"}
+	for dir_key in ["north", "south", "east", "west"]:
+		var label: String = approach_labels[dir_key]
+		var ap: Dictionary = _build_approach_indicator(label)
 		vbox.add_child(ap["container"])
-		_approach_panels[key] = ap
+		_approach_panels[dir_key] = ap
 
 	# Separator before AI info
 	vbox.add_child(HSeparator.new())
@@ -263,16 +264,16 @@ func _build_bottom_bar() -> void:
 	hbox.add_child(spacer)
 
 	# Override buttons
-	_btn_force_north = _make_override_button("Force North", "north")
+	_btn_force_north = _make_override_button("Nsawam", "north")
 	hbox.add_child(_btn_force_north)
 
-	_btn_force_south = _make_override_button("Force South", "south")
+	_btn_force_south = _make_override_button("CBD", "south")
 	hbox.add_child(_btn_force_south)
 
-	_btn_force_east = _make_override_button("Force East", "east")
+	_btn_force_east = _make_override_button("Aggrey", "east")
 	hbox.add_child(_btn_force_east)
 
-	_btn_force_west = _make_override_button("Force West", "west")
+	_btn_force_west = _make_override_button("Guggisberg", "west")
 	hbox.add_child(_btn_force_west)
 
 
@@ -361,13 +362,15 @@ func update_display(data: Dictionary) -> void:
 	# Phase
 	_lbl_phase.text = "Phase: %s" % data.get("phase_name", "—")
 
-	# AI decision (5 actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT)
+	# AI decision (7 actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT, NS_ALL, EW_ALL)
 	var decision: String = data.get("ai_decision", "—")
 	_lbl_ai_decision.text = "AI: %s" % decision
 	if decision == "HOLD":
 		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_GREEN)
 	elif decision.ends_with("LEFT"):
 		_lbl_ai_decision.add_theme_color_override("font_color", Color(0.3, 0.7, 1.0))
+	elif decision.ends_with("ALL"):
+		_lbl_ai_decision.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
 	else:
 		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_ORANGE)
 

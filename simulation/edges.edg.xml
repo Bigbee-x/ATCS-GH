@@ -1,31 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ATCS-GH | Road Edge Definitions
-  ════════════════════════════════
-  Defines 8 directed edges (4 in, 4 out) for the 4-way intersection.
+  ATCS-GH | Achimota/Neoplan Junction — Edge Definitions
+  ══════════════════════════════════════════════════════
+  Real-world calibration: Achimota/Neoplan Junction, N6 Nsawam Road, Accra
+  GPS: 5.6216 N, 0.2193 W  |  Part of ATMC smart signal network
 
-  Accra-realistic design:
-  ┌─────────────────────────────────────────────────────────────┐
-  │ North-South corridor  │ 2 lanes │ 50 km/h (13.89 m/s)      │
-  │   — main arterial (Ring Road / Liberation Road style)       │
-  │                                                             │
-  │ East-West corridor    │ 1 lane  │ 40 km/h (11.11 m/s)      │
-  │   — secondary/side street                                   │
-  └─────────────────────────────────────────────────────────────┘
+  Road layout:
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ North/South  │ Achimota Forest Rd │ 2 lanes │ 50 km/h (13.89)  │
+  │   — N6 trunk road (primary), divided carriageway                │
+  │                                                                 │
+  │ East         │ Aggrey Street      │ 2 lanes │ 50 km/h (13.89)  │
+  │   — secondary road, connects to residential areas east          │
+  │                                                                 │
+  │ West         │ Guggisberg Street  │ 1 lane  │ 30 km/h (8.33)   │
+  │   — minor residential feeder road                               │
+  └─────────────────────────────────────────────────────────────────┘
 
-  Priority 2 = major road, Priority 1 = minor road.
+  Priority 2 = primary trunk road, Priority 1 = secondary/residential.
   Each direction is a SEPARATE directed edge (SUMO convention).
 -->
 <edges>
-    <!-- ── North-South corridor (main road, 2 lanes each way) ── -->
-    <edge id="N2J" from="N"  to="J0" numLanes="2" speed="13.89" priority="2"/>
-    <edge id="J2N" from="J0" to="N"  numLanes="2" speed="13.89" priority="2"/>
-    <edge id="S2J" from="S"  to="J0" numLanes="2" speed="13.89" priority="2"/>
-    <edge id="J2S" from="J0" to="S"  numLanes="2" speed="13.89" priority="2"/>
+    <!-- ── Achimota Forest Road — N/S corridor (primary, 2 lanes each way) ── -->
+    <edge id="ACH_N2J" from="N"  to="J0" numLanes="2" speed="13.89" priority="2"/>
+    <edge id="ACH_J2N" from="J0" to="N"  numLanes="2" speed="13.89" priority="2"/>
+    <edge id="ACH_S2J" from="S"  to="J0" numLanes="2" speed="13.89" priority="2"/>
+    <edge id="ACH_J2S" from="J0" to="S"  numLanes="2" speed="13.89" priority="2"/>
 
-    <!-- ── East-West corridor (side street, 1 lane each way) ─── -->
-    <edge id="E2J" from="E"  to="J0" numLanes="1" speed="11.11" priority="1"/>
-    <edge id="J2E" from="J0" to="E"  numLanes="1" speed="11.11" priority="1"/>
-    <edge id="W2J" from="W"  to="J0" numLanes="1" speed="11.11" priority="1"/>
-    <edge id="J2W" from="J0" to="W"  numLanes="1" speed="11.11" priority="1"/>
+    <!-- ── Aggrey Street — East approach (secondary, 2 lanes each way) ────── -->
+    <edge id="AGG_E2J" from="E"  to="J0" numLanes="2" speed="13.89" priority="1"/>
+    <edge id="AGG_J2E" from="J0" to="E"  numLanes="2" speed="13.89" priority="1"/>
+
+    <!-- ── Guggisberg Street — West approach (residential, 1 lane each way) ─ -->
+    <edge id="GUG_W2J" from="W"  to="J0" numLanes="1" speed="8.33"  priority="1"/>
+    <edge id="GUG_J2W" from="J0" to="W"  numLanes="1" speed="8.33"  priority="1"/>
 </edges>

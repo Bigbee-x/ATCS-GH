@@ -28,7 +28,7 @@ import traci
 
 
 # Edges whose incoming lanes we measure (vehicles approaching the junction)
-INCOMING_EDGES  = ["N2J", "S2J", "E2J", "W2J"]
+INCOMING_EDGES  = ["ACH_N2J", "ACH_S2J", "AGG_E2J", "GUG_W2J"]
 
 # Vehicle type ID that identifies emergency vehicles (must match routes.rou.xml)
 EMERGENCY_TYPE  = "emergency"

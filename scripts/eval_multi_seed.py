@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ATCS-GH | Multi-Seed AI Evaluation
-═══════════════════════════════════
+ATCS-GH | Multi-Seed AI Evaluation (Achimota/Neoplan Junction)
+==============================================================
 Runs the trained DQN agent across multiple SUMO seeds to produce
 confidence intervals for the research paper.
 
@@ -20,7 +20,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 
-# ── SUMO / TraCI setup (same as run_ai.py) ──────────────────────────────────
+# -- SUMO / TraCI setup -------------------------------------------------------
 
 def _setup_sumo() -> str:
     home = os.environ.get("SUMO_HOME")
@@ -58,11 +58,14 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from dqn_agent import DQNAgent
 from metrics_logger import MetricsLogger
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, EMERGENCY_TYPE,
-    NS_GREEN, NS_YELLOW, EW_GREEN, EW_YELLOW, PHASE_NAMES,
-    EDGE_TO_GREEN, STATE_SIZE, ACTION_SIZE,
-    DECISION_INTERVAL, MIN_GREEN_DURATION, YELLOW_DURATION,
-    MAX_QUEUE, MAX_WAIT, MAX_PHASE_T,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
+    NS_ALL, EW_ALL,
+    PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
+    EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    STATE_SIZE, ACTION_SIZE, NUM_PHASES,
+    DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
+    MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
 )
 
 SIM_DIR      = PROJECT_ROOT / "simulation"
@@ -71,7 +74,7 @@ CONFIG_FILE  = SIM_DIR / "intersection.sumocfg"
 DEFAULT_MODEL = PROJECT_ROOT / "ai" / "best_model.pth"
 SIM_DURATION = 7200
 
-# ── Reuse helpers from run_ai.py ─────────────────────────────────────────────
+# -- Helpers (mirror run_ai.py) ------------------------------------------------
 
 def find_sumo_binary() -> str:
     for p in [os.path.join(SUMO_HOME, "bin", "sumo"),
@@ -82,32 +85,41 @@ def find_sumo_binary() -> str:
     sys.exit("[ERROR] sumo binary not found")
 
 
-def build_state(phase, phase_timer, in_yellow):
-    queues = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-    waits  = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
+def build_state(phase, phase_timer, _in_yellow):
+    lane_queues = np.zeros(len(INCOMING_LANES), dtype=np.float32)
+    lane_speeds = np.zeros(len(INCOMING_LANES), dtype=np.float32)
+    lane_waits  = np.zeros(len(INCOMING_LANES), dtype=np.float32)
+    for i, lane_id in enumerate(INCOMING_LANES):
+        try:
+            lane_queues[i] = float(traci.lane.getLastStepHaltingNumber(lane_id))
+            lane_speeds[i] = float(traci.lane.getLastStepMeanSpeed(lane_id))
+            lane_waits[i]  = float(traci.lane.getWaitingTime(lane_id))
+        except traci.exceptions.TraCIException:
+            pass
+    approach_queues = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
     for i, edge in enumerate(INCOMING_EDGES):
-        total_q = 0; total_w = 0.0; n_lanes = 0
         try:
             n_lanes = traci.edge.getLaneNumber(edge)
             for idx in range(n_lanes):
-                lid = f"{edge}_{idx}"
-                total_q += traci.lane.getLastStepHaltingNumber(lid)
-                total_w += traci.lane.getWaitingTime(lid)
+                approach_queues[i] += traci.lane.getLastStepHaltingNumber(f"{edge}_{idx}")
         except traci.exceptions.TraCIException:
             pass
-        queues[i] = float(total_q)
-        waits[i]  = float(total_w / max(n_lanes, 1))
-    phase_vec = np.zeros(4, dtype=np.float32); phase_vec[phase] = 1.0
+    phase_vec = np.zeros(NUM_PHASES, dtype=np.float32)
+    phase_vec[phase] = 1.0
     t_norm = np.float32(min(phase_timer / MAX_PHASE_T, 1.0))
     emerg = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
     for i, edge in enumerate(INCOMING_EDGES):
         try:
             for vid in traci.edge.getLastStepVehicleIDs(edge):
                 if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                    emerg[i] = 1.0; break
+                    emerg[i] = 1.0
+                    break
         except traci.exceptions.TraCIException:
             pass
-    return np.concatenate([queues/MAX_QUEUE, waits/MAX_WAIT, phase_vec, [t_norm], emerg]).astype(np.float32)
+    return np.concatenate([
+        lane_queues / MAX_QUEUE_LANE, lane_speeds / MAX_SPEED, lane_waits / MAX_WAIT,
+        approach_queues / MAX_QUEUE, phase_vec, [t_norm], emerg,
+    ]).astype(np.float32)
 
 
 def check_emergency_preemption(phase, in_yellow, next_green):
@@ -116,13 +128,29 @@ def check_emergency_preemption(phase, in_yellow, next_green):
             for vid in traci.edge.getLastStepVehicleIDs(edge):
                 if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
                     continue
-                target = EDGE_TO_GREEN[edge]
-                if phase == target or (in_yellow and next_green == target):
-                    continue
-                return True, target
+                green_options = EDGE_TO_GREENS[edge]
+                already_serving = (
+                    phase in green_options
+                    or (in_yellow and next_green in green_options)
+                )
+                if not already_serving:
+                    return True, green_options[0]
         except traci.exceptions.TraCIException:
             pass
     return False, None
+
+
+def _can_switch(phase, phase_timer, in_yellow):
+    if in_yellow or phase not in GREEN_PHASES:
+        return False
+    min_green = (MIN_GREEN_LEFT if phase in (NS_LEFT, EW_LEFT) else MIN_GREEN_THROUGH)
+    return phase_timer >= min_green
+
+
+def _get_yellow_for_phase(phase):
+    if phase in (NS_THROUGH, NS_LEFT, NS_ALL):
+        return NS_YELLOW
+    return EW_YELLOW
 
 
 def _install_ai_tl_program():
@@ -136,13 +164,13 @@ def _install_ai_tl_program():
     )
     traci.trafficlight.setProgramLogic(TL_ID, ai_logic)
     traci.trafficlight.setProgram(TL_ID, "ai_control")
-    traci.trafficlight.setPhase(TL_ID, NS_GREEN)
+    traci.trafficlight.setRedYellowGreenState(TL_ID, PHASE_SIGNALS[NS_THROUGH])
 
 
-# ── Single-seed evaluation ───────────────────────────────────────────────────
+# -- Single-seed evaluation ---------------------------------------------------
 
 def run_one_seed(agent: DQNAgent, seed: int) -> dict:
-    """Run one 7200s evaluation episode with a given SUMO seed. Returns stats dict."""
+    """Run one 7200s evaluation episode with a given SUMO seed."""
     sumo_cmd = [
         find_sumo_binary(),
         "-c", str(CONFIG_FILE),
@@ -154,8 +182,12 @@ def run_one_seed(agent: DQNAgent, seed: int) -> dict:
     traci.start(sumo_cmd)
     _install_ai_tl_program()
 
-    phase = NS_GREEN; phase_timer = 0; in_yellow = False
-    yellow_cd = 0; next_green = EW_GREEN; steps_in_block = 0
+    phase = NS_THROUGH
+    phase_timer = 0
+    in_yellow = False
+    yellow_cd = 0
+    next_green = EW_THROUGH
+    steps_in_block = 0
     logger = MetricsLogger(output_path=DATA_DIR / f"ai_eval_seed{seed}.csv")
 
     try:
@@ -165,27 +197,35 @@ def run_one_seed(agent: DQNAgent, seed: int) -> dict:
                 preempt, target = check_emergency_preemption(
                     phase, in_yellow, next_green if in_yellow else None)
                 if preempt and target is not None:
-                    action = 1 if target != phase else 0
-                    if action == 1 and not in_yellow:
-                        yellow = NS_YELLOW if phase == NS_GREEN else EW_YELLOW
+                    if target != phase and not in_yellow:
+                        yellow_phase = _get_yellow_for_phase(phase)
                         next_green = target
-                        traci.trafficlight.setPhase(TL_ID, yellow)
-                        phase = yellow; in_yellow = True; yellow_cd = YELLOW_DURATION
+                        traci.trafficlight.setRedYellowGreenState(
+                            TL_ID, PHASE_SIGNALS[yellow_phase])
+                        phase = yellow_phase
+                        in_yellow = True
+                        yellow_cd = YELLOW_DURATION
                 else:
                     action = agent.select_action(state)
-                    if (action == 1 and not in_yellow
-                            and phase in (NS_GREEN, EW_GREEN)
-                            and phase_timer >= MIN_GREEN_DURATION):
-                        yellow = NS_YELLOW if phase == NS_GREEN else EW_YELLOW
-                        next_green = EW_GREEN if phase == NS_GREEN else NS_GREEN
-                        traci.trafficlight.setPhase(TL_ID, yellow)
-                        phase = yellow; in_yellow = True; yellow_cd = YELLOW_DURATION
+                    if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
+                        t_phase = ACTION_TO_PHASE[action]
+                        if t_phase != phase:
+                            yellow_phase = _get_yellow_for_phase(phase)
+                            next_green = t_phase
+                            traci.trafficlight.setRedYellowGreenState(
+                                TL_ID, PHASE_SIGNALS[yellow_phase])
+                            phase = yellow_phase
+                            in_yellow = True
+                            yellow_cd = YELLOW_DURATION
 
             if in_yellow:
                 yellow_cd -= 1
                 if yellow_cd <= 0:
-                    traci.trafficlight.setPhase(TL_ID, next_green)
-                    phase = next_green; in_yellow = False; phase_timer = 0
+                    traci.trafficlight.setRedYellowGreenState(
+                        TL_ID, PHASE_SIGNALS[next_green])
+                    phase = next_green
+                    in_yellow = False
+                    phase_timer = 0
 
             traci.simulationStep()
             phase_timer += 1
@@ -209,7 +249,7 @@ def run_one_seed(agent: DQNAgent, seed: int) -> dict:
     }
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-seed AI evaluation")
@@ -225,17 +265,16 @@ def main():
     agent.load(model_path)
     agent.set_eval_mode()
 
-    # Use varied seeds (prime-spaced to avoid correlation with training seeds)
     seed_list = [42, 271, 503, 719, 997, 1231, 1567, 1811, 2039, 2281][:args.seeds]
 
-    print("\n" + "═" * 62)
-    print("  ATCS-GH — Multi-Seed AI Evaluation")
-    print("═" * 62)
+    print("\n" + "=" * 62)
+    print("  ATCS-GH -- Multi-Seed AI Evaluation (Achimota Junction)")
+    print("=" * 62)
     print(f"  Model : {model_path.name}")
-    print(f"  Seeds : {args.seeds}  →  {seed_list}")
-    print("═" * 62)
+    print(f"  Seeds : {args.seeds}  ->  {seed_list}")
+    print("=" * 62)
     print(f"\n  {'Seed':>6}  {'Avg Wait':>9}  {'Peak Q':>7}  {'Completed':>10}  {'Throughput':>11}  {'Time':>6}")
-    print("  " + "─" * 58)
+    print("  " + "-" * 58)
 
     results = []
     for seed in seed_list:
@@ -246,24 +285,21 @@ def main():
         print(f"  {seed:>6}  {r['avg_wait']:>8.2f}s  {r['peak_queue']:>7}  "
               f"{r['completed']:>10,}  {r['throughput']:>8.1f} v/m  {elapsed:>5.0f}s")
 
-    # ── Summary statistics ───────────────────────────────────────────────────
     waits = [r["avg_wait"] for r in results]
     queues = [r["peak_queue"] for r in results]
     completed = [r["completed"] for r in results]
 
-    mean_w = np.mean(waits); std_w = np.std(waits)
-    mean_q = np.mean(queues); std_q = np.std(queues)
-    mean_c = np.mean(completed); std_c = np.std(completed)
+    mean_w = np.mean(waits)
+    std_w = np.std(waits)
 
-    print("\n" + "═" * 62)
+    print("\n" + "=" * 62)
     print("  SUMMARY")
-    print("═" * 62)
-    print(f"  Avg wait time  :  {mean_w:.2f} ± {std_w:.2f}s  (range: {min(waits):.1f}–{max(waits):.1f})")
-    print(f"  Peak queue     :  {mean_q:.1f} ± {std_q:.1f}    (range: {min(queues)}–{max(queues)})")
-    print(f"  Completed vehs :  {mean_c:.0f} ± {std_c:.0f}   (range: {min(completed)}–{max(completed)})")
+    print("=" * 62)
+    print(f"  Avg wait time  :  {mean_w:.2f} +/- {std_w:.2f}s  (range: {min(waits):.1f}-{max(waits):.1f})")
+    print(f"  Peak queue     :  {np.mean(queues):.1f} +/- {np.std(queues):.1f}")
+    print(f"  Completed vehs :  {np.mean(completed):.0f} +/- {np.std(completed):.0f}")
     print()
 
-    # Load baseline for comparison
     baseline_csv = DATA_DIR / "baseline_results.csv"
     if baseline_csv.exists():
         import csv as _csv
@@ -271,27 +307,17 @@ def main():
             rows = list(_csv.DictReader(f))
         bl_wait = sum(float(r["avg_wait_time_s"]) for r in rows) / len(rows)
         delta = (mean_w - bl_wait) / bl_wait * 100
-        print(f"  Baseline avg wait (naive 45/45) : {bl_wait:.2f}s")
-        print(f"  AI improvement                  : {abs(delta):.1f}% {'BETTER' if delta < 0 else 'WORSE'}")
+        print(f"  Baseline avg wait : {bl_wait:.2f}s")
+        print(f"  AI improvement    : {abs(delta):.1f}% {'BETTER' if delta < 0 else 'WORSE'}")
 
-    tuned_csv = DATA_DIR / "baseline_tuned_results.csv"
-    if tuned_csv.exists():
-        with open(tuned_csv) as f:
-            rows = list(_csv.DictReader(f))
-        bl_tuned = sum(float(r["avg_wait_time_s"]) for r in rows) / len(rows)
-        delta_t = (mean_w - bl_tuned) / bl_tuned * 100
-        print(f"  Baseline avg wait (tuned 55/35) : {bl_tuned:.2f}s")
-        print(f"  AI improvement                  : {abs(delta_t):.1f}% {'BETTER' if delta_t < 0 else 'WORSE'}")
+    print("=" * 62 + "\n")
 
-    print("═" * 62 + "\n")
-
-    # Save summary CSV
     summary_path = DATA_DIR / "eval_multi_seed_summary.csv"
     with open(summary_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["seed", "avg_wait", "peak_queue", "completed", "throughput"])
         w.writeheader()
         w.writerows(results)
-    print(f"  Per-seed results → {summary_path.relative_to(PROJECT_ROOT)}")
+    print(f"  Per-seed results -> {summary_path.relative_to(PROJECT_ROOT)}")
 
 
 if __name__ == "__main__":
