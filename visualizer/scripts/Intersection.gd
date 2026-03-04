@@ -11,13 +11,15 @@ extends Node3D
 ##   SUMO West  (X-) → Godot -X
 ##   Road surface sits at Y = 0
 ##
-## Phase-to-light mapping (6 phases):
+## Phase-to-light mapping (8 phases):
 ##   Phase 0 (NS_THROUGH): N/S straight = GREEN,  E/W = RED
 ##   Phase 1 (NS_LEFT):    N/S left arrow = GREEN, E/W = RED
 ##   Phase 2 (NS_YELLOW):  N/S = YELLOW, E/W = RED
 ##   Phase 3 (EW_THROUGH): E/W straight = GREEN,  N/S = RED
 ##   Phase 4 (EW_LEFT):    E/W left arrow = GREEN, N/S = RED
 ##   Phase 5 (EW_YELLOW):  E/W = YELLOW, N/S = RED
+##   Phase 6 (NS_ALL):     N/S all green + arrow, E/W = RED
+##   Phase 7 (EW_ALL):     E/W all green + arrow, N/S = RED
 
 # ── Phase constants (must match Python traffic_env.py) ───────────────────────
 const NS_THROUGH := 0
@@ -26,6 +28,8 @@ const NS_YELLOW  := 2
 const EW_THROUGH := 3
 const EW_LEFT    := 4
 const EW_YELLOW  := 5
+const NS_ALL     := 6
+const EW_ALL     := 7
 
 # ── Road geometry constants (Achimota/Neoplan Junction calibration) ──────────
 const ROAD_LENGTH     := 30.0   # Length of each road arm (Godot units)
@@ -132,6 +136,12 @@ func update_lights(data: Dictionary) -> void:
 			ew_arrow = true
 		EW_YELLOW:
 			ew_state = "yellow"
+		NS_ALL:
+			ns_state = "green"
+			ns_arrow = true
+		EW_ALL:
+			ew_state = "green"
+			ew_arrow = true
 
 	_set_light("north", ns_state)
 	_set_light("south", ns_state)
