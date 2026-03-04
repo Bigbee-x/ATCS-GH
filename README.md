@@ -1,23 +1,41 @@
 # ATCS-GH — Adaptive Traffic Control System Ghana
 
-> **AI-powered smart traffic control for Accra, Ghana**
-> Phase 1: Baseline fixed-timer simulation
+> **AI-powered smart traffic control for the Achimota/Neoplan Junction, Accra**
 
 ---
 
 ## Overview
 
-ATCS-GH models a typical busy Accra 4-way junction using [SUMO](https://sumo.dlr.de/) (Simulation of Urban MObility) and Python. The project is structured in phases:
+ATCS-GH uses a **Double DQN** reinforcement learning agent to adaptively control traffic signals at a real Accra junction — the Achimota/Neoplan Junction on the N6 Nsawam Road (GPS: 5.6216N, 0.2193W). The system replaces traditional fixed-timer lights with an AI that observes real-time traffic and dynamically adjusts signal phases to minimise wait times, reduce congestion, and prioritise emergency vehicles.
+
+The project includes a **real-time 3D visualiser** built in Godot 4 — entirely procedural (no external assets, no plugins) — connected to the simulation via WebSocket.
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| **Phase 1** | ✅ Complete | Fixed-timer baseline — mirrors current Accra lights |
-| **Phase 2** | 🔜 Next | RL agent replaces fixed timer with adaptive control |
-| **Phase 3** | 🔜 Future | Multi-intersection network, pedestrians, field testing |
+| **Phase 1** | Done | Fixed-timer baseline (81.83s avg wait) |
+| **Phase 2** | Active | DQN agent with 7-action control, training in progress |
+| **Phase 3** | Future | Multi-intersection N6 corridor, field testing |
 
-### Why Accra?
+### Target
 
-Accra's intersections run on simple fixed-timer lights that ignore real-time traffic. During morning rush, this causes severe congestion on N-S arterials. ATCS-GH targets a **40% reduction in average vehicle wait time** using reinforcement learning.
+**40% reduction** in average vehicle wait time: from 81.83s (baseline) to below 49.10s using AI-controlled signals.
+
+---
+
+## Architecture
+
+```
+SUMO Traffic Sim <--TraCI--> Python AI Server <--WebSocket--> Godot 4 Visualiser
+                             (port 8765)                     (3D Renderer)
+```
+
+| Component | Technology | Role |
+|-----------|-----------|------|
+| Traffic Simulation | SUMO + TraCI | Microsimulation of vehicles and signals |
+| AI Agent | PyTorch (Double DQN) | Observes 38-dim state, selects from 7 actions |
+| Training Pipeline | Python | Epsilon-greedy, experience replay, target network |
+| WebSocket Server | Python asyncio | Bridges AI to the visualiser in real-time |
+| 3D Visualiser | Godot 4 (GDScript) | Procedural 3D rendering of live traffic |
 
 ---
 
@@ -25,23 +43,45 @@ Accra's intersections run on simple fixed-timer lights that ignore real-time tra
 
 ```
 ATCS-GH/
-├── simulation/                 # SUMO network and demand files
-│   ├── nodes.nod.xml           # Junction nodes (input for netconvert)
-│   ├── edges.edg.xml           # Road edges    (input for netconvert)
-│   ├── routes.rou.xml          # Vehicle demand + emergency vehicles
-│   ├── intersection.sumocfg    # SUMO run configuration
-│   └── intersection.net.xml    # ⚠ GENERATED — run build_network.py first
+├── simulation/                    # SUMO network files
+│   ├── nodes.nod.xml              # Junction node definition
+│   ├── edges.edg.xml              # Road edges (Achimota-calibrated)
+│   ├── routes.rou.xml             # Vehicle demand + trotros + ambulances
+│   ├── intersection.sumocfg       # SUMO configuration
+│   └── intersection.net.xml       # Generated network (15 connections)
+│
+├── ai/                            # DQN agent and environment
+│   ├── traffic_env.py             # Gym-style SUMO environment (38-dim state, 7 actions)
+│   ├── dqn_agent.py               # Double DQN with replay buffer
+│   ├── best_model.pth             # Best trained model checkpoint
+│   └── checkpoints/               # Periodic training checkpoints
 │
 ├── scripts/
-│   ├── build_network.py        # Step 1: compile net.xml from nod + edg files
-│   ├── run_baseline.py         # Step 2: run Phase 1 simulation via TraCI
-│   └── metrics_logger.py       # Reusable metrics class (Phase 1 & 2 share this)
+│   ├── build_network.py           # Compile net.xml via netconvert
+│   ├── run_baseline.py            # Phase 1 fixed-timer simulation
+│   ├── train_agent.py             # Phase 2 DQN training loop
+│   ├── run_ai.py                  # Run trained AI on full 2-hour scenario
+│   ├── eval_multi_seed.py         # Multi-seed evaluation with confidence intervals
+│   ├── visualizer_server.py       # WebSocket server for Godot visualiser
+│   ├── metrics_logger.py          # Shared metrics collection (CSV output)
+│   └── launch_visualizer.sh       # One-line launch script
 │
-├── data/
-│   └── baseline_results.csv    # ⚠ GENERATED — simulation output
+├── visualizer/                    # Godot 4 project (fully procedural)
+│   ├── project.godot
+│   └── scripts/
+│       ├── Main.gd                # Orchestrator
+│       ├── Intersection.gd        # 3D road geometry + traffic lights
+│       ├── VehicleManager.gd      # Vehicle pool rendering
+│       ├── UI.gd                  # HUD overlay
+│       ├── MetricsChart.gd        # Real-time chart plotting
+│       ├── AudioManager.gd        # Ambient sounds + sirens
+│       └── WebSocketClient.gd     # Server connection
 │
-├── ai/                         # Phase 2: RL controller (coming soon)
-├── docs/                       # Notes, research, design decisions
+├── data/                          # Generated CSV results
+│   ├── baseline_results.csv
+│   ├── training_log.csv
+│   └── ai_results.csv
+│
 └── requirements.txt
 ```
 
@@ -49,181 +89,139 @@ ATCS-GH/
 
 ## Quick Start
 
-### 1. Install SUMO
-
-**macOS — Homebrew (recommended):**
-```bash
-brew install sumo
-```
-
-Add to `~/.zshrc`:
-```bash
-export SUMO_HOME=/opt/homebrew/share/sumo
-export PATH=$SUMO_HOME/bin:$PATH
-```
-
-Reload:
-```bash
-source ~/.zshrc
-```
-
-Verify:
-```bash
-sumo --version
-netconvert --version
-```
-
-> **Apple Silicon (M1/M2/M3)?** The path above is correct for Homebrew on Apple Silicon.
-> **Intel Mac?** Use `/usr/local/share/sumo` instead.
-
----
-
-### 2. Install Python Dependencies
+### 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+SUMO is required:
+```bash
+pip install eclipse-sumo    # easiest method
+# or
+brew install sumo           # macOS Homebrew
+```
 
-### 3. Build the Road Network
+### 2. Build the Network
 
 ```bash
 python scripts/build_network.py
 ```
 
-This runs `netconvert` to compile `nodes.nod.xml` + `edges.edg.xml` into `simulation/intersection.net.xml`.
-
-Expected output:
-```
-[OK] SUMO home  : /opt/homebrew/share/sumo
-[OK] netconvert : /opt/homebrew/bin/netconvert
-[OK] Input files : .../simulation
-[RUN] netconvert ...
-[OK] Network built → .../simulation/intersection.net.xml
-```
-
----
-
-### 4. Run the Baseline Simulation
+### 3. Run the Baseline
 
 ```bash
-# Headless — fast, recommended for data collection
-python scripts/run_baseline.py
-
-# With SUMO-GUI — watch the simulation visually
-python scripts/run_baseline.py --gui
+python scripts/run_baseline.py              # naive 45/45 timer
+python scripts/run_baseline.py --tuned      # demand-proportional 60/30 timer
+python scripts/run_baseline.py --gui        # with SUMO visual GUI
 ```
 
-The simulation runs 7,200 steps (2 hours). Expect it to finish in **2–5 minutes** in headless mode.
+### 4. Train the AI
+
+```bash
+python scripts/train_agent.py --episodes 200
+```
+
+Training uses Apple Silicon MPS acceleration when available. Each episode runs a full 2-hour simulation (~2 min wall time).
+
+### 5. Run the Trained AI
+
+```bash
+python scripts/run_ai.py                               # uses best_model.pth
+python scripts/run_ai.py --model ai/best_model.pth      # specific checkpoint
+```
+
+### 6. Launch the 3D Visualiser
+
+```bash
+# Start the WebSocket server
+python scripts/visualizer_server.py          # AI mode
+python scripts/visualizer_server.py --demo   # random actions (no model needed)
+
+# Then open visualizer/project.godot in Godot 4.2+ and press F5
+```
 
 ---
 
-## What the Simulation Models
+## Achimota/Neoplan Junction
 
-### Intersection Design
-
-A 4-way junction modelled on a typical Accra arterial crossing (e.g. Ring Road / Starlet Road style):
+The simulation is calibrated to the real Achimota/Neoplan Junction on Accra's N6 Nsawam Road, part of Ghana's ATMC smart signal network.
 
 ```
-              NORTH (heavy inbound)
-                ↕↕
-   WEST (light) ⬛ EAST (moderate)
-                ↕↕
-              SOUTH (counter-flow)
+            Nsawam / Achimota Forest Rd (N)
+                   ↕↕ (2 lanes)
+  Guggisberg (W)  ─⬛─  Aggrey St (E)
+    (1 lane)       ↕↕    (2 lanes)
+              CBD / South (S)
+                (2 lanes)
 ```
 
-| Arm   | Lanes | Speed    | Notes                    |
-|-------|-------|----------|--------------------------|
-| North | 2     | 50 km/h  | Main arterial, CBD-bound |
-| South | 2     | 50 km/h  | Counter-flow             |
-| East  | 1     | 40 km/h  | Side street              |
-| West  | 1     | 40 km/h  | Side street              |
+| Approach | Road | Lanes | Speed | Demand |
+|----------|------|-------|-------|--------|
+| North | Achimota Forest Rd (from Nsawam) | 2 | 50 km/h | 900 veh/hr |
+| South | Achimota Forest Rd (from CBD) | 2 | 50 km/h | 420 veh/hr |
+| East | Aggrey Street | 2 | 50 km/h | 320 veh/hr |
+| West | Guggisberg Street | 1 | 30 km/h | 300 veh/hr |
 
-### Traffic Demand (07:00–09:00 Morning Rush)
-
-| Route       | Volume    | Vehicle Mix       |
-|-------------|-----------|-------------------|
-| North → South | ~900/hr | 90% car, 10% trotro |
-| South → North | ~300/hr | 90% car, 10% trotro |
-| West → North  | ~310/hr | cars               |
-| East → West   | ~270/hr | cars               |
-| (turn movements) | 90–200/hr | cars         |
-
-Total: ~3,200 vehicles/hour across all movements.
-
-### Fixed Timer (Baseline)
-
-```
-NS GREEN  ████████████████████████████████████████████████  45s
-NS YELLOW ███  3s
-EW GREEN  ████████████████████████████████████████████████  45s
-EW YELLOW ███  3s
-                                              Cycle: 96s
-```
-
-This is the **dumb timer** ATCS-GH is designed to replace.
-
-### Emergency Vehicle Scenarios
-
-Three ambulances enter the simulation at pre-calculated times to test
-how long the fixed timer makes emergency vehicles wait at red lights.
-
-| Vehicle     | Route         | Expected Wait |
-|-------------|---------------|---------------|
-| ambulance_1 | North → South | ~26 seconds   |
-| ambulance_2 | West → North  | varies        |
-| ambulance_3 | South → North | varies        |
-
-In Phase 2, the AI will preempt the signal immediately.
+Total: ~2,270 vehicles/hour including trotro (minibus) flows.
 
 ---
 
-## Output
+## AI Agent
 
-### CSV: `data/baseline_results.csv`
+### State Vector (38 dimensions)
 
-One row per simulation second. Columns include:
+| Component | Dims | Description |
+|-----------|------|-------------|
+| Per-lane queue | 7 | Halted vehicles per incoming lane |
+| Per-lane speed | 7 | Average speed per lane |
+| Per-lane wait | 7 | Waiting time per lane |
+| Approach queues | 4 | Total queue per approach (N/S/E/W) |
+| Phase one-hot | 8 | Current signal phase encoding |
+| Phase timer | 1 | Time in current phase (normalised) |
+| Emergency flags | 4 | Ambulance presence per approach |
 
-| Column | Description |
-|--------|-------------|
-| `time_s` | Simulation time (seconds) |
-| `tl_phase` | Traffic light phase name |
-| `avg_wait_time_s` | Average waiting time across all incoming lanes |
-| `total_queue_vehicles` | Total halted vehicles at intersection |
-| `throughput_veh_per_min` | Vehicles completing journeys per minute |
-| `completed_vehicles` | Cumulative total arrivals |
-| `emergency_vehicles_waiting` | Stopped emergency vehicles this step |
-| `N2J_0_wait_s` … | Per-lane wait times |
-| `N2J_0_queue` … | Per-lane queue lengths |
+### Actions (7)
 
-### Terminal Report
+| Action | Effect |
+|--------|--------|
+| HOLD | Keep current phase |
+| NS_THROUGH | N/S straight + right green, left blocked |
+| NS_LEFT | N/S protected left turn |
+| EW_THROUGH | E/W straight + right green, left blocked |
+| EW_LEFT | E/W protected left turn |
+| NS_ALL | N/S all movements green (unprotected) |
+| EW_ALL | E/W all movements green (unprotected) |
 
-At the end of the simulation, a formatted report is printed showing overall performance and a **Phase 2 target** (40% wait-time reduction goal).
+### Signal Control
+
+The agent uses `traci.trafficlight.setRedYellowGreenState()` with 15-character signal strings (one character per junction connection) for direct per-movement control.
+
+### Emergency Preemption
+
+A hard safety layer detects approaching ambulances and forces green on their approach, overriding the AI's decision. This reduces emergency wait from ~100s (baseline) to near 0s.
 
 ---
 
-## Phase 2 Preview
+## Baseline Results (Achimota Network)
 
-The AI controller will live in `ai/`. The minimal change from Phase 1:
+| Metric | Naive (45/45) |
+|--------|--------------|
+| Avg Wait Time | 81.83s |
+| Vehicles Completed | 5,142 |
+| Peak Queue | 66 |
+| Throughput | 43.3 veh/min |
+| Worst Approach (CBD) | 435.88s |
+| Best Approach (Guggisberg) | 18.10s |
 
-```python
-# Phase 1 (fixed timer — passive):
-configure_fixed_timer(TL_ID)       # set once and leave it
-# ... step loop with metrics ...
-
-# Phase 2 (AI — active each step):
-action = agent.choose_action(state)          # RL agent decides
-traci.trafficlight.setPhase(TL_ID, action)   # apply decision
-# ... same MetricsLogger, same CSV format ...
-```
-
-The `MetricsLogger` class is shared — Phase 1 and Phase 2 produce identically structured CSVs for direct comparison.
+**AI Target:** < 49.10s average wait (40% reduction)
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- SUMO 1.14+ (with `netconvert` and TraCI)
+- SUMO 1.18+ (with TraCI)
+- PyTorch 2.0+
+- Godot 4.2+ (Standard edition, for visualiser)
 - macOS or Linux

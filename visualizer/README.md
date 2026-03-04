@@ -2,7 +2,7 @@
 
 Real-time 3D visualization of the ATCS-GH adaptive traffic control system, powered by **Valiborn Technologies**.
 
-Watch the DQN AI agent control a 4-way Accra-style intersection live in a Godot 4 3D environment.
+Watch the Double DQN AI agent control the **Achimota/Neoplan Junction** (N6 Nsawam Road, Accra) live in a Godot 4 3D environment — fully procedural geometry, no external assets.
 
 ## Architecture
 
@@ -103,14 +103,16 @@ The Python server broadcasts JSON packets every 5 simulation seconds:
 {
   "type": "state_update",
   "step": 720,
-  "phase_name": "NS_GREEN",
+  "phase_name": "NS_ALL",
   "queues": {"north": 8, "south": 12, "east": 3, "west": 15},
   "wait_times": {"north": 45.2, "south": 89.1, "east": 12.3, "west": 134.5},
   "emergency": {"active": true, "approach": "west", "vehicle_id": "ambulance_2"},
-  "ai_decision": "SWITCH",
-  "reward": -245.3
+  "ai_decision": "NS_ALL",
+  "reward": -45.3
 }
 ```
+
+**AI decisions** are one of: `HOLD`, `NS_THROUGH`, `NS_LEFT`, `EW_THROUGH`, `EW_LEFT`, `NS_ALL`, `EW_ALL`.
 
 The Godot client can send manual override commands:
 
@@ -139,9 +141,11 @@ visualizer/
 ├── scripts/
 │   ├── Main.gd             # Orchestrator — wires everything together
 │   ├── WebSocketClient.gd  # Connects to Python server
-│   ├── Intersection.gd     # 3D road geometry + traffic lights
+│   ├── Intersection.gd     # 3D road geometry + traffic lights (asymmetric E/W widths)
 │   ├── VehicleManager.gd   # Vehicle pool rendering
-│   └── UI.gd               # HUD overlay
+│   ├── UI.gd               # HUD overlay with per-approach queue bars
+│   ├── MetricsChart.gd     # Real-time chart plotting (wait time, throughput)
+│   └── AudioManager.gd     # Ambient city sounds + emergency sirens
 ├── assets/                 # (placeholder for future assets)
 └── README.md               # This file
 ```
