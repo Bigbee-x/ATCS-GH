@@ -11,12 +11,14 @@ extends Node3D
 ##   IsometricCamera (Camera3D)    — viewpoint
 ##   Intersection (Node3D)         — 3D road geometry + traffic lights
 ##   VehicleManager (Node3D)       — vehicle pool rendering
+##   PedestrianManager (Node3D)   — ambient walking pedestrians
 ##   UI (CanvasLayer → Control)    — HUD overlay
 
 # ── Child node references ────────────────────────────────────────────────────
 @onready var ws_client: WebSocketClient = $WebSocketClient
 @onready var intersection: Node3D = $Intersection
 @onready var vehicle_manager: Node3D = $VehicleManager
+@onready var pedestrian_manager: Node3D = $PedestrianManager
 @onready var audio_manager: Node = $AudioManager
 @onready var ui: Control = $UI/UIRoot
 @onready var camera: Camera3D = $IsometricCamera
@@ -96,6 +98,7 @@ func _on_sim_restarted(data: Dictionary) -> void:
 	var run: int = data.get("run", 0)
 	print("[Main] Simulation restarting (run #%d)..." % run)
 	vehicle_manager.clear_all()
+	pedestrian_manager.respawn()
 	audio_manager.reset_audio()
 	ui.reset_display()
 	_packets_received = 0

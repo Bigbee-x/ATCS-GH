@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://main_scene"]
+[gd_scene load_steps=10 format=3 uid="uid://main_scene"]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/WebSocketClient.gd" id="2_ws"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/VehicleManager.gd" id="4_vehicles"]
 [ext_resource type="Script" path="res://scripts/UI.gd" id="5_ui"]
 [ext_resource type="Script" path="res://scripts/AudioManager.gd" id="6_audio"]
+[ext_resource type="Script" path="res://scripts/PedestrianManager.gd" id="7_pedestrians"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.55, 0.85, 1)
@@ -56,6 +57,9 @@ script = ExtResource("3_intersection")
 
 [node name="VehicleManager" type="Node3D" parent="."]
 script = ExtResource("4_vehicles")
+
+[node name="PedestrianManager" type="Node3D" parent="."]
+script = ExtResource("7_pedestrians")
 
 [node name="AudioManager" type="Node" parent="."]
 script = ExtResource("6_audio")
