@@ -267,8 +267,33 @@ def generate_route_xml(name: str) -> str:
         for a in scenario["ambulances"]:
             lines.append(
                 f'  <vehicle id="{a["id"]}" type="emergency" route="{a["route"]}"'
-                f'\n           depart="{a["depart"]}" departLane="0" departSpeed="max"'
+                f'\n           depart="{a["depart"]}" departLane="1" departSpeed="max"'
                 f'\n           color="1,0,0"/>'
+            )
+
+    # Pedestrian crossing flows (scaled to scenario intensity)
+    lines.append("")
+    lines.append("  <!-- Pedestrian crossing flows -->")
+    total_vph = sum(f["vph"] for f in scenario["flows"])
+    # Scale pedestrian volume proportionally to vehicle volume
+    # Morning rush baseline: ~2640 veh/hr → ~400 ped/hr total
+    ped_scale = total_vph / 2640.0
+    ped_flows = [
+        ("ped_cross_N_e2w", "ACH_N2J", "ACH_J2N", int(100 * ped_scale)),
+        ("ped_cross_N_w2e", "ACH_J2N", "ACH_N2J", int(100 * ped_scale)),
+        ("ped_cross_S_e2w", "ACH_S2J", "ACH_J2S", int(100 * ped_scale)),
+        ("ped_cross_S_w2e", "ACH_J2S", "ACH_S2J", int(100 * ped_scale)),
+        ("ped_cross_E_n2s", "AGG_E2J", "AGG_J2E", int(60 * ped_scale)),
+        ("ped_cross_E_s2n", "AGG_J2E", "AGG_E2J", int(60 * ped_scale)),
+        ("ped_cross_W_n2s", "GUG_W2J", "GUG_J2W", int(40 * ped_scale)),
+        ("ped_cross_W_s2n", "GUG_J2W", "GUG_W2J", int(40 * ped_scale)),
+    ]
+    for pid, from_edge, to_edge, per_hour in ped_flows:
+        if per_hour > 0:
+            lines.append(
+                f'  <personFlow id="{pid}" begin="0" end="7200" perHour="{per_hour}">'
+                f'\n    <walk from="{from_edge}" to="{to_edge}"/>'
+                f'\n  </personFlow>'
             )
 
     lines.append("")

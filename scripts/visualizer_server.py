@@ -92,6 +92,7 @@ from traffic_env import (
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
+    CROSSING_EDGES, WALKING_AREAS,
     TrafficEnv,
 )
 
@@ -239,6 +240,32 @@ def _collect_vehicle_data() -> list[dict]:
     return vehicles
 
 
+# ── Per-pedestrian data collection ─────────────────────────────────────────
+
+def _collect_pedestrian_data() -> list[dict]:
+    """
+    Collect position, speed, angle for every pedestrian near the junction.
+    Returns a list of dicts suitable for JSON broadcast to Godot.
+    """
+    pedestrians: list[dict] = []
+    try:
+        for pid in traci.person.getIDList():
+            x, y = traci.person.getPosition(pid)
+            # Only include pedestrians near the junction (within ~100m)
+            if 400 < x < 600 and 400 < y < 600:
+                pedestrians.append({
+                    "id":    pid,
+                    "x":     round(x, 2),
+                    "y":     round(y, 2),
+                    "speed": round(traci.person.getSpeed(pid), 2),
+                    "angle": round(traci.person.getAngle(pid), 1),
+                    "edge":  traci.person.getRoadID(pid),
+                })
+    except traci.exceptions.TraCIException:
+        pass
+    return pedestrians
+
+
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
 async def simulation_loop(mode: str, model_path: Path, speed: float):
@@ -367,9 +394,11 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Broadcast vehicle positions every sim-second
                     vehicle_data = _collect_vehicle_data()
+                    ped_data = _collect_pedestrian_data()
                     await broadcast({
                         "type": "vehicle_update",
                         "vehicles": vehicle_data,
+                        "pedestrians": ped_data,
                         "sim_time": env._sim_step,
                     })
 
@@ -396,6 +425,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                 total_queue = float(sum(final_queues))
                 env.total_arrived += block_arrived
+
+                # Count pedestrians waiting at crossings
+                total_ped_waiting = 0
+                for wa in WALKING_AREAS:
+                    try:
+                        total_ped_waiting += len(traci.edge.getLastStepPersonIDs(wa))
+                    except traci.exceptions.TraCIException:
+                        pass
+
                 reward = env._compute_reward(
                     total_queue=total_queue,
                     prev_total_queue=env._prev_total_queue,
@@ -408,6 +446,7 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                                           else MIN_GREEN_THROUGH)),
                     queue_distribution=final_queues,
                     wait_distribution=final_waits,
+                    n_ped_waiting=total_ped_waiting,
                 )
                 env._prev_total_queue = total_queue
 
@@ -502,6 +541,17 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Per-lane sensor data (for congestion overlays)
                     "lane_data": lane_data,
+
+                    # Pedestrian data
+                    "pedestrians": _collect_pedestrian_data(),
+
+                    # Crossing signal states (for visualizer crosswalk lights)
+                    "crossing_green": {
+                        "north": PHASE_SIGNALS.get(env._phase, "r" * 23)[19] in "Gg",
+                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 23)[20] in "Gg",
+                        "south": PHASE_SIGNALS.get(env._phase, "r" * 23)[21] in "Gg",
+                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 23)[22] in "Gg",
+                    },
 
                     # Meta
                     "mode": mode,

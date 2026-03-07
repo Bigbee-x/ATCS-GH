@@ -76,7 +76,7 @@ from traffic_env import (
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
-    NUM_PHASES,
+    NUM_PHASES, WALKING_AREAS, MAX_PED_QUEUE,
 )
 
 
@@ -121,12 +121,12 @@ def _load_baseline_stats() -> dict:
 BASELINE = _load_baseline_stats()
 
 
-# -- Helper: build 36-dim state vector ----------------------------------------
+# -- Helper: build 42-dim state vector ----------------------------------------
 
 def build_state(phase: int,
                 phase_timer: int,
                 _in_yellow: bool) -> np.ndarray:
-    """Build the 38-dimensional normalised state vector from TraCI."""
+    """Build the 42-dimensional normalised state vector from TraCI."""
     # Per-lane features (7 lanes x 3 = 21 dims)
     lane_queues = np.zeros(len(INCOMING_LANES), dtype=np.float32)
     lane_speeds = np.zeros(len(INCOMING_LANES), dtype=np.float32)
@@ -140,13 +140,13 @@ def build_state(phase: int,
         except traci.exceptions.TraCIException:
             pass
 
-    # Per-approach queues (4 dims)
+    # Per-approach queues (4 dims) — skip lane 0 (sidewalk)
     approach_queues = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
     for i, edge in enumerate(INCOMING_EDGES):
         try:
             n_lanes = traci.edge.getLaneNumber(edge)
             total_q = 0
-            for idx in range(n_lanes):
+            for idx in range(1, n_lanes):  # start at 1: lane 0 is sidewalk
                 total_q += traci.lane.getLastStepHaltingNumber(f"{edge}_{idx}")
             approach_queues[i] = float(total_q)
         except traci.exceptions.TraCIException:
@@ -169,6 +169,14 @@ def build_state(phase: int,
         except traci.exceptions.TraCIException:
             pass
 
+    # Pedestrian waiting counts (4 dims)
+    ped_counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
+    for i, wa in enumerate(WALKING_AREAS):
+        try:
+            ped_counts[i] = float(len(traci.edge.getLastStepPersonIDs(wa)))
+        except traci.exceptions.TraCIException:
+            pass
+
     state = np.concatenate([
         lane_queues / MAX_QUEUE_LANE,   # 7
         lane_speeds / MAX_SPEED,         # 7
@@ -177,7 +185,8 @@ def build_state(phase: int,
         phase_vec,                       # 8
         [t_norm],                        # 1
         emerg,                           # 4
-    ])                                   # = 38
+        ped_counts / MAX_PED_QUEUE,      # 4
+    ])                                   # = 42
     return state.astype(np.float32)
 
 

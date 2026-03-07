@@ -81,10 +81,20 @@ func _on_state_updated(data: Dictionary) -> void:
 	audio_manager.update_audio(data)
 	ui.update_display(data)
 
+	# Update SUMO-driven crossing pedestrians
+	var ped_list: Array = data.get("pedestrians", [])
+	if ped_list.size() > 0:
+		pedestrian_manager.update_crossing_pedestrians(ped_list)
+
 
 func _on_vehicle_updated(data: Dictionary) -> void:
 	## Handle per-second vehicle position updates (smooth animation).
 	vehicle_manager.update_vehicles(data)
+
+	# Update SUMO-driven crossing pedestrians (sent every sim-second)
+	var ped_list: Array = data.get("pedestrians", [])
+	if ped_list.size() > 0:
+		pedestrian_manager.update_crossing_pedestrians(ped_list)
 
 
 func _on_sim_completed(data: Dictionary) -> void:

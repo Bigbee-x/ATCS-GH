@@ -14,16 +14,18 @@ Design principles:
   - Emergency preemption is a HARD SAFETY LAYER inside step().
   - SUMO seed is parameterised for varied training episodes.
 
-State vector (38 dims):
+State vector (42 dims):
   [lq_0..lq_6,                  7  per-lane queue counts      (/ MAX_QUEUE_LANE)
    ls_0..ls_6,                  7  per-lane mean speeds       (/ MAX_SPEED)
    lw_0..lw_6,                  7  per-lane wait times        (/ MAX_WAIT)
    q_N, q_S, q_E, q_W,         4  approach queue totals      (/ MAX_QUEUE)
    ph_0..ph_7,                  8  one-hot phase encoding (8 phases)
    t_phase,                     1  normalised time in phase   (/ MAX_PHASE_T)
-   em_N, em_S, em_E, em_W]     4  emergency vehicle flags (binary)
+   em_N, em_S, em_E, em_W,     4  emergency vehicle flags (binary)
+   pw_0..pw_3]                  4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
 
-  Lanes: ACH_N2J_0/1, ACH_S2J_0/1, AGG_E2J_0/1, GUG_W2J_0
+  Lanes: ACH_N2J_1/2, ACH_S2J_1/2, AGG_E2J_1/2, GUG_W2J_1
+  (Lane 0 on each edge is the pedestrian sidewalk)
 
 Actions (7):
   0 -> keep current phase  (HOLD)
@@ -97,19 +99,30 @@ CONFIG_FILE  = SIM_DIR / "intersection.sumocfg"
 TL_ID          = "J0"
 INCOMING_EDGES = ["ACH_N2J", "ACH_S2J", "AGG_E2J", "GUG_W2J"]
 INCOMING_LANES = [
-    "ACH_N2J_0", "ACH_N2J_1",   # Achimota Forest Rd from Nsawam (2 lanes)
-    "ACH_S2J_0", "ACH_S2J_1",   # Achimota Forest Rd from CBD    (2 lanes)
-    "AGG_E2J_0", "AGG_E2J_1",   # Aggrey Street from east        (2 lanes)
-    "GUG_W2J_0",                 # Guggisberg Street from west    (1 lane)
+    "ACH_N2J_1", "ACH_N2J_2",   # Achimota Forest Rd from Nsawam (vehicle lanes)
+    "ACH_S2J_1", "ACH_S2J_2",   # Achimota Forest Rd from CBD    (vehicle lanes)
+    "AGG_E2J_1", "AGG_E2J_2",   # Aggrey Street from east        (vehicle lanes)
+    "GUG_W2J_1",                 # Guggisberg Street from west    (vehicle lane)
 ]
+# Note: lane index 0 on each edge is the pedestrian sidewalk
 EMERGENCY_TYPE = "emergency"
 
-# Phase indices -- 6 phases for through + left-turn separation
-# Connection mapping (15 movements from intersection.net.xml):
-#   pos 0-3:   ACH_N2J -> right(0), straight(1,2), left(3)
-#   pos 4-6:   AGG_E2J -> right(4), straight(5), left(6)
-#   pos 7-10:  ACH_S2J -> right(7), straight(8,9), left(10)
-#   pos 11-14: GUG_W2J -> right(11), straight(12,13), left(14)
+# Pedestrian crossing infrastructure (from rebuilt network with sidewalks)
+CROSSING_EDGES = [":J0_c0", ":J0_c1", ":J0_c2", ":J0_c3"]
+WALKING_AREAS  = [":J0_w0", ":J0_w1", ":J0_w2", ":J0_w3"]
+
+# Phase indices -- 8 phases for through + left-turn separation
+# Connection mapping (23 link indices from intersection.net.xml):
+#   pos 0-4:   ACH_N2J -> right(0), straight(1,2), left(3), uturn(4)
+#   pos 5-8:   AGG_E2J -> right(5), straight(6), left(7), uturn(8)
+#   pos 9-13:  ACH_S2J -> right(9), straight(10,11), left(12), uturn(13)
+#   pos 14-18: GUG_W2J -> right(14), straight(15,16), left(17), uturn(18)
+#   pos 19-22: crossings -> c0_N(19), c1_E(20), c2_S(21), c3_W(22)
+#
+# Pedestrian crossings piggyback on vehicle phases:
+#   NS phases: E/W crossings (c1,c3) green, N/S crossings (c0,c2) red
+#   EW phases: N/S crossings (c0,c2) green, E/W crossings (c1,c3) red
+#   Yellow/clearance: all crossings red
 NS_THROUGH = 0   # N/S straight + right protected, left blocked
 NS_LEFT    = 1   # N/S left protected, right permissive
 NS_YELLOW  = 2   # N/S clearing
@@ -127,17 +140,19 @@ PHASE_NAMES = {
     6: "NS_ALL",     7: "EW_ALL",
 }
 
-# 15-character signal state strings for setRedYellowGreenState()
-# Positions: N(0-3) E(4-6) S(7-10) W(11-14)
+# 23-character signal state strings for setRedYellowGreenState()
+# Positions: N(0-4) E(5-8) S(9-13) W(14-18) crossings(19-22)
+# Crossings: c0=N_arm(19), c1=E_arm(20), c2=S_arm(21), c3=W_arm(22)
 PHASE_SIGNALS = {
-    NS_THROUGH: "GGGrrrrGGGrrrrr",  # N/S: right+straight=G, left=r; E/W: all red
-    NS_LEFT:    "grrGrrrgrrGrrrr",   # N/S: left=G, right=g(permissive); E/W: red
-    NS_YELLOW:  "yyyyrrryyyyrrrr",   # N/S: all yellow; E/W: red
-    EW_THROUGH: "rrrrGGrrrrrGGGr",   # E/W: right+straight=G, left=r; N/S: red
-    EW_LEFT:    "rrrrgrGrrrrgrrG",   # E/W: left=G, right=g(permissive); N/S: red
-    EW_YELLOW:  "rrrryyyrrrryyyy",   # E/W: all yellow; N/S: red
-    NS_ALL:     "GGGGrrrGGGGrrrr",   # N/S: ALL movements green; E/W: red
-    EW_ALL:     "rrrrGGGrrrrGGGG",   # E/W: ALL movements green; N/S: red
+    #                  N----E---S----W----XWLK
+    NS_THROUGH: "GGGrrrrrrGGGrrrrrrrrGrG",   # N/S straight+right; EW crossings green
+    NS_LEFT:    "grrGrrrrrgrrGrrrrrrrGrG",   # N/S left protected; EW crossings green
+    NS_YELLOW:  "yyyyyrrrryyyyyrrrrrrrrr",   # N/S all yellow; all crossings red
+    EW_THROUGH: "rrrrrGGrrrrrrrGGGrrGrGr",  # EW straight+right; NS crossings green
+    EW_LEFT:    "rrrrrgrGrrrrrrgrrGrGrGr",   # EW left protected; NS crossings green
+    EW_YELLOW:  "rrrrryyyyrrrrryyyyyrrrr",   # EW all yellow; all crossings red
+    NS_ALL:     "GGGGrrrrrGGGGrrrrrrrGrG",  # N/S ALL green; EW crossings green
+    EW_ALL:     "rrrrrGGGrrrrrrGGGGrGrGr",  # EW ALL green; NS crossings green
 }
 
 # Green phases (non-yellow)
@@ -188,6 +203,7 @@ MAX_QUEUE_LANE = 25.0    # vehicles per lane
 MAX_SPEED      = 13.89   # 50 km/h in m/s (lane speed normalisation)
 MAX_WAIT       = 600.0   # seconds — higher than baseline (399s) to allow headroom
 MAX_PHASE_T    = 96.0    # one full 96-second TL cycle
+MAX_PED_QUEUE  = 15.0    # max pedestrians waiting at one walking area
 
 # ── Environment parameters ────────────────────────────────────────────────────
 DECISION_INTERVAL  = 5     # SUMO seconds between agent decisions
@@ -197,7 +213,7 @@ YELLOW_DURATION    = 3     # seconds of yellow clearance
 SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 
 # Exported constants for use by train_agent.py / run_ai.py
-STATE_SIZE  = 38   # 7*3 + 4 + 8(phases) + 1 + 4
+STATE_SIZE  = 42   # 7*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
 ACTION_SIZE = 7
 
 # ── Reward weights ────────────────────────────────────────────────────────────
@@ -211,6 +227,7 @@ W_FLICKER     = 10.0   # penalty for switching before MIN_GREEN_DURATION
 W_BALANCE     = 4.0    # bonus for balanced queue distribution (was 1.0 — increased
                         # to prevent N/S bias due to 2-lane vs 1-lane asymmetry)
 W_MAX_WAIT    = 0.4    # penalty per second any approach waits beyond the threshold
+W_PED_WAIT    = 0.3    # penalty per waiting pedestrian per decision block
 FAIR_WAIT_THRESH = 30.0  # seconds — acceptable wait; penalty kicks in above this
 
 
@@ -374,6 +391,10 @@ class TrafficEnv:
 
         min_g = (MIN_GREEN_LEFT if self._phase in (NS_LEFT, EW_LEFT)
                  else MIN_GREEN_THROUGH)
+        # Count pedestrians waiting at junction walking areas
+        ped_counts = self._get_pedestrian_counts()
+        total_ped_waiting = int(sum(ped_counts))
+
         reward = self._compute_reward(
             total_queue        = total_queue,
             prev_total_queue   = self._prev_total_queue,
@@ -383,6 +404,7 @@ class TrafficEnv:
                                   and self._phase_timer < min_g),
             queue_distribution = final_queues,
             wait_distribution  = final_waits,
+            n_ped_waiting      = total_ped_waiting,
         )
         self._prev_total_queue = total_queue
 
@@ -440,7 +462,7 @@ class TrafficEnv:
     # ── State Construction ────────────────────────────────────────────────────
 
     def _build_state(self) -> np.ndarray:
-        """Construct the 38-dimensional normalised state vector."""
+        """Construct the 42-dimensional normalised state vector."""
         lane_m = self._collect_lane_metrics()
         edge_m = self._collect_edge_metrics()
 
@@ -452,7 +474,7 @@ class TrafficEnv:
         # Per-approach aggregate queues (4 dims)
         approach_queues = np.array([edge_m[e]["queue"] for e in INCOMING_EDGES], dtype=np.float32)
 
-        # One-hot encode the current phase (6 dims)
+        # One-hot encode the current phase (8 dims)
         phase_vec = np.zeros(NUM_PHASES, dtype=np.float32)
         phase_vec[self._phase] = 1.0
 
@@ -462,6 +484,9 @@ class TrafficEnv:
         # Emergency vehicle presence per approach (binary, 4 dims)
         emerg_flags = self._get_emergency_flags()
 
+        # Pedestrian waiting counts per walking area (4 dims)
+        ped_counts = self._get_pedestrian_counts()
+
         state = np.concatenate([
             lane_queues / MAX_QUEUE_LANE,   # 7 values
             lane_speeds / MAX_SPEED,         # 7 values
@@ -470,7 +495,8 @@ class TrafficEnv:
             phase_vec,                       # 8 values
             [t_norm],                        # 1 value
             emerg_flags,                     # 4 values
-        ])                                   # = 38 total
+            ped_counts / MAX_PED_QUEUE,      # 4 values
+        ])                                   # = 42 total
         return state.astype(np.float32)
 
     # ── Reward Computation ────────────────────────────────────────────────────
@@ -482,7 +508,8 @@ class TrafficEnv:
                         n_emerg_waiting:   int,
                         switched_too_soon: bool,
                         queue_distribution: list[float],
-                        wait_distribution:  list[float] | None = None) -> float:
+                        wait_distribution:  list[float] | None = None,
+                        n_ped_waiting:     int = 0) -> float:
         """
         Multi-component reward function:
 
@@ -494,6 +521,7 @@ class TrafficEnv:
         6. Balance bonus           — rewards equal queue distribution across approaches
         7. Max-wait penalty        — penalises any single approach waiting too long
                                      (prevents E/W starvation from N/S throughput bias)
+        8. Pedestrian wait penalty — penalises waiting pedestrians at crossings
         """
         # 1. Absolute congestion penalty (per decision block)
         r_abs   = -W_QUEUE_ABS * total_queue
@@ -532,8 +560,11 @@ class TrafficEnv:
             excess     = max(0.0, worst_wait - FAIR_WAIT_THRESH)
             r_max_wait = -W_MAX_WAIT * excess
 
+        # 8. Pedestrian waiting penalty
+        r_ped = -W_PED_WAIT * n_ped_waiting
+
         return (r_abs + r_delta + r_thru + r_emerg
-                + r_flick + r_balance + r_max_wait)
+                + r_flick + r_balance + r_max_wait + r_ped)
 
     # ── Phase Control ─────────────────────────────────────────────────────────
 
@@ -703,6 +734,16 @@ class TrafficEnv:
             except traci.exceptions.TraCIException:
                 pass
         return flags
+
+    def _get_pedestrian_counts(self) -> np.ndarray:
+        """Return pedestrian count at each of the 4 junction walking areas."""
+        counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
+        for i, wa in enumerate(WALKING_AREAS):
+            try:
+                counts[i] = float(len(traci.edge.getLastStepPersonIDs(wa)))
+            except traci.exceptions.TraCIException:
+                pass
+        return counts
 
     def _check_emergency_preemption(self) -> tuple[bool, int | None]:
         """

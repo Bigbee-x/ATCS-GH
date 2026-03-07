@@ -128,20 +128,23 @@ TIMER_PRESETS = {
 # Human-readable phase names indexed by SUMO phase index (0–3)
 PHASE_NAMES = {0: "NS_GREEN", 1: "NS_YELLOW", 2: "EW_GREEN", 3: "EW_YELLOW"}
 
-# Explicit signal strings for the baseline fixed timer (15 connections).
-# Connection order from net.xml:
-#   0-3:  ACH_N2J (N→W right, N→S through×2, N→E left)
-#   4-6:  AGG_E2J (E→N right, E→W through, E→S left)
-#   7-10: ACH_S2J (S→E right, S→N through×2, S→W left)
-#   11-14: GUG_W2J (W→S right, W→E through×2, W→N left)
+# Explicit signal strings for the baseline fixed timer (23 connections).
+# Connection order from net.xml (19 vehicle movements + 4 crossings):
+#   0-4:   ACH_N2J (right, str1, str2, left, uturn)
+#   5-8:   AGG_E2J (right, str, left, uturn)
+#   9-13:  ACH_S2J (right, str1, str2, left, uturn)
+#   14-18: GUG_W2J (right, str1, str2, left, uturn)
+#   19: crossing c0 (N arm)  20: crossing c1 (E arm)
+#   21: crossing c2 (S arm)  22: crossing c3 (W arm)
 #
 # Baseline gives ALL movements green in their direction simultaneously
 # (no separate protected left-turn phases — that's the AI's advantage).
+# Pedestrian crossings piggyback: N/S green → E/W crossings green, and vice versa.
 BASELINE_SIGNALS = {
-    "NS_GREEN":  "GGGGrrrGGGGrrrr",   # N/S all green, E/W red
-    "NS_YELLOW": "yyyyrrryyyyrrrr",    # N/S yellow, E/W red
-    "EW_GREEN":  "rrrrGGGrrrrGGGG",    # E/W all green, N/S red
-    "EW_YELLOW": "rrrryyyrrrryyyy",    # E/W yellow, N/S red
+    "NS_GREEN":  "GGGGrrrrrGGGGrrrrrrrGrG",   # N/S all green + E/W crossings
+    "NS_YELLOW": "yyyyyrrrryyyyyrrrrrrrrr",     # N/S yellow, all crossings red
+    "EW_GREEN":  "rrrrrGGGrrrrrrGGGGrGrGr",    # E/W all green + N/S crossings
+    "EW_YELLOW": "rrrrryyyyrrrrryyyyyrrrr",     # E/W yellow, all crossings red
 }
 
 

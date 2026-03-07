@@ -170,17 +170,62 @@
 
   <!-- Ambulance 1: From Nsawam, heading toward CBD — hits junction during rush -->
   <vehicle id="ambulance_1" type="emergency" route="route_NS"
-           depart="130" departLane="0" departSpeed="max"
+           depart="130" departLane="1" departSpeed="max"
            color="1,0,0"/>
 
   <!-- Ambulance 2: From Guggisberg St, heading north — mid-simulation test -->
   <vehicle id="ambulance_2" type="emergency" route="route_WN"
-           depart="700" departLane="0" departSpeed="max"
+           depart="700" departLane="1" departSpeed="max"
            color="1,0,0"/>
 
   <!-- Ambulance 3: From CBD, heading toward Nsawam — 30 min into rush hour -->
   <vehicle id="ambulance_3" type="emergency" route="route_SN"
-           depart="1800" departLane="0" departSpeed="max"
+           depart="1800" departLane="1" departSpeed="max"
            color="1,0,0"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       PEDESTRIAN FLOWS — Crossing at Junction
+
+       Pedestrians walk from one side of each road arm to the other,
+       using the pedestrian crossings at junction J0.
+       Flow rates calibrated to morning rush at Achimota junction.
+
+       N/S arm crossings (N6 trunk road): ~200 ped/hr total
+       E arm crossing (Aggrey St): ~120 ped/hr total
+       W arm crossing (Guggisberg St): ~80 ped/hr total
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Crossing N arm (east↔west across Achimota Forest Rd, north side) -->
+  <personFlow id="ped_cross_N_e2w" begin="0" end="7200" perHour="100">
+    <walk from="ACH_N2J" to="ACH_J2N"/>
+  </personFlow>
+  <personFlow id="ped_cross_N_w2e" begin="0" end="7200" perHour="100">
+    <walk from="ACH_J2N" to="ACH_N2J"/>
+  </personFlow>
+
+  <!-- Crossing S arm (east↔west across Achimota Forest Rd, south side) -->
+  <personFlow id="ped_cross_S_e2w" begin="0" end="7200" perHour="100">
+    <walk from="ACH_S2J" to="ACH_J2S"/>
+  </personFlow>
+  <personFlow id="ped_cross_S_w2e" begin="0" end="7200" perHour="100">
+    <walk from="ACH_J2S" to="ACH_S2J"/>
+  </personFlow>
+
+  <!-- Crossing E arm (north↔south across Aggrey St, east side) -->
+  <personFlow id="ped_cross_E_n2s" begin="0" end="7200" perHour="60">
+    <walk from="AGG_E2J" to="AGG_J2E"/>
+  </personFlow>
+  <personFlow id="ped_cross_E_s2n" begin="0" end="7200" perHour="60">
+    <walk from="AGG_J2E" to="AGG_E2J"/>
+  </personFlow>
+
+  <!-- Crossing W arm (north↔south across Guggisberg St, west side) -->
+  <personFlow id="ped_cross_W_n2s" begin="0" end="7200" perHour="40">
+    <walk from="GUG_W2J" to="GUG_J2W"/>
+  </personFlow>
+  <personFlow id="ped_cross_W_s2n" begin="0" end="7200" perHour="40">
+    <walk from="GUG_J2W" to="GUG_W2J"/>
+  </personFlow>
 
 </routes>

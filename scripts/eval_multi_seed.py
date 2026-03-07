@@ -66,6 +66,7 @@ from traffic_env import (
     STATE_SIZE, ACTION_SIZE, NUM_PHASES,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
+    WALKING_AREAS, MAX_PED_QUEUE,
 )
 
 SIM_DIR      = PROJECT_ROOT / "simulation"
@@ -86,6 +87,7 @@ def find_sumo_binary() -> str:
 
 
 def build_state(phase, phase_timer, _in_yellow):
+    """Build 42-dim state vector from live SUMO data."""
     lane_queues = np.zeros(len(INCOMING_LANES), dtype=np.float32)
     lane_speeds = np.zeros(len(INCOMING_LANES), dtype=np.float32)
     lane_waits  = np.zeros(len(INCOMING_LANES), dtype=np.float32)
@@ -100,7 +102,7 @@ def build_state(phase, phase_timer, _in_yellow):
     for i, edge in enumerate(INCOMING_EDGES):
         try:
             n_lanes = traci.edge.getLaneNumber(edge)
-            for idx in range(n_lanes):
+            for idx in range(1, n_lanes):  # skip lane 0 (sidewalk)
                 approach_queues[i] += traci.lane.getLastStepHaltingNumber(f"{edge}_{idx}")
         except traci.exceptions.TraCIException:
             pass
@@ -116,9 +118,16 @@ def build_state(phase, phase_timer, _in_yellow):
                     break
         except traci.exceptions.TraCIException:
             pass
+    ped_counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
+    for i, wa in enumerate(WALKING_AREAS):
+        try:
+            ped_counts[i] = float(len(traci.edge.getLastStepPersonIDs(wa)))
+        except traci.exceptions.TraCIException:
+            pass
     return np.concatenate([
         lane_queues / MAX_QUEUE_LANE, lane_speeds / MAX_SPEED, lane_waits / MAX_WAIT,
         approach_queues / MAX_QUEUE, phase_vec, [t_norm], emerg,
+        ped_counts / MAX_PED_QUEUE,
     ]).astype(np.float32)
 
 

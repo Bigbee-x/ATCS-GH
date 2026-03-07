@@ -9,10 +9,10 @@ Architecture:
   ReplayBuffer — circular experience replay buffer
   DQNAgent     — full DQN agent (double DQN, target network, ε-greedy)
 
-The agent observes a 38-dimensional state vector (per-lane queues, speeds,
-wait times, approach queues, phase one-hot, timer, emergency flags) and
-outputs one of seven actions: HOLD, NS_THROUGH, NS_LEFT, EW_THROUGH,
-EW_LEFT, NS_ALL, EW_ALL.
+The agent observes a 42-dimensional state vector (per-lane queues, speeds,
+wait times, approach queues, phase one-hot, timer, emergency flags,
+pedestrian waiting counts) and outputs one of seven actions: HOLD,
+NS_THROUGH, NS_LEFT, EW_THROUGH, EW_LEFT, NS_ALL, EW_ALL.
 Calibrated to the Achimota/Neoplan Junction, N6 Nsawam Road, Accra.
 
 Phase 2 → Phase 3 extension points are marked with # [EXTEND].
@@ -153,7 +153,7 @@ class DQNAgent:
     #   After episode: 20 → ε≈0.60  |  60 → ε≈0.22  |  115 → ε≈0.05
 
     def __init__(self,
-                 state_size:  int = 38,
+                 state_size:  int = 42,
                  action_size: int = 7,
                  device:      str | None = None):
 

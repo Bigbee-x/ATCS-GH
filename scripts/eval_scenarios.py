@@ -67,6 +67,7 @@ from traffic_env import (
     STATE_SIZE, ACTION_SIZE, NUM_PHASES,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
+    WALKING_AREAS, MAX_PED_QUEUE,
 )
 
 SIM_DIR      = PROJECT_ROOT / "simulation"
@@ -76,12 +77,13 @@ CONFIG_FILE  = SIM_DIR / "intersection.sumocfg"
 DEFAULT_MODEL = PROJECT_ROOT / "ai" / "best_model.pth"
 SIM_DURATION = 7200
 
-# Baseline fixed-timer signals (same as run_baseline.py)
+# Baseline fixed-timer signals (23-char: 19 vehicle + 4 crossing)
+# Pedestrian crossings piggyback: N/S green → E/W crossings green, and vice versa
 BASELINE_SIGNALS = {
-    "NS_GREEN":  "GGGGrrrGGGGrrrr",
-    "NS_YELLOW": "yyyyrrryyyyrrrr",
-    "EW_GREEN":  "rrrrGGGrrrrGGGG",
-    "EW_YELLOW": "rrrryyyrrrryyyy",
+    "NS_GREEN":  "GGGGrrrrrGGGGrrrrrrrGrG",   # N/S all green + E/W crossings
+    "NS_YELLOW": "yyyyyrrrryyyyyrrrrrrrrr",     # N/S yellow, all crossings red
+    "EW_GREEN":  "rrrrrGGGrrrrrrGGGGrGrGr",    # E/W all green + N/S crossings
+    "EW_YELLOW": "rrrrryyyyrrrrryyyyyrrrr",     # E/W yellow, all crossings red
 }
 BASELINE_NS_GREEN = 60
 BASELINE_EW_GREEN = 30
@@ -114,7 +116,7 @@ def find_sumo_binary() -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def build_state(phase, phase_timer, _in_yellow):
-    """Build 38-dim state vector from live SUMO data."""
+    """Build 42-dim state vector from live SUMO data."""
     lane_queues = np.zeros(len(INCOMING_LANES), dtype=np.float32)
     lane_speeds = np.zeros(len(INCOMING_LANES), dtype=np.float32)
     lane_waits  = np.zeros(len(INCOMING_LANES), dtype=np.float32)
@@ -129,7 +131,7 @@ def build_state(phase, phase_timer, _in_yellow):
     for i, edge in enumerate(INCOMING_EDGES):
         try:
             n_lanes = traci.edge.getLaneNumber(edge)
-            for idx in range(n_lanes):
+            for idx in range(1, n_lanes):  # skip lane 0 (sidewalk)
                 approach_queues[i] += traci.lane.getLastStepHaltingNumber(f"{edge}_{idx}")
         except traci.exceptions.TraCIException:
             pass
@@ -145,9 +147,16 @@ def build_state(phase, phase_timer, _in_yellow):
                     break
         except traci.exceptions.TraCIException:
             pass
+    ped_counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
+    for i, wa in enumerate(WALKING_AREAS):
+        try:
+            ped_counts[i] = float(len(traci.edge.getLastStepPersonIDs(wa)))
+        except traci.exceptions.TraCIException:
+            pass
     return np.concatenate([
         lane_queues / MAX_QUEUE_LANE, lane_speeds / MAX_SPEED, lane_waits / MAX_WAIT,
         approach_queues / MAX_QUEUE, phase_vec, [t_norm], emerg,
+        ped_counts / MAX_PED_QUEUE,
     ]).astype(np.float32)
 
 

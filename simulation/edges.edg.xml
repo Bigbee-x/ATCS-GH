@@ -22,16 +22,16 @@
 -->
 <edges>
     <!-- ── Achimota Forest Road — N/S corridor (primary, 2 lanes each way) ── -->
-    <edge id="ACH_N2J" from="N"  to="J0" numLanes="2" speed="13.89" priority="2"/>
-    <edge id="ACH_J2N" from="J0" to="N"  numLanes="2" speed="13.89" priority="2"/>
-    <edge id="ACH_S2J" from="S"  to="J0" numLanes="2" speed="13.89" priority="2"/>
-    <edge id="ACH_J2S" from="J0" to="S"  numLanes="2" speed="13.89" priority="2"/>
+    <edge id="ACH_N2J" from="N"  to="J0" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_J2N" from="J0" to="N"  numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_S2J" from="S"  to="J0" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_J2S" from="J0" to="S"  numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
 
     <!-- ── Aggrey Street — East approach (secondary, 2 lanes each way) ────── -->
-    <edge id="AGG_E2J" from="E"  to="J0" numLanes="2" speed="13.89" priority="1"/>
-    <edge id="AGG_J2E" from="J0" to="E"  numLanes="2" speed="13.89" priority="1"/>
+    <edge id="AGG_E2J" from="E"  to="J0" numLanes="2" speed="13.89" priority="1" sidewalkWidth="1.5"/>
+    <edge id="AGG_J2E" from="J0" to="E"  numLanes="2" speed="13.89" priority="1" sidewalkWidth="1.5"/>
 
     <!-- ── Guggisberg Street — West approach (residential, 1 lane each way) ─ -->
-    <edge id="GUG_W2J" from="W"  to="J0" numLanes="1" speed="8.33"  priority="1"/>
-    <edge id="GUG_J2W" from="J0" to="W"  numLanes="1" speed="8.33"  priority="1"/>
+    <edge id="GUG_W2J" from="W"  to="J0" numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
+    <edge id="GUG_J2W" from="J0" to="W"  numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
 </edges>

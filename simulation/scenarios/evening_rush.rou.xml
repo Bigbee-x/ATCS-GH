@@ -92,13 +92,39 @@
 
   <!-- Emergency vehicles (3 ambulances) -->
   <vehicle id="ambulance_1" type="emergency" route="route_SN"
-           depart="200" departLane="0" departSpeed="max"
+           depart="200" departLane="1" departSpeed="max"
            color="1,0,0"/>
   <vehicle id="ambulance_2" type="emergency" route="route_EN"
-           depart="900" departLane="0" departSpeed="max"
+           depart="900" departLane="1" departSpeed="max"
            color="1,0,0"/>
   <vehicle id="ambulance_3" type="emergency" route="route_NS"
-           depart="2000" departLane="0" departSpeed="max"
+           depart="2000" departLane="1" departSpeed="max"
            color="1,0,0"/>
+
+  <!-- Pedestrian crossing flows -->
+  <personFlow id="ped_cross_N_e2w" begin="0" end="7200" perHour="100">
+    <walk from="ACH_N2J" to="ACH_J2N"/>
+  </personFlow>
+  <personFlow id="ped_cross_N_w2e" begin="0" end="7200" perHour="100">
+    <walk from="ACH_J2N" to="ACH_N2J"/>
+  </personFlow>
+  <personFlow id="ped_cross_S_e2w" begin="0" end="7200" perHour="100">
+    <walk from="ACH_S2J" to="ACH_J2S"/>
+  </personFlow>
+  <personFlow id="ped_cross_S_w2e" begin="0" end="7200" perHour="100">
+    <walk from="ACH_J2S" to="ACH_S2J"/>
+  </personFlow>
+  <personFlow id="ped_cross_E_n2s" begin="0" end="7200" perHour="60">
+    <walk from="AGG_E2J" to="AGG_J2E"/>
+  </personFlow>
+  <personFlow id="ped_cross_E_s2n" begin="0" end="7200" perHour="60">
+    <walk from="AGG_J2E" to="AGG_E2J"/>
+  </personFlow>
+  <personFlow id="ped_cross_W_n2s" begin="0" end="7200" perHour="40">
+    <walk from="GUG_W2J" to="GUG_J2W"/>
+  </personFlow>
+  <personFlow id="ped_cross_W_s2n" begin="0" end="7200" perHour="40">
+    <walk from="GUG_J2W" to="GUG_W2J"/>
+  </personFlow>
 
 </routes>
