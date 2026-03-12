@@ -39,12 +39,51 @@ const GODOT_JUNC_HALF: float = 4.0
 ## Godot road length from junction edge (ROAD_LENGTH from Intersection.gd)
 const GODOT_ROAD_LEN: float = 30.0
 
+# ── Corridor mode ────────────────────────────────────────────────────────────
+## When true, use piecewise mapping for corridor (3-junction layout).
+## Expands junction areas and stretches road widths to match visual geometry.
+var corridor_mode: bool = false
+
+## SUMO net-offset: corridor.net.xml applies netOffset="500,500" to all coords
+## TraCI returns offset coords: J0=(500,500), J1=(500,800), J2=(500,1100)
+const CORRIDOR_OFFSET_X: float = 500.0
+const CORRIDOR_OFFSET_Y: float = 500.0
+
+## ── Corridor SUMO geometry (from corridor.net.xml junction shapes) ──────────
+## Raw junction Y positions (offset-subtracted)
+const C_J0_Y: float = 0.0
+const C_J1_Y: float = 300.0
+const C_J2_Y: float = 600.0
+## Junction Y half-extents (from .net.xml shape bounding boxes)
+const C_J0_HALF_Y: float = 10.4   # J0: y ∈ [-10.4, 10.4]
+const C_J1_HALF_Y: float = 10.4   # J1: y ∈ [289.6, 310.4]
+const C_J2_HALF_Y: float = 7.2    # J2: y ∈ [592.8, 607.2] (fewer E/W lanes)
+## Junction X half-extent (same for all 3)
+const C_JUNC_HALF_X: float = 10.4 # All junctions: x ∈ [-10.4, 10.4]
+
+## SUMO road lengths between junction edges
+const C_ROAD_J0J1: float = 279.2  # 289.6 - 10.4
+const C_ROAD_J1J2: float = 282.4  # 592.8 - 310.4
+const C_SOUTH_ROAD: float = 489.6 # S boundary to J0 south edge
+const C_NORTH_ROAD: float = 492.8 # J2 north edge to N boundary
+const C_CROSS_ROAD: float = 489.6 # Junction edge to E/W boundary
+
+## ── Corridor Godot geometry (must match CorridorBuilder.gd) ────────────────
+const C_GD_J0_Z: float = 0.0
+const C_GD_J1_Z: float = 18.0
+const C_GD_J2_Z: float = 36.0
+const C_GD_JUNC_HALF: float = 3.0   # JUNCTION_SIZE / 2
+const C_GD_ROAD_J0J1: float = 12.0  # 15.0 - 3.0
+const C_GD_ROAD_J1J2: float = 12.0  # 33.0 - 21.0
+const C_GD_BOUNDARY: float = 10.0   # Boundary road length in Godot
+const C_GD_CROSS_ARM: float = 10.0  # Cross-street arm length in Godot
+
 # ── Animation ────────────────────────────────────────────────────────────────
 const LERP_SPEED: float = 5.0     ## Position/rotation interpolation speed
 const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed
 
 # ── Pool limits ──────────────────────────────────────────────────────────────
-const MAX_VEHICLES: int = 200
+var MAX_VEHICLES: int = 200
 
 # ── Accra street palette ─────────────────────────────────────────────────────
 const CAR_COLORS: Array = [
@@ -128,8 +167,19 @@ func _process(delta: float) -> void:
 # PUBLIC API
 # ═════════════════════════════════════════════════════════════════════════════
 
+func set_corridor_mode(enabled: bool) -> void:
+	## Switch between single-junction and corridor coordinate mapping.
+	corridor_mode = enabled
+	if enabled:
+		MAX_VEHICLES = 500  # 3 junctions need more vehicles
+		print("[VehicleManager] Corridor mode enabled (linear mapping, max=%d)" % MAX_VEHICLES)
+
+
 func update_vehicles(data: Dictionary) -> void:
 	## Receive the full state packet and sync vehicles with SUMO data.
+	# Auto-detect corridor mode from server data
+	if data.get("mode", "") == "corridor" and not corridor_mode:
+		set_corridor_mode(true)
 	var vehicle_list: Array = data.get("vehicles", [])
 	var seen: Dictionary = {}
 
@@ -172,14 +222,24 @@ func clear_all() -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _sumo_to_godot(sx: float, sy: float) -> Vector3:
-	## Piecewise linear mapping from SUMO 2D → Godot 3D.
-	## Uses per-axis junction boundaries (junction is NOT square in SUMO).
-	## N/S edges at ±7.2 from center, E/W edges at ±10.4 from center.
-	var dx: float = sx - SUMO_ORIGIN_X
-	var dz: float = sy - SUMO_ORIGIN_Y
-	var gx: float = _map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)
-	var gz: float = _map_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
-	return Vector3(gx, VEHICLE_Y, gz)
+	## Map SUMO 2D coordinates → Godot 3D position.
+	if corridor_mode:
+		## Corridor: piecewise mapping that expands junction areas
+		## and stretches road widths to match visual geometry.
+		var dx: float = sx - CORRIDOR_OFFSET_X  # Offset-subtracted
+		var dy: float = sy - CORRIDOR_OFFSET_Y
+		var gx: float = _map_corridor_x(dx)
+		var gz: float = _map_corridor_z(dy)
+		return Vector3(gx, VEHICLE_Y, gz)
+	else:
+		## Single junction: piecewise linear mapping
+		## Uses per-axis junction boundaries (junction is NOT square in SUMO).
+		## N/S edges at ±7.2 from center, E/W edges at ±10.4 from center.
+		var dx: float = sx - SUMO_ORIGIN_X
+		var dz: float = sy - SUMO_ORIGIN_Y
+		var gx: float = _map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)
+		var gz: float = _map_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
+		return Vector3(gx, VEHICLE_Y, gz)
 
 
 func _map_axis(d: float, junc_half: float, road_len: float) -> float:
@@ -200,6 +260,66 @@ func _sumo_angle_to_godot(angle_deg: float) -> float:
 	## SUMO 0=N(+Z), 90=E(+X), 180=S(-Z), 270=W(-X)
 	## Godot rot 0=face -Z, PI=face +Z, -PI/2=face +X, PI/2=face -X
 	return deg_to_rad(angle_deg - 180.0)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CORRIDOR PIECEWISE MAPPING
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _map_corridor_x(dx: float) -> float:
+	## Map SUMO X (offset-subtracted) to Godot X.
+	## Inside junction width → linear scale to Godot junction half.
+	## Beyond junction edge → cross-street road scale.
+	var s: float = 1.0 if dx >= 0.0 else -1.0
+	var a: float = absf(dx)
+	if a <= C_JUNC_HALF_X:
+		return s * a * (C_GD_JUNC_HALF / C_JUNC_HALF_X)
+	else:
+		var road_d: float = a - C_JUNC_HALF_X
+		return s * (C_GD_JUNC_HALF + road_d * (C_GD_CROSS_ARM / C_CROSS_ROAD))
+
+
+func _map_corridor_z(dy: float) -> float:
+	## Map SUMO Y (offset-subtracted) to Godot Z.
+	## Piecewise linear through 3 junction zones and 4 road segments.
+	## Each zone boundary is continuous with its neighbor.
+
+	# ── Zone 1: South boundary road (dy < J0 south edge) ────────────
+	var j0_south: float = C_J0_Y - C_J0_HALF_Y  # -10.4
+	if dy < j0_south:
+		var dist: float = j0_south - dy  # positive distance south
+		return (C_GD_J0_Z - C_GD_JUNC_HALF) - dist * (C_GD_BOUNDARY / C_SOUTH_ROAD)
+
+	# ── Zone 2: J0 junction ─────────────────────────────────────────
+	var j0_north: float = C_J0_Y + C_J0_HALF_Y  # 10.4
+	if dy <= j0_north:
+		return C_GD_J0_Z + (dy - C_J0_Y) * (C_GD_JUNC_HALF / C_J0_HALF_Y)
+
+	# ── Zone 3: Road J0 → J1 ────────────────────────────────────────
+	var j1_south: float = C_J1_Y - C_J1_HALF_Y  # 289.6
+	if dy < j1_south:
+		var t: float = (dy - j0_north) / (j1_south - j0_north)
+		return (C_GD_J0_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J0J1
+
+	# ── Zone 4: J1 junction ─────────────────────────────────────────
+	var j1_north: float = C_J1_Y + C_J1_HALF_Y  # 310.4
+	if dy <= j1_north:
+		return C_GD_J1_Z + (dy - C_J1_Y) * (C_GD_JUNC_HALF / C_J1_HALF_Y)
+
+	# ── Zone 5: Road J1 → J2 ────────────────────────────────────────
+	var j2_south: float = C_J2_Y - C_J2_HALF_Y  # 592.8
+	if dy < j2_south:
+		var t: float = (dy - j1_north) / (j2_south - j1_north)
+		return (C_GD_J1_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J1J2
+
+	# ── Zone 6: J2 junction ─────────────────────────────────────────
+	var j2_north: float = C_J2_Y + C_J2_HALF_Y  # 607.2
+	if dy <= j2_north:
+		return C_GD_J2_Z + (dy - C_J2_Y) * (C_GD_JUNC_HALF / C_J2_HALF_Y)
+
+	# ── Zone 7: North boundary road ─────────────────────────────────
+	var dist: float = dy - j2_north  # positive distance north
+	return (C_GD_J2_Z + C_GD_JUNC_HALF) + dist * (C_GD_BOUNDARY / C_NORTH_ROAD)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

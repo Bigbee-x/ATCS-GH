@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | N6 Nsawam Road Corridor — Edge Definitions (3 Junctions)
+  ═══════════════════════════════════════════════════════════════════
+  Real-world calibration: Achimota corridor along N6 Nsawam Road, Accra
+
+  Road layout:
+  ┌───────────────────────────────────────────────────────────────────┐
+  │ CORRIDOR (N/S)  │ Achimota Forest Rd │ 2 lanes │ 50 km/h (13.89) │
+  │   — N6 trunk road (primary), divided carriageway                  │
+  │                                                                   │
+  │ J0 EAST         │ Aggrey Street      │ 2 lanes │ 50 km/h (13.89) │
+  │ J0 WEST         │ Guggisberg Street  │ 1 lane  │ 30 km/h (8.33)  │
+  │                                                                   │
+  │ J1 EAST         │ Asylum Down Road   │ 2 lanes │ 40 km/h (11.11) │
+  │ J1 WEST         │ Ring Road          │ 2 lanes │ 40 km/h (11.11) │
+  │                                                                   │
+  │ J2 EAST         │ Nima Bypass        │ 1 lane  │ 30 km/h (8.33)  │
+  │ J2 WEST         │ Tesano Road        │ 1 lane  │ 50 km/h (13.89) │
+  └───────────────────────────────────────────────────────────────────┘
+
+  Priority 2 = primary trunk road, Priority 1 = secondary/residential.
+  All edges have 1.5m sidewalks for pedestrian infrastructure.
+-->
+<edges>
+    <!-- ═══════════════════════════════════════════════════════════════
+         MAIN CORRIDOR — Achimota Forest Road (N6 Trunk)
+         2 lanes each direction, 50 km/h, priority 2
+    ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- South boundary → J0 (500m) -->
+    <edge id="ACH_S2J0"    from="S"  to="J0" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_J0toS"   from="J0" to="S"  numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+
+    <!-- J0 ↔ J1 internal corridor link (300m) -->
+    <edge id="ACH_J0toJ1"  from="J0" to="J1" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_J1toJ0"  from="J1" to="J0" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+
+    <!-- J1 ↔ J2 internal corridor link (300m) -->
+    <edge id="ACH_J1toJ2"  from="J1" to="J2" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_J2toJ1"  from="J2" to="J1" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+
+    <!-- J2 → North boundary (500m) -->
+    <edge id="ACH_J2toN"   from="J2" to="N"  numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+    <edge id="ACH_N2J2"    from="N"  to="J2" numLanes="2" speed="13.89" priority="2" sidewalkWidth="1.5"/>
+
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         J0 CROSS STREETS — Aggrey St (E) + Guggisberg St (W)
+    ═══════════════════════════════════════════════════════════════ -->
+    <edge id="AGG_E2J0"    from="E0" to="J0" numLanes="2" speed="13.89" priority="1" sidewalkWidth="1.5"/>
+    <edge id="AGG_J0toE"   from="J0" to="E0" numLanes="2" speed="13.89" priority="1" sidewalkWidth="1.5"/>
+    <edge id="GUG_W2J0"    from="W0" to="J0" numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
+    <edge id="GUG_J0toW"   from="J0" to="W0" numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
+
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         J1 CROSS STREETS — Asylum Down Rd (E) + Ring Rd (W)
+         Both 2-lane, 40 km/h — busiest cross-traffic junction
+    ═══════════════════════════════════════════════════════════════ -->
+    <edge id="ASD_E2J1"    from="E1" to="J1" numLanes="2" speed="11.11" priority="1" sidewalkWidth="1.5"/>
+    <edge id="ASD_J1toE"   from="J1" to="E1" numLanes="2" speed="11.11" priority="1" sidewalkWidth="1.5"/>
+    <edge id="RNG_W2J1"    from="W1" to="J1" numLanes="2" speed="11.11" priority="1" sidewalkWidth="1.5"/>
+    <edge id="RNG_J1toW"   from="J1" to="W1" numLanes="2" speed="11.11" priority="1" sidewalkWidth="1.5"/>
+
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         J2 CROSS STREETS — Nima Bypass (E) + Tesano Rd (W)
+         Both 1-lane — minor cross streets
+    ═══════════════════════════════════════════════════════════════ -->
+    <edge id="NMA_E2J2"    from="E2" to="J2" numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
+    <edge id="NMA_J2toE"   from="J2" to="E2" numLanes="1" speed="8.33"  priority="1" sidewalkWidth="1.5"/>
+    <edge id="TSN_W2J2"    from="W2" to="J2" numLanes="1" speed="13.89" priority="1" sidewalkWidth="1.5"/>
+    <edge id="TSN_J2toW"   from="J2" to="W2" numLanes="1" speed="13.89" priority="1" sidewalkWidth="1.5"/>
+</edges>

@@ -28,6 +28,8 @@ signal sim_completed(data: Dictionary)
 signal sim_restarted(data: Dictionary)
 ## Emitted when connection status changes (true = connected, false = lost)
 signal connection_changed(is_connected: bool)
+## Emitted when the server confirms a control mode change (ai/baseline)
+signal mode_changed(data: Dictionary)
 
 # ── Configuration ────────────────────────────────────────────────────────────
 ## WebSocket server URL (Python visualizer_server.py)
@@ -163,6 +165,8 @@ func _parse_and_dispatch(text: String) -> void:
 			sim_completed.emit(data)
 		"sim_restart":
 			sim_restarted.emit(data)
+		"mode_changed":
+			mode_changed.emit(data)
 		_:
 			push_warning("[WS] Unknown packet type: '%s'" % packet_type)
 
@@ -182,6 +186,21 @@ func send_override(approach: String) -> void:
 	})
 	_socket.send_text(msg)
 	print("[WS] Sent override: force green for %s" % approach)
+
+
+func send_mode_switch(target_mode: String) -> void:
+	## Switch traffic control mode on the server.
+	## target_mode: "ai" for ATCS (DQN adaptive), "baseline" for fixed timer
+	if not _is_connected:
+		push_warning("[WS] Cannot switch mode — not connected")
+		return
+
+	var msg: String = JSON.stringify({
+		"action": "switch_mode",
+		"mode": target_mode,
+	})
+	_socket.send_text(msg)
+	print("[WS] Sent mode switch: %s" % target_mode)
 
 
 func is_connected_to_server() -> bool:

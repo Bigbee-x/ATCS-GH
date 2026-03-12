@@ -14,25 +14,60 @@ extends Node3D
 const NUM_AMBIENT       := 28      # Ambient sidewalk pedestrians
 const MIN_SPEED         := 0.4     # Slowest walk speed (Godot units/sec)
 const MAX_SPEED         := 1.2     # Fastest walk speed
-const BODY_WIDTH        := 0.3     # Torso width (X)
-const BODY_DEPTH        := 0.25    # Torso depth (Z)
-const BODY_HEIGHT       := 0.9     # Torso height (Y)
-const HEAD_RADIUS       := 0.14    # Head sphere radius
-const LEG_HEIGHT        := 0.7     # Legs (lower body)
-const TOTAL_HEIGHT      := 1.75    # Approximate total (legs + body + head)
+const BODY_WIDTH        := 0.10    # Torso width (X)
+const BODY_DEPTH        := 0.08    # Torso depth (Z)
+const BODY_HEIGHT       := 0.25    # Torso height (Y)
+const HEAD_RADIUS       := 0.045   # Head sphere radius
+const LEG_HEIGHT        := 0.18    # Legs (lower body)
+const TOTAL_HEIGHT      := 0.52    # Approximate total (legs + body + head)
 const SIDEWALK_Y        := 0.15    # Matches Intersection.gd SIDEWALK_HEIGHT
 
 # ── SUMO coordinate transform ──────────────────────────────────────────────────
-const SUMO_CENTER       := 500.0   # SUMO junction center
+const SUMO_CENTER       := 500.0   # SUMO junction center (single-junction mode)
 const SUMO_SCALE        := 0.04    # SUMO units to Godot units (500m / ~12.5)
 
-# ── Road geometry (must match Intersection.gd) ────────────────────────────────
+# ── Road geometry (must match Intersection.gd for single junction) ────────────
 const ROAD_LENGTH       := 30.0
 const NS_ROAD_WIDTH     := 6.4
 const E_ROAD_WIDTH      := 6.4
 const W_ROAD_WIDTH      := 3.2
 const JUNCTION_SIZE     := 10.0
 const SIDEWALK_WIDTH    := 1.5
+
+# ── Corridor mode ────────────────────────────────────────────────────────────
+var corridor_mode: bool = false
+# Corridor geometry constants (must match CorridorBuilder.gd)
+const C_NS_ROAD_WIDTH   := 5.0
+const C_JUNCTION_SIZE   := 6.0
+const C_JUNCTION_HALF   := 3.0
+const C_SIDEWALK_WIDTH  := 0.5
+const C_CROSS_ARM       := 10.0
+const C_BOUNDARY_ARM    := 10.0
+const C_J0_Z            := 0.0
+const C_J1_Z            := 18.0
+const C_J2_Z            := 36.0
+
+# ── Corridor SUMO piecewise mapping (from corridor.net.xml) ─────────────────
+# Raw junction Y positions (offset-subtracted)
+const C_SUMO_J0_Y: float = 0.0
+const C_SUMO_J1_Y: float = 300.0
+const C_SUMO_J2_Y: float = 600.0
+# Junction half-extents
+const C_SUMO_J0_HALF_Y: float = 10.4
+const C_SUMO_J1_HALF_Y: float = 10.4
+const C_SUMO_J2_HALF_Y: float = 7.2
+const C_SUMO_JUNC_HALF_X: float = 10.4
+# SUMO road lengths between junction edges
+const C_SUMO_ROAD_J0J1: float = 279.2
+const C_SUMO_ROAD_J1J2: float = 282.4
+const C_SUMO_SOUTH_ROAD: float = 489.6
+const C_SUMO_NORTH_ROAD: float = 492.8
+const C_SUMO_CROSS_ROAD: float = 489.6
+# Godot corridor targets
+const C_GD_JUNC_HALF: float = 3.0
+const C_GD_ROAD_J0J1: float = 12.0
+const C_GD_ROAD_J1J2: float = 12.0
+const C_GD_BOUNDARY: float = 10.0
 
 # ── Appearance palettes ───────────────────────────────────────────────────────
 const SHIRT_COLORS: Array = [
@@ -81,6 +116,15 @@ var _crossing_pool: Array = []
 # LIFECYCLE
 # ═══════════════════════════════════════════════════════════════════════════════
 
+func set_corridor_mode(enabled: bool) -> void:
+	corridor_mode = enabled
+	if enabled:
+		print("[PedestrianManager] Corridor mode enabled")
+		# Re-define paths for corridor layout, then respawn
+		_define_sidewalk_paths()
+		respawn()
+
+
 func _ready() -> void:
 	_define_sidewalk_paths()
 	_spawn_ambient()
@@ -102,6 +146,10 @@ func _process(delta: float) -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _define_sidewalk_paths() -> void:
+	if corridor_mode:
+		_define_corridor_sidewalk_paths()
+		return
+
 	var half_junc: float = JUNCTION_SIZE / 2.0
 	var ns_sw_offset: float = NS_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH / 2.0
 	var e_sw_offset: float = E_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH / 2.0
@@ -120,6 +168,45 @@ func _define_sidewalk_paths() -> void:
 		{"start": Vector3(-road_start, 0, -w_sw_offset), "end": Vector3(-road_end, 0, -w_sw_offset)},
 		{"start": Vector3(-road_start, 0, w_sw_offset), "end": Vector3(-road_end, 0, w_sw_offset)},
 	]
+
+
+func _define_corridor_sidewalk_paths() -> void:
+	## Define sidewalk paths for the 3-junction corridor layout.
+	_sidewalk_paths = []
+	var sw_offset: float = C_NS_ROAD_WIDTH / 2.0 + C_SIDEWALK_WIDTH / 2.0
+
+	# Corridor sidewalks along NS road (both sides, between junctions)
+	# South boundary to J0
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
+	# J0 to J1
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
+	# J1 to J2
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
+	# J2 to north boundary
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
+	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
+
+	# Cross-street sidewalks at each junction (offset = road_half + sidewalk_half)
+	# Cross-street widths per junction: {east, west}
+	var cross_widths: Array = [
+		{"east": 5.0, "west": 3.0},  # J0: Aggrey(2lane), Guggisberg(1lane)
+		{"east": 5.0, "west": 5.0},  # J1: Asylum Down(2lane), Ring Rd(2lane)
+		{"east": 3.0, "west": 3.0},  # J2: Nima(1lane), Tesano(1lane)
+	]
+	var junc_centers: Array = [C_J0_Z, C_J1_Z, C_J2_Z]
+	for i_j in range(3):
+		var center_z: float = junc_centers[i_j]
+		var e_sw: float = cross_widths[i_j]["east"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
+		var w_sw: float = cross_widths[i_j]["west"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
+		# East arms
+		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z + e_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z + e_sw)})
+		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z - e_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z - e_sw)})
+		# West arms
+		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z - w_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z - w_sw)})
+		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z + w_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z + w_sw)})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -193,13 +280,22 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 		# Convert SUMO coords to Godot coords
 		var sumo_x: float = float(ped_data.get("x", 500.0))
 		var sumo_y: float = float(ped_data.get("y", 500.0))
-		var godot_x: float = (sumo_x - SUMO_CENTER) * SUMO_SCALE
-		var godot_z: float = (sumo_y - SUMO_CENTER) * SUMO_SCALE
+		var godot_x: float
+		var godot_z: float
+		if corridor_mode:
+			# Corridor: piecewise mapping matching visual geometry
+			var dx: float = sumo_x - SUMO_CENTER
+			var dy: float = sumo_y - SUMO_CENTER
+			godot_x = _map_corridor_x(dx)
+			godot_z = _map_corridor_z(dy)
+		else:
+			godot_x = (sumo_x - SUMO_CENTER) * SUMO_SCALE
+			godot_z = (sumo_y - SUMO_CENTER) * SUMO_SCALE
 		var target_y: float = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0
 
 		# Check if this pedestrian is on a crossing (on the road surface)
 		var edge: String = str(ped_data.get("edge", ""))
-		if edge.begins_with(":J0_c"):
+		if edge.begins_with(":J0_c") or edge.begins_with(":J1_c") or edge.begins_with(":J2_c"):
 			target_y = LEG_HEIGHT + BODY_HEIGHT / 2.0  # Road level (no sidewalk)
 
 		var target_pos := Vector3(godot_x, target_y, godot_z)
@@ -252,6 +348,54 @@ func _release_crossing_mesh(node: Node3D) -> void:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CORRIDOR PIECEWISE MAPPING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func _map_corridor_x(dx: float) -> float:
+	## Map SUMO X (offset-subtracted) to Godot X (same logic as VehicleManager).
+	var s: float = 1.0 if dx >= 0.0 else -1.0
+	var a: float = absf(dx)
+	if a <= C_SUMO_JUNC_HALF_X:
+		return s * a * (C_GD_JUNC_HALF / C_SUMO_JUNC_HALF_X)
+	else:
+		var road_d: float = a - C_SUMO_JUNC_HALF_X
+		return s * (C_GD_JUNC_HALF + road_d * (C_CROSS_ARM / C_SUMO_CROSS_ROAD))
+
+
+func _map_corridor_z(dy: float) -> float:
+	## Map SUMO Y (offset-subtracted) to Godot Z (same logic as VehicleManager).
+	var j0_south: float = C_SUMO_J0_Y - C_SUMO_J0_HALF_Y
+	if dy < j0_south:
+		var dist: float = j0_south - dy
+		return (C_J0_Z - C_GD_JUNC_HALF) - dist * (C_GD_BOUNDARY / C_SUMO_SOUTH_ROAD)
+
+	var j0_north: float = C_SUMO_J0_Y + C_SUMO_J0_HALF_Y
+	if dy <= j0_north:
+		return C_J0_Z + (dy - C_SUMO_J0_Y) * (C_GD_JUNC_HALF / C_SUMO_J0_HALF_Y)
+
+	var j1_south: float = C_SUMO_J1_Y - C_SUMO_J1_HALF_Y
+	if dy < j1_south:
+		var t: float = (dy - j0_north) / (j1_south - j0_north)
+		return (C_J0_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J0J1
+
+	var j1_north: float = C_SUMO_J1_Y + C_SUMO_J1_HALF_Y
+	if dy <= j1_north:
+		return C_J1_Z + (dy - C_SUMO_J1_Y) * (C_GD_JUNC_HALF / C_SUMO_J1_HALF_Y)
+
+	var j2_south: float = C_SUMO_J2_Y - C_SUMO_J2_HALF_Y
+	if dy < j2_south:
+		var t: float = (dy - j1_north) / (j2_south - j1_north)
+		return (C_J1_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J1J2
+
+	var j2_north: float = C_SUMO_J2_Y + C_SUMO_J2_HALF_Y
+	if dy <= j2_north:
+		return C_J2_Z + (dy - C_SUMO_J2_Y) * (C_GD_JUNC_HALF / C_SUMO_J2_HALF_Y)
+
+	var dist: float = dy - j2_north
+	return (C_J2_Z + C_GD_JUNC_HALF) + dist * (C_GD_BOUNDARY / C_SUMO_NORTH_ROAD)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RESET
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -291,7 +435,7 @@ func _make_pedestrian_mesh() -> Node3D:
 	leg_mat.albedo_color = leg_color
 	var legs := CSGBox3D.new()
 	legs.size = Vector3(BODY_WIDTH, LEG_HEIGHT, BODY_DEPTH)
-	legs.position = Vector3(0, -BODY_HEIGHT / 2.0 - LEG_HEIGHT / 2.0 + 0.05, 0)
+	legs.position = Vector3(0, -BODY_HEIGHT / 2.0 - LEG_HEIGHT / 2.0 + 0.02, 0)
 	legs.material = leg_mat
 	legs.name = "Legs"
 	root.add_child(legs)
@@ -300,7 +444,7 @@ func _make_pedestrian_mesh() -> Node3D:
 	var shirt_mat := StandardMaterial3D.new()
 	shirt_mat.albedo_color = shirt_color
 	var torso := CSGBox3D.new()
-	torso.size = Vector3(BODY_WIDTH + 0.05, BODY_HEIGHT, BODY_DEPTH + 0.02)
+	torso.size = Vector3(BODY_WIDTH + 0.02, BODY_HEIGHT, BODY_DEPTH + 0.01)
 	torso.position = Vector3(0, 0, 0)
 	torso.material = shirt_mat
 	torso.name = "Torso"

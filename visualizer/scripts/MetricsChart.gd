@@ -22,13 +22,18 @@ extends Control
 ## Number of data points to display (scrolling window)
 const MAX_HISTORY: int = 200
 
-# ── Series colors (approach → color) ─────────────────────────────────────────
-const SERIES_COLORS: Dictionary = {
+# ── Series colors (series_key → color) ───────────────────────────────────────
+## Default: approach-based (north, south, east, west).
+## Can be overridden for corridor mode (J0, J1, J2 mapped to north, south, east).
+var SERIES_COLORS: Dictionary = {
 	"north": Color(0.35, 0.55, 1.0),    # Blue
 	"south": Color(1.0, 0.35, 0.35),    # Red
 	"east":  Color(0.35, 1.0, 0.45),    # Green
 	"west":  Color(1.0, 0.9, 0.25),     # Yellow
 }
+
+## Optional series label overrides (e.g., {"north": "J0", "south": "J1"})
+var series_labels: Dictionary = {}
 
 # ── Style ────────────────────────────────────────────────────────────────────
 const BG_COLOR      := Color(0.04, 0.04, 0.07, 0.85)
@@ -149,12 +154,12 @@ func _draw() -> void:
 	var legend_x: float = chart_left
 	var spacing: float = chart_w / float(SERIES_COLORS.size())
 
-	for approach in SERIES_COLORS:
-		var color: Color = SERIES_COLORS[approach]
+	for key in SERIES_COLORS:
+		var color: Color = SERIES_COLORS[key]
 		# Color swatch (small square)
 		draw_rect(Rect2(Vector2(legend_x, legend_y - 7), Vector2(8, 8)), color)
-		# Label
+		# Label — use custom label if available, otherwise first character
 		if _font:
-			var short_name: String = approach.substr(0, 1).to_upper()
-			draw_string(_font, Vector2(legend_x + 10, legend_y), short_name, HORIZONTAL_ALIGNMENT_LEFT, 20, _font_size - 1, LABEL_COLOR)
+			var short_name: String = series_labels.get(key, key.substr(0, 1).to_upper())
+			draw_string(_font, Vector2(legend_x + 10, legend_y), short_name, HORIZONTAL_ALIGNMENT_LEFT, 30, _font_size - 1, LABEL_COLOR)
 		legend_x += spacing

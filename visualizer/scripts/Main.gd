@@ -39,6 +39,7 @@ var _pan_start: Vector2 = Vector2.ZERO
 # ── Packet counter (for debug/monitoring) ────────────────────────────────────
 var _packets_received: int = 0
 var _last_update_time: float = 0.0
+var _corridor_switch_pending: bool = false
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -74,6 +75,14 @@ func _on_state_updated(data: Dictionary) -> void:
 	_packets_received += 1
 	_last_update_time = Time.get_ticks_msec() / 1000.0
 
+	# Detect wrong server: corridor data arriving in single-junction mode
+	if data.has("junctions"):
+		if not _corridor_switch_pending:
+			_corridor_switch_pending = true
+			push_warning("[Main] Receiving corridor data in single-junction mode.")
+			ui.show_server_mismatch("corridor")
+		return
+
 	# Update each subsystem with the full data packet
 	intersection.update_lights(data)
 	intersection.update_lane_overlays(data)
@@ -89,6 +98,10 @@ func _on_state_updated(data: Dictionary) -> void:
 
 func _on_vehicle_updated(data: Dictionary) -> void:
 	## Handle per-second vehicle position updates (smooth animation).
+	# Block corridor data — wrong coordinate mapping would scatter vehicles
+	if _corridor_switch_pending:
+		return
+
 	vehicle_manager.update_vehicles(data)
 
 	# Update SUMO-driven crossing pedestrians (sent every sim-second)
@@ -134,6 +147,11 @@ func _on_override_requested(approach: String) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _unhandled_input(event: InputEvent) -> void:
+	# ── Escape: return to launcher menu ──────────────────────────────────
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
+		return
+
 	# ── Mouse wheel: zoom ────────────────────────────────────────────────
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:

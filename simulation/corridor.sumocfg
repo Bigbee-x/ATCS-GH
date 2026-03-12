@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | Corridor Simulation Configuration (3 Junctions)
+  ══════════════════════════════════════════════════════════
+  N6 Nsawam Road corridor with 3 signalised junctions.
+  Duration: 7200 seconds = 2 hours (07:00-09:00 morning rush)
+-->
+<configuration>
+
+    <input>
+        <net-file    value="corridor.net.xml"/>
+        <route-files value="corridor_routes.rou.xml"/>
+    </input>
+
+    <time>
+        <begin       value="0"/>
+        <end         value="7200"/>
+        <step-length value="1.0"/>
+    </time>
+
+    <processing>
+        <time-to-teleport value="-1"/>
+        <collision.action value="warn"/>
+    </processing>
+
+    <report>
+        <verbose     value="false"/>
+        <no-step-log value="true"/>
+    </report>
+
+</configuration>
