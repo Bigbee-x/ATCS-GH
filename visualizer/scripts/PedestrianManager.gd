@@ -24,14 +24,20 @@ const SIDEWALK_Y        := 0.15    # Matches Intersection.gd SIDEWALK_HEIGHT
 
 # ── SUMO coordinate transform ──────────────────────────────────────────────────
 const SUMO_CENTER       := 500.0   # SUMO junction center (single-junction mode)
-const SUMO_SCALE        := 0.04    # SUMO units to Godot units (500m / ~12.5)
+## Piecewise mapping constants (must match VehicleManager.gd)
+const SUMO_JUNC_HALF_X  := 10.4   # Junction half-extent in SUMO X
+const SUMO_JUNC_HALF_Z  := 7.2    # Junction half-extent in SUMO Y (Z in Godot)
+const SUMO_ROAD_LEN_X   := 489.6  # E/W road length in SUMO
+const SUMO_ROAD_LEN_Z   := 492.8  # N/S road length in SUMO
+const GODOT_JUNC_HALF   := 3.5    # JUNCTION_SIZE / 2 in Godot
+const GODOT_ROAD_LEN    := 30.0   # Road arm length in Godot
 
 # ── Road geometry (must match Intersection.gd for single junction) ────────────
 const ROAD_LENGTH       := 30.0
 const NS_ROAD_WIDTH     := 6.4
 const E_ROAD_WIDTH      := 6.4
 const W_ROAD_WIDTH      := 3.2
-const JUNCTION_SIZE     := 10.0
+const JUNCTION_SIZE     := 7.0
 const SIDEWALK_WIDTH    := 1.5
 
 # ── Corridor mode ────────────────────────────────────────────────────────────
@@ -111,6 +117,9 @@ var _crossing_peds: Dictionary = {}
 # Pool of reusable pedestrian meshes
 var _crossing_pool: Array = []
 
+# ── Pedestrian toggle ────────────────────────────────────────────────────────
+var _pedestrians_enabled: bool = true
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LIFECYCLE
@@ -125,12 +134,35 @@ func set_corridor_mode(enabled: bool) -> void:
 		respawn()
 
 
+func set_pedestrians_enabled(enabled: bool) -> void:
+	## Toggle all pedestrians on/off (ambient + SUMO-driven).
+	_pedestrians_enabled = enabled
+	# Show/hide ambient pedestrians
+	for ped in _ambient_peds:
+		ped["node"].visible = enabled
+	# Show/hide or release crossing pedestrians
+	if not enabled:
+		for pid in _crossing_peds:
+			_crossing_peds[pid]["node"].visible = false
+	else:
+		for pid in _crossing_peds:
+			_crossing_peds[pid]["node"].visible = true
+	print("[PedestrianManager] Pedestrians %s" % ("enabled" if enabled else "disabled"))
+
+
+func is_pedestrians_enabled() -> bool:
+	return _pedestrians_enabled
+
+
 func _ready() -> void:
 	_define_sidewalk_paths()
 	_spawn_ambient()
 
 
 func _process(delta: float) -> void:
+	if not _pedestrians_enabled:
+		return
+
 	for ped in _ambient_peds:
 		_move_ambient(ped, delta)
 
@@ -163,10 +195,10 @@ func _define_sidewalk_paths() -> void:
 		{"start": Vector3(-ns_sw_offset, 0, road_start), "end": Vector3(-ns_sw_offset, 0, road_end)},
 		{"start": Vector3(ns_sw_offset, 0, -road_start), "end": Vector3(ns_sw_offset, 0, -road_end)},
 		{"start": Vector3(-ns_sw_offset, 0, -road_start), "end": Vector3(-ns_sw_offset, 0, -road_end)},
-		{"start": Vector3(road_start, 0, e_sw_offset), "end": Vector3(road_end, 0, e_sw_offset)},
-		{"start": Vector3(road_start, 0, -e_sw_offset), "end": Vector3(road_end, 0, -e_sw_offset)},
-		{"start": Vector3(-road_start, 0, -w_sw_offset), "end": Vector3(-road_end, 0, -w_sw_offset)},
-		{"start": Vector3(-road_start, 0, w_sw_offset), "end": Vector3(-road_end, 0, w_sw_offset)},
+		{"start": Vector3(-road_start, 0, e_sw_offset), "end": Vector3(-road_end, 0, e_sw_offset)},
+		{"start": Vector3(-road_start, 0, -e_sw_offset), "end": Vector3(-road_end, 0, -e_sw_offset)},
+		{"start": Vector3(road_start, 0, -w_sw_offset), "end": Vector3(road_end, 0, -w_sw_offset)},
+		{"start": Vector3(road_start, 0, w_sw_offset), "end": Vector3(road_end, 0, w_sw_offset)},
 	]
 
 
@@ -175,19 +207,19 @@ func _define_corridor_sidewalk_paths() -> void:
 	_sidewalk_paths = []
 	var sw_offset: float = C_NS_ROAD_WIDTH / 2.0 + C_SIDEWALK_WIDTH / 2.0
 
-	# Corridor sidewalks along NS road (both sides, between junctions)
+	# Corridor sidewalks along NS road (both sides, between junctions) — X negated for right-hand mirror
 	# South boundary to J0
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
 	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
 	# J0 to J1
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
 	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
 	# J1 to J2
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
 	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
 	# J2 to north boundary
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
 	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
+	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
 
 	# Cross-street sidewalks at each junction (offset = road_half + sidewalk_half)
 	# Cross-street widths per junction: {east, west}
@@ -201,12 +233,12 @@ func _define_corridor_sidewalk_paths() -> void:
 		var center_z: float = junc_centers[i_j]
 		var e_sw: float = cross_widths[i_j]["east"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
 		var w_sw: float = cross_widths[i_j]["west"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
-		# East arms
-		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z + e_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z + e_sw)})
-		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z - e_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z - e_sw)})
-		# West arms
-		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z - w_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z - w_sw)})
-		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z + w_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z + w_sw)})
+		# East arms (mirrored to negative X)
+		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z + e_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z + e_sw)})
+		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z - e_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z - e_sw)})
+		# West arms (mirrored to positive X)
+		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z - w_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z - w_sw)})
+		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z + w_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z + w_sw)})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -269,34 +301,59 @@ func _update_ambient_position(ped: Dictionary) -> void:
 func update_crossing_pedestrians(ped_list: Array) -> void:
 	## Called from Main.gd when server sends pedestrian data.
 	## ped_list: Array of {id, x, y, speed, angle, edge}
+	##
+	## Only renders pedestrians on crossing edges (:Jx_c*) or walking areas (:Jx_w*).
+	## Pedestrians on regular road edges are skipped — the ambient system handles
+	## sidewalk visuals, and SUMO sidewalk coords don't map to Godot sidewalk offsets.
+	if not _pedestrians_enabled:
+		return
+
 	var seen: Dictionary = {}
 
 	for ped_data in ped_list:
 		var pid: String = str(ped_data.get("id", ""))
 		if pid.is_empty():
 			continue
+
+		# Only render pedestrians on junction crossing or walking area edges.
+		# Pedestrians on regular road edges (ACH_N2J, etc.) would appear on the
+		# vehicle lanes because SUMO sidewalk coords don't map to Godot sidewalk
+		# positions — the piecewise mapping doesn't preserve lateral offsets.
+		var edge: String = str(ped_data.get("edge", ""))
+		var on_crossing: bool = edge.begins_with(":J0_c") or edge.begins_with(":J1_c") or edge.begins_with(":J2_c")
+		var on_walking_area: bool = edge.begins_with(":J0_w") or edge.begins_with(":J1_w") or edge.begins_with(":J2_w")
+		if not on_crossing and not on_walking_area:
+			# Skip — pedestrian is on a regular road edge (sidewalk in SUMO)
+			# If they were previously visible, release them
+			if _crossing_peds.has(pid):
+				_release_crossing_mesh(_crossing_peds[pid]["node"])
+				_crossing_peds.erase(pid)
+			continue
+
 		seen[pid] = true
 
-		# Convert SUMO coords to Godot coords
+		# Convert SUMO coords to Godot coords (piecewise mapping matching VehicleManager)
 		var sumo_x: float = float(ped_data.get("x", 500.0))
 		var sumo_y: float = float(ped_data.get("y", 500.0))
 		var godot_x: float
 		var godot_z: float
 		if corridor_mode:
-			# Corridor: piecewise mapping matching visual geometry
 			var dx: float = sumo_x - SUMO_CENTER
 			var dy: float = sumo_y - SUMO_CENTER
-			godot_x = _map_corridor_x(dx)
+			godot_x = -_map_corridor_x(dx)  # Negated for right-hand visual
 			godot_z = _map_corridor_z(dy)
 		else:
-			godot_x = (sumo_x - SUMO_CENTER) * SUMO_SCALE
-			godot_z = (sumo_y - SUMO_CENTER) * SUMO_SCALE
-		var target_y: float = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0
+			var dx: float = sumo_x - SUMO_CENTER
+			var dz: float = sumo_y - SUMO_CENTER
+			godot_x = -_map_sj_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)  # Negated for right-hand visual
+			godot_z = _map_sj_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
 
-		# Check if this pedestrian is on a crossing (on the road surface)
-		var edge: String = str(ped_data.get("edge", ""))
-		if edge.begins_with(":J0_c") or edge.begins_with(":J1_c") or edge.begins_with(":J2_c"):
-			target_y = LEG_HEIGHT + BODY_HEIGHT / 2.0  # Road level (no sidewalk)
+		# Crossings are at road level; walking areas are at sidewalk level
+		var target_y: float
+		if on_crossing:
+			target_y = LEG_HEIGHT + BODY_HEIGHT / 2.0  # Road level
+		else:
+			target_y = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0  # Sidewalk level
 
 		var target_pos := Vector3(godot_x, target_y, godot_z)
 
@@ -317,7 +374,7 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 		var node: Node3D = _crossing_peds[pid]["node"]
 		node.rotation.y = deg_to_rad(-(angle_deg - 90.0))
 
-	# Remove pedestrians no longer in the update
+	# Remove pedestrians no longer in the update (left the area or no longer on crossing)
 	var to_remove: Array = []
 	for pid in _crossing_peds:
 		if not seen.has(pid):
@@ -393,6 +450,21 @@ func _map_corridor_z(dy: float) -> float:
 
 	var dist: float = dy - j2_north
 	return (C_J2_Z + C_GD_JUNC_HALF) + dist * (C_GD_BOUNDARY / C_SUMO_NORTH_ROAD)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SINGLE-JUNCTION PIECEWISE MAPPING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func _map_sj_axis(d: float, junc_half: float, road_len: float) -> float:
+	## Map one axis from SUMO to Godot (same logic as VehicleManager._map_axis).
+	var s: float = 1.0 if d >= 0.0 else -1.0
+	var a: float = absf(d)
+	if a <= junc_half:
+		return s * a * (GODOT_JUNC_HALF / junc_half)
+	else:
+		var road_d: float = a - junc_half
+		return s * (GODOT_JUNC_HALF + road_d * (GODOT_ROAD_LEN / road_len))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

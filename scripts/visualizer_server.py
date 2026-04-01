@@ -89,6 +89,9 @@ from traffic_env import (
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    ACTION_NS_THROUGH, ACTION_NS_LEFT,
+    ACTION_EW_THROUGH, ACTION_EW_LEFT,
+    ACTION_NS_ALL, ACTION_EW_ALL,
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
@@ -104,9 +107,45 @@ OUTGOING_EDGES = ["ACH_J2N", "ACH_J2S", "AGG_J2E", "GUG_J2W"]
 
 class SimMode:
     """Enumeration of simulation control modes."""
-    AI     = "ai"       # DQN agent controls traffic lights
-    MANUAL = "manual"   # Godot UI controls via override messages
-    DEMO   = "demo"     # Random actions (no model needed)
+    AI       = "ai"       # DQN agent controls traffic lights
+    MANUAL   = "manual"   # Godot UI controls via override messages
+    DEMO     = "demo"     # Random actions (no model needed)
+    BASELINE = "baseline" # Fixed-timer cycling
+
+
+# ── Fixed-timer baseline controller ──────────────────────────────────────────
+
+class BaselineTimer:
+    """Fixed-cycle 4-phase traffic light timer for a single junction (no AI).
+
+    Proper 4-phase cycle with protected left turns:
+      1. NS_THROUGH (40s) — N/S straight + right, left blocked
+      2. NS_LEFT    (15s) — N/S protected left turn
+      3. EW_THROUGH (25s) — E/W straight + right, left blocked
+      4. EW_LEFT    (10s) — E/W protected left turn
+    Total cycle: 90s
+
+    Yellow transitions are handled automatically by TrafficEnv when we
+    request a phase switch — we just output the target action each step.
+    """
+    # Phase durations (seconds)
+    PHASES = [
+        (ACTION_NS_THROUGH, 40),
+        (ACTION_NS_LEFT,    15),
+        (ACTION_EW_THROUGH, 25),
+        (ACTION_EW_LEFT,    10),
+    ]
+    CYCLE = sum(dur for _, dur in PHASES)  # 90s
+
+    def get_action(self, sim_step: int) -> int:
+        """Return the correct action for the current point in the cycle."""
+        cycle_pos = sim_step % self.CYCLE
+        elapsed = 0
+        for action, duration in self.PHASES:
+            elapsed += duration
+            if cycle_pos < elapsed:
+                return action
+        return self.PHASES[0][0]  # fallback
 
 
 # ── Global state ─────────────────────────────────────────────────────────────
@@ -117,6 +156,14 @@ connected_clients: set = set()
 # Pending manual override from Godot UI (consumed by simulation loop)
 # Format: {"target_phase": int, "approach": str} or None
 pending_override: dict | None = None
+
+# Runtime control mode — can be switched mid-simulation via WebSocket
+active_control_mode: str | None = None   # Set in simulation_loop; None = use startup mode
+pending_mode_switch: str | None = None   # Queued by ws_handler, consumed by sim loop
+
+# Queue of pending emergency vehicle spawn requests
+pending_emergency_spawns: list[dict] = []
+_emergency_spawn_counter: int = 0
 
 
 # ── WebSocket handler ────────────────────────────────────────────────────────
@@ -131,18 +178,30 @@ async def ws_handler(websocket):
     The override is stored in `pending_override` and consumed by the
     simulation loop on the next decision step.
     """
-    global pending_override
+    global pending_override, pending_mode_switch, active_control_mode
 
     connected_clients.add(websocket)
     client_count = len(connected_clients)
     print(f"[WS] Client connected ({client_count} total)")
+
+    # Send current control mode to newly connected client
+    if active_control_mode:
+        try:
+            await websocket.send(json.dumps({
+                "type": "mode_changed",
+                "control_mode": active_control_mode,
+            }))
+        except Exception:
+            pass
 
     try:
         async for message in websocket:
             try:
                 data = json.loads(message)
 
-                if data.get("action") == "force_green":
+                action = data.get("action", "")
+
+                if action == "force_green":
                     approach = data.get("approach", "").lower()
                     # Map approach name to target green phase
                     # North and South share NS_THROUGH; East and West share EW_THROUGH
@@ -160,6 +219,19 @@ async def ws_handler(websocket):
                         print(f"[WS] Manual override received: force green for {approach}")
                     else:
                         print(f"[WS] Unknown approach: {approach}")
+
+                elif action == "spawn_emergency":
+                    approach = data.get("approach", "north").lower()
+                    pending_emergency_spawns.append({"approach": approach})
+                    print(f"[WS] Emergency spawn requested from {approach}")
+
+                elif action == "switch_mode":
+                    target_mode = data.get("mode", "").lower()
+                    if target_mode in (SimMode.AI, SimMode.BASELINE):
+                        pending_mode_switch = target_mode
+                        print(f"[WS] Mode switch requested: {target_mode.upper()}")
+                    else:
+                        print(f"[WS] Unknown mode: {target_mode}")
 
             except json.JSONDecodeError:
                 print("[WS] Received invalid JSON, ignoring")
@@ -266,6 +338,52 @@ def _collect_pedestrian_data() -> list[dict]:
     return pedestrians
 
 
+# ── Emergency vehicle spawner ──────────────────────────────────────────────
+
+# Maps approach name → (incoming edge, route: edge pair for through-movement)
+APPROACH_ROUTES = {
+    "north": ("ACH_N2J", "ACH_N2J ACH_J2S"),
+    "south": ("ACH_S2J", "ACH_S2J ACH_J2N"),
+    "east":  ("AGG_E2J", "AGG_E2J GUG_J2W"),
+    "west":  ("GUG_W2J", "GUG_W2J AGG_J2E"),
+}
+
+
+def _spawn_emergency_vehicles():
+    """
+    Process any pending emergency spawn requests by inserting
+    ambulance vehicles into SUMO via TraCI.
+    """
+    global _emergency_spawn_counter
+
+    while pending_emergency_spawns:
+        req = pending_emergency_spawns.pop(0)
+        approach = req.get("approach", "north")
+        if approach not in APPROACH_ROUTES:
+            print(f"[SPAWN] Unknown approach '{approach}', defaulting to north")
+            approach = "north"
+
+        _emergency_spawn_counter += 1
+        vid = f"manual_ambulance_{_emergency_spawn_counter}"
+        edge, route_edges = APPROACH_ROUTES[approach]
+        route_id = f"emer_route_{_emergency_spawn_counter}"
+
+        try:
+            # Add a new route for this ambulance
+            traci.route.add(route_id, route_edges.split())
+            # Insert the vehicle immediately
+            traci.vehicle.add(
+                vehID=vid,
+                routeID=route_id,
+                typeID=EMERGENCY_TYPE,
+                depart="now",
+                departSpeed="max",
+            )
+            print(f"[SPAWN] Ambulance '{vid}' deployed from {approach} ({edge})")
+        except traci.exceptions.TraCIException as e:
+            print(f"[SPAWN] Failed to spawn ambulance: {e}")
+
+
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
 async def simulation_loop(mode: str, model_path: Path, speed: float):
@@ -282,7 +400,7 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
         model_path: Path to trained DQN model checkpoint
         speed:      Simulation speed multiplier (1.0 = real-time)
     """
-    global pending_override
+    global pending_override, active_control_mode, pending_mode_switch
 
     # ── Load agent (or set up demo/manual mode) ──────────────────────────
     agent = None
@@ -303,6 +421,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
     elif mode == SimMode.MANUAL:
         print("[SIM] Manual mode — waiting for Godot UI commands")
+
+    elif mode == SimMode.BASELINE:
+        print("[SIM] Baseline mode — fixed-timer cycling (60s NS / 30s EW)")
+
+    # Baseline timer (always created — used when switching to baseline at runtime)
+    baseline_timer = BaselineTimer()
+
+    # Set the active control mode (can be changed at runtime via WebSocket)
+    active_control_mode = mode
 
     # ── Initialise SUMO environment ──────────────────────────────────────
     env = TrafficEnv(gui=False, verbose=False)
@@ -328,6 +455,20 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
             while not done:
                 decision_start = time.time()
 
+                # ── Check for runtime mode switch ─────────────────────
+                if pending_mode_switch is not None:
+                    new_mode = pending_mode_switch
+                    pending_mode_switch = None
+                    if new_mode != active_control_mode:
+                        active_control_mode = new_mode
+                        print(f"[SIM] Control mode switched to: "
+                              f"{active_control_mode.upper()}")
+                        # Broadcast mode change to all clients
+                        await broadcast({
+                            "type": "mode_changed",
+                            "control_mode": active_control_mode,
+                        })
+
                 # ── Determine action ─────────────────────────────────────
                 if pending_override is not None:
                     # Manual override from Godot UI
@@ -343,10 +484,13 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     print(f"[SIM] Override applied: {override['approach']} → "
                           f"action={ACTION_NAMES[action]}")
 
-                elif mode == SimMode.AI and agent is not None:
+                elif active_control_mode == SimMode.AI and agent is not None:
                     action = agent.select_action(state)
 
-                elif mode == SimMode.DEMO:
+                elif active_control_mode == SimMode.BASELINE:
+                    action = baseline_timer.get_action(env._sim_step)
+
+                elif active_control_mode == SimMode.DEMO:
                     # Random action: 60% HOLD, 10% each for the 4 switch actions
                     action = 0 if random.random() < 0.6 else random.randint(1, 4)
 
@@ -361,6 +505,9 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                 # We replicate the inner loop manually so we can broadcast
                 # intermediate vehicle positions. The env.step() is called
                 # AFTER to keep reward/state computation correct.
+
+                # --- Phase 0: Spawn any manually-requested emergency vehicles ---
+                _spawn_emergency_vehicles()
 
                 # --- Phase 1: Apply action to env (same as env.step start) ---
                 preempted, forced_phase = env._check_emergency_preemption()
@@ -493,6 +640,7 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                 # ── Build full state broadcast packet ─────────────────────
                 packet = {
                     "type": "state_update",
+                    "control_mode": active_control_mode,
 
                     # Timing
                     "step": env._sim_step,
@@ -594,7 +742,9 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 async def main(args):
     """Start WebSocket server and simulation loop concurrently."""
     # Determine simulation mode
-    if args.demo:
+    if args.baseline:
+        mode = SimMode.BASELINE
+    elif args.demo:
         mode = SimMode.DEMO
     elif args.manual:
         mode = SimMode.MANUAL
@@ -640,6 +790,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--demo", action="store_true",
         help="Demo mode — random actions, no trained model needed"
+    )
+    parser.add_argument(
+        "--baseline", action="store_true",
+        help="Fixed-timer baseline mode (60s NS / 30s EW cycle)"
     )
     parser.add_argument(
         "--speed", type=float, default=1.0,

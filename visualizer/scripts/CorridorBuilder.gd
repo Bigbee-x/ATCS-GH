@@ -360,7 +360,7 @@ func _build_cross_streets(jid: String, center_z: float) -> void:
 
 	# East arm
 	var e_width: float = widths["east"]
-	var e_center_x: float = JUNCTION_HALF + CROSS_ARM / 2.0
+	var e_center_x: float = -(JUNCTION_HALF + CROSS_ARM / 2.0)
 	var e_road := CSGBox3D.new()
 	e_road.size = Vector3(CROSS_ARM, ROAD_THICKNESS, e_width)
 	e_road.position = Vector3(e_center_x, 0, center_z)
@@ -376,11 +376,11 @@ func _build_cross_streets(jid: String, center_z: float) -> void:
 		sw.material = _mat_sidewalk
 		add_child(sw)
 	# Center dashes
-	_build_center_dashes(Vector3(e_center_x, 0, center_z), Vector3(1, 0, 0), CROSS_ARM)
+	_build_center_dashes(Vector3(e_center_x, 0, center_z), Vector3(-1, 0, 0), CROSS_ARM)
 
 	# West arm
 	var w_width: float = widths["west"]
-	var w_center_x: float = -(JUNCTION_HALF + CROSS_ARM / 2.0)
+	var w_center_x: float = JUNCTION_HALF + CROSS_ARM / 2.0
 	var w_road := CSGBox3D.new()
 	w_road.size = Vector3(CROSS_ARM, ROAD_THICKNESS, w_width)
 	w_road.position = Vector3(w_center_x, 0, center_z)
@@ -395,7 +395,7 @@ func _build_cross_streets(jid: String, center_z: float) -> void:
 			center_z + side * (w_width / 2.0 + SIDEWALK_WIDTH / 2.0))
 		sw.material = _mat_sidewalk
 		add_child(sw)
-	_build_center_dashes(Vector3(w_center_x, 0, center_z), Vector3(-1, 0, 0), CROSS_ARM)
+	_build_center_dashes(Vector3(w_center_x, 0, center_z), Vector3(1, 0, 0), CROSS_ARM)
 
 
 func _build_center_dashes(center: Vector3, direction: Vector3, length: float) -> void:
@@ -431,8 +431,8 @@ func _build_stop_lines(jid: String, center_z: float) -> void:
 	var configs: Array = [
 		Vector3(0, 0.11, center_z + JUNCTION_HALF - 0.05),
 		Vector3(0, 0.11, center_z - JUNCTION_HALF + 0.05),
-		Vector3(JUNCTION_HALF - 0.05, 0.11, center_z),
 		Vector3(-(JUNCTION_HALF - 0.05), 0.11, center_z),
+		Vector3(JUNCTION_HALF - 0.05, 0.11, center_z),
 	]
 	var sizes: Array = [
 		Vector3(ns_half * 2, 0.02, 0.1),
@@ -450,15 +450,13 @@ func _build_stop_lines(jid: String, center_z: float) -> void:
 		add_child(line)
 
 
-func _build_crosswalks(jid: String, center_z: float) -> void:
-	## Build zebra crossing markings at junction edges.
+func _build_crosswalks(_jid: String, center_z: float) -> void:
+	## Build zebra crossing markings at north and south junction edges only.
 	var stripe_w: float = 0.12
 	var stripe_gap: float = 0.12
 	var y_pos: float = 0.11
 
-	var widths: Dictionary = _cross_widths[jid]
-
-	# North/South crosswalks (crossing NS road)
+	# Only north/south crosswalks (crossing the N/S corridor road)
 	for z_offset in [JUNCTION_HALF - 0.4, -(JUNCTION_HALF - 0.4)]:
 		var n_stripes: int = int(NS_ROAD_WIDTH / (stripe_w + stripe_gap))
 		var total_span: float = n_stripes * (stripe_w + stripe_gap) - stripe_gap
@@ -470,32 +468,6 @@ func _build_crosswalks(jid: String, center_z: float) -> void:
 				center_z + z_offset)
 			stripe.material = _mat_marking
 			add_child(stripe)
-
-	# East crosswalk
-	var e_width: float = widths["east"]
-	var e_stripes: int = int(e_width / (stripe_w + stripe_gap))
-	var e_span: float = e_stripes * (stripe_w + stripe_gap) - stripe_gap
-	var e_start: float = center_z - e_span / 2.0
-	for i in range(e_stripes):
-		var stripe := CSGBox3D.new()
-		stripe.size = Vector3(0.5, 0.02, stripe_w)
-		stripe.position = Vector3(JUNCTION_HALF - 0.4, y_pos,
-			e_start + i * (stripe_w + stripe_gap))
-		stripe.material = _mat_marking
-		add_child(stripe)
-
-	# West crosswalk
-	var w_width: float = widths["west"]
-	var w_stripes: int = int(w_width / (stripe_w + stripe_gap))
-	var w_span: float = w_stripes * (stripe_w + stripe_gap) - stripe_gap
-	var w_start: float = center_z - w_span / 2.0
-	for i in range(w_stripes):
-		var stripe := CSGBox3D.new()
-		stripe.size = Vector3(0.5, 0.02, stripe_w)
-		stripe.position = Vector3(-(JUNCTION_HALF - 0.4), y_pos,
-			w_start + i * (stripe_w + stripe_gap))
-		stripe.material = _mat_marking
-		add_child(stripe)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -525,37 +497,37 @@ func _build_junction_lane_overlays(jid: String, center_z: float) -> void:
 	var n_center_z: float = center_z + half_j + OVERLAY_LENGTH / 2.0
 	# S approach: incoming from south (negative Z direction)
 	var s_center_z: float = center_z - half_j - OVERLAY_LENGTH / 2.0
-	# E approach: incoming from east (positive X direction)
-	var e_center_x: float = half_j + OVERLAY_LENGTH / 2.0
-	# W approach: incoming from west (negative X direction)
-	var w_center_x: float = -(half_j + OVERLAY_LENGTH / 2.0)
+	# E approach: incoming from east (now negative X after mirror)
+	var e_center_x: float = -(half_j + OVERLAY_LENGTH / 2.0)
+	# W approach: incoming from west (now positive X after mirror)
+	var w_center_x: float = half_j + OVERLAY_LENGTH / 2.0
 
 	var lane_configs: Dictionary = {}
 
 	match jid:
 		"J0":
 			# N: ACH_J1toJ0_1, ACH_J1toJ0_2 (2 lanes from J1)
-			lane_configs["ACH_J1toJ0_1"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J1toJ0_2"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J1toJ0_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J1toJ0_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# E: AGG_E2J0_1, AGG_E2J0_2 (2 lanes, Aggrey St)
 			lane_configs["AGG_E2J0_1"] = {"pos": Vector3(e_center_x, 0.12, center_z + e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
 			lane_configs["AGG_E2J0_2"] = {"pos": Vector3(e_center_x, 0.12, center_z - e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
 			# S: ACH_S2J0_1, ACH_S2J0_2 (2 lanes from boundary)
-			lane_configs["ACH_S2J0_1"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_S2J0_2"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_S2J0_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_S2J0_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# W: GUG_W2J0_1 (1 lane, Guggisberg)
 			lane_configs["GUG_W2J0_1"] = {"pos": Vector3(w_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, w_width * 0.8)}
 
 		"J1":
 			# N: ACH_J2toJ1_1, ACH_J2toJ1_2 (2 lanes from J2)
-			lane_configs["ACH_J2toJ1_1"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J2toJ1_2"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J2toJ1_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J2toJ1_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# E: ASD_E2J1_1, ASD_E2J1_2 (2 lanes, Asylum Down)
 			lane_configs["ASD_E2J1_1"] = {"pos": Vector3(e_center_x, 0.12, center_z + e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
 			lane_configs["ASD_E2J1_2"] = {"pos": Vector3(e_center_x, 0.12, center_z - e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
 			# S: ACH_J0toJ1_1, ACH_J0toJ1_2 (2 lanes from J0)
-			lane_configs["ACH_J0toJ1_1"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J0toJ1_2"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J0toJ1_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J0toJ1_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# W: RNG_W2J1_1, RNG_W2J1_2 (2 lanes, Ring Rd)
 			var w_lane_w: float = w_width / 4.0
 			lane_configs["RNG_W2J1_1"] = {"pos": Vector3(w_center_x, 0.12, center_z - w_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, w_lane_w * 1.8)}
@@ -563,13 +535,13 @@ func _build_junction_lane_overlays(jid: String, center_z: float) -> void:
 
 		"J2":
 			# N: ACH_N2J2_1, ACH_N2J2_2 (2 lanes from boundary)
-			lane_configs["ACH_N2J2_1"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_N2J2_2"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_N2J2_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_N2J2_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# E: NMA_E2J2_1 (1 lane, Nima)
 			lane_configs["NMA_E2J2_1"] = {"pos": Vector3(e_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, widths["east"] * 0.8)}
 			# S: ACH_J1toJ2_1, ACH_J1toJ2_2 (2 lanes from J1)
-			lane_configs["ACH_J1toJ2_1"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J1toJ2_2"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J1toJ2_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
+			lane_configs["ACH_J1toJ2_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
 			# W: TSN_W2J2_1 (1 lane, Tesano)
 			lane_configs["TSN_W2J2_1"] = {"pos": Vector3(w_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, w_width * 0.8)}
 
@@ -605,11 +577,12 @@ func _build_traffic_lights(jid: String, center_z: float) -> void:
 	var e_offset: float = widths["east"] / 2.0 + 0.3
 	var w_offset: float = widths["west"] / 2.0 + 0.3
 
+	# X positions mirrored (negated) for right-hand traffic visual mapping.
 	var configs: Dictionary = {
-		"north": {"pos": Vector3(-ns_offset, 0, center_z + half_j), "rot_y": 0.0},
-		"south": {"pos": Vector3(ns_offset, 0, center_z - half_j), "rot_y": PI},
-		"east":  {"pos": Vector3(half_j, 0, center_z + e_offset), "rot_y": -PI / 2.0},
-		"west":  {"pos": Vector3(-half_j, 0, center_z - w_offset), "rot_y": PI / 2.0},
+		"north": {"pos": Vector3(ns_offset, 0, center_z + half_j), "rot_y": 0.0},
+		"south": {"pos": Vector3(-ns_offset, 0, center_z - half_j), "rot_y": PI},
+		"east":  {"pos": Vector3(-half_j, 0, center_z + e_offset), "rot_y": PI / 2.0},
+		"west":  {"pos": Vector3(half_j, 0, center_z - w_offset), "rot_y": -PI / 2.0},
 	}
 
 	if not _lights.has(jid):

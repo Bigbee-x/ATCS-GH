@@ -76,6 +76,8 @@ func _ready() -> void:
 	# ── Connect UI signals ──────────────────────────────────────────────
 	ui.override_requested.connect(_on_override_requested)
 	ui.mode_switch_requested.connect(_on_mode_switch_requested)
+	ui.emergency_spawn_requested.connect(_on_emergency_spawn_requested)
+	ui.pedestrian_toggled.connect(_on_pedestrian_toggled)
 
 	# ── Connect server mode-change signal ───────────────────────────────
 	ws_client.mode_changed.connect(_on_mode_changed)
@@ -150,6 +152,18 @@ func _on_connection_changed(connected: bool) -> void:
 func _on_override_requested(approach: String) -> void:
 	print("[CorridorMain] Manual override: force green for %s" % approach)
 	ws_client.send_override(approach)
+
+
+func _on_emergency_spawn_requested(approach: String) -> void:
+	## Forward emergency vehicle deploy from UI to WebSocket server.
+	print("[CorridorMain] Deploy ambulance from %s" % approach)
+	ws_client.send_spawn_emergency(approach)
+
+
+func _on_pedestrian_toggled(enabled: bool) -> void:
+	## Toggle pedestrians on/off from UI button.
+	pedestrian_manager.set_pedestrians_enabled(enabled)
+	print("[CorridorMain] Pedestrians %s" % ("enabled" if enabled else "disabled"))
 
 
 func _on_mode_switch_requested(target_mode: String) -> void:

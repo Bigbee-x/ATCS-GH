@@ -37,7 +37,7 @@ const NS_ROAD_WIDTH   := 6.4    # Achimota Forest Rd: 2 lanes per direction
 const E_ROAD_WIDTH    := 6.4    # Aggrey Street: 2 lanes per direction
 const W_ROAD_WIDTH    := 3.2    # Guggisberg Street: 1 lane per direction
 const ROAD_THICKNESS  := 0.1    # Road surface height
-const JUNCTION_SIZE   := 10.0   # Central junction (wider for asymmetric E/W)
+const JUNCTION_SIZE   := 7.0    # Central junction (slight widening at intersection)
 const SIDEWALK_HEIGHT := 0.15   # Raised sidewalk height
 const SIDEWALK_WIDTH  := 1.5    # Sidewalk width alongside road
 
@@ -80,8 +80,8 @@ func _ready() -> void:
 	_build_junction()
 	_build_road_arm("north", Vector3(0, 0, 1), NS_ROAD_WIDTH)
 	_build_road_arm("south", Vector3(0, 0, -1), NS_ROAD_WIDTH)
-	_build_road_arm("east",  Vector3(1, 0, 0), E_ROAD_WIDTH)
-	_build_road_arm("west",  Vector3(-1, 0, 0), W_ROAD_WIDTH)
+	_build_road_arm("east",  Vector3(-1, 0, 0), E_ROAD_WIDTH)   # Mirrored X for right-hand visual
+	_build_road_arm("west",  Vector3(1, 0, 0), W_ROAD_WIDTH)    # Mirrored X for right-hand visual
 	_build_traffic_lights()
 	_build_lane_overlays()
 	_build_watermark()
@@ -323,8 +323,8 @@ func _build_stop_lines() -> void:
 		# approach, position, size
 		["north", Vector3(0, 0.11, half_junc - 0.1), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
 		["south", Vector3(0, 0.11, -(half_junc - 0.1)), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
-		["east",  Vector3(half_junc - 0.1, 0.11, 0), Vector3(0.2, 0.02, E_ROAD_WIDTH * 0.45)],
-		["west",  Vector3(-(half_junc - 0.1), 0.11, 0), Vector3(0.2, 0.02, W_ROAD_WIDTH * 0.45)],
+		["east",  Vector3(-(half_junc - 0.1), 0.11, 0), Vector3(0.2, 0.02, E_ROAD_WIDTH * 0.45)],
+		["west",  Vector3(half_junc - 0.1, 0.11, 0), Vector3(0.2, 0.02, W_ROAD_WIDTH * 0.45)],
 	]
 
 	for cfg in configs:
@@ -344,24 +344,32 @@ func _build_traffic_lights() -> void:
 	## Build traffic light poles at each junction corner.
 	# Each light faces inward toward approaching traffic.
 	# Positions are at the left side of each approach (driver's perspective).
-	var half_junc: float = JUNCTION_SIZE / 2.0 + 0.5
+	var half_junc: float = JUNCTION_SIZE / 2.0 + 0.3
 
+	# Traffic lights placed at the curb (road edge + small offset onto sidewalk).
+	# Each light sits on the left side of the incoming traffic (driver's perspective).
+	var ns_curb: float = NS_ROAD_WIDTH / 2.0 + 0.3   # 3.5 — just outside N/S road edge
+	var e_curb: float  = E_ROAD_WIDTH / 2.0 + 0.3     # 3.5 — just outside E road edge
+	var w_curb: float  = W_ROAD_WIDTH / 2.0 + 0.3     # 1.9 — just outside W road edge
+
+	# X positions are mirrored (negated) to match the right-hand traffic
+	# visual mapping in VehicleManager.gd.
 	var configs: Dictionary = {
 		"north": {
-			"pos": Vector3(-(NS_ROAD_WIDTH / 4.0 + 0.5), 0, half_junc),
+			"pos": Vector3(ns_curb, 0, half_junc),
 			"rot_y": 0.0,  # Faces south (toward oncoming N traffic)
 		},
 		"south": {
-			"pos": Vector3(NS_ROAD_WIDTH / 4.0 + 0.5, 0, -half_junc),
+			"pos": Vector3(-ns_curb, 0, -half_junc),
 			"rot_y": PI,  # Faces north
 		},
 		"east": {
-			"pos": Vector3(half_junc, 0, (E_ROAD_WIDTH / 4.0 + 0.5)),
-			"rot_y": -PI / 2.0,  # Faces west
+			"pos": Vector3(-half_junc, 0, e_curb),
+			"rot_y": PI / 2.0,  # Faces east (mirrored)
 		},
 		"west": {
-			"pos": Vector3(-half_junc, 0, -(W_ROAD_WIDTH / 4.0 + 0.5)),
-			"rot_y": PI / 2.0,  # Faces east
+			"pos": Vector3(half_junc, 0, -w_curb),
+			"rot_y": -PI / 2.0,  # Faces west (mirrored)
 		},
 	}
 
@@ -522,14 +530,15 @@ func _build_lane_overlays() -> void:
 	# Lane configs: lane_id -> {pos, size}
 	# Lane indices shifted: lane 0 is now sidewalk, vehicle lanes are 1,2
 	# N/S: 2 vehicle lanes each, E (Aggrey St): 2, W (Guggisberg): 1
+	# X positions mirrored (negated) to match right-hand traffic visual mapping.
 	var lane_configs: Dictionary = {
-		"ACH_N2J_1": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"ACH_N2J_2": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"ACH_S2J_1": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"ACH_S2J_2": {"pos": Vector3(-ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
-		"AGG_E2J_1": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
-		"AGG_E2J_2": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
-		"GUG_W2J_1": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, -w_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
+		"ACH_N2J_1": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_N2J_2": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_S2J_1": {"pos": Vector3(-ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"ACH_S2J_2": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
+		"AGG_E2J_1": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
+		"AGG_E2J_2": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, -e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
+		"GUG_W2J_1": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -w_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
 	}
 
 	for lane_id in lane_configs:
@@ -616,23 +625,18 @@ func _build_emergency_overlay() -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_crosswalks() -> void:
-	## Build zebra crossing markings at each junction edge.
-	## Each crosswalk is a set of parallel white stripes.
+	## Build zebra crossing markings at the north and south junction edges only.
+	## These cross the E/W road — the main pedestrian routes at Achimota junction.
 	var half_junc: float = JUNCTION_SIZE / 2.0
-	var stripe_w: float = 0.3   # Width of each stripe
-	var stripe_gap: float = 0.3 # Gap between stripes
-	var y_pos: float = 0.11     # Just above road surface
+	var stripe_w: float = 0.3
+	var stripe_gap: float = 0.3
+	var y_pos: float = 0.11
 
-	# Crosswalk configs: [approach, center_z_or_x, road_width, is_ns_road]
+	# Only north and south crosswalks — positioned at the junction edge
+	# where SUMO pedestrians actually cross
 	var crosswalks: Array = [
-		# North crosswalk — crosses N/S road at north junction edge
-		{"name": "north", "center": Vector3(0, y_pos, half_junc - 1.0), "width": NS_ROAD_WIDTH, "along_x": true},
-		# South crosswalk
-		{"name": "south", "center": Vector3(0, y_pos, -(half_junc - 1.0)), "width": NS_ROAD_WIDTH, "along_x": true},
-		# East crosswalk — crosses E/W road at east junction edge
-		{"name": "east", "center": Vector3(half_junc - 1.0, y_pos, 0), "width": E_ROAD_WIDTH, "along_z": true},
-		# West crosswalk
-		{"name": "west", "center": Vector3(-(half_junc - 1.0), y_pos, 0), "width": W_ROAD_WIDTH, "along_z": true},
+		{"name": "north", "center": Vector3(0, y_pos, half_junc), "width": NS_ROAD_WIDTH, "along_x": true},
+		{"name": "south", "center": Vector3(0, y_pos, -half_junc), "width": NS_ROAD_WIDTH, "along_x": true},
 	]
 
 	for cw in crosswalks:
@@ -643,16 +647,8 @@ func _build_crosswalks() -> void:
 		for i in range(n_stripes):
 			var stripe := CSGBox3D.new()
 			var offset: float = start_offset + i * (stripe_w + stripe_gap)
-
-			if cw.get("along_x", false):
-				# Stripes run perpendicular to N/S road (along X axis)
-				stripe.size = Vector3(stripe_w, 0.02, 1.6)
-				stripe.position = cw["center"] + Vector3(offset + stripe_w / 2.0, 0, 0)
-			else:
-				# Stripes run perpendicular to E/W road (along Z axis)
-				stripe.size = Vector3(1.6, 0.02, stripe_w)
-				stripe.position = cw["center"] + Vector3(0, 0, offset + stripe_w / 2.0)
-
+			stripe.size = Vector3(stripe_w, 0.02, 1.6)
+			stripe.position = cw["center"] + Vector3(offset + stripe_w / 2.0, 0, 0)
 			stripe.material = _mat_marking
 			stripe.name = "Crosswalk_%s_%d" % [cw["name"], i]
 			add_child(stripe)

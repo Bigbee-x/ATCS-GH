@@ -122,6 +122,10 @@ pending_override: dict | None = None
 active_control_mode: str | None = None   # Set in simulation_loop; None = use startup mode
 pending_mode_switch: str | None = None   # Queued by ws_handler, consumed by sim loop
 
+# Queue of pending emergency vehicle spawn requests
+pending_emergency_spawns: list[dict] = []
+_emergency_spawn_counter: int = 0
+
 
 # ── WebSocket handler ────────────────────────────────────────────────────────
 
@@ -175,6 +179,11 @@ async def ws_handler(websocket):
                         print(f"[WS] Mode switch requested: {target_mode.upper()}")
                     else:
                         print(f"[WS] Unknown mode: {target_mode}")
+
+                elif action == "spawn_emergency":
+                    approach = data.get("approach", "north").lower()
+                    pending_emergency_spawns.append({"approach": approach})
+                    print(f"[WS] Emergency spawn requested from {approach}")
 
             except json.JSONDecodeError:
                 print("[WS] Received invalid JSON, ignoring")
@@ -362,6 +371,53 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
     }
 
 
+# ── Emergency vehicle spawner (corridor) ──────────────────────────────────
+
+# For corridor, spawn ambulances on the main N-S Achimota corridor
+# approaching from N (top) or S (bottom), or from side streets at J1.
+# approach → (incoming edge, route edges for through-movement)
+CORRIDOR_APPROACH_ROUTES = {
+    # N-S through corridor (enters J2 from north, exits J0 south)
+    "north": ("ACH_N2J2",     "ACH_N2J2 ACH_J2toJ1 ACH_J1toJ0 ACH_J0toS"),
+    # S-N through corridor (enters J0 from south, exits J2 north)
+    "south": ("ACH_S2J0",     "ACH_S2J0 ACH_J0toJ1 ACH_J1toJ2 ACH_J2toN"),
+    # E-W at J1 (enters from Asylum Down, exits to Ring Road)
+    "east":  ("ASD_E2J1",     "ASD_E2J1 RNG_J1toW"),
+    # W-E at J1 (enters from Ring Road, exits to Asylum Down)
+    "west":  ("RNG_W2J1",     "RNG_W2J1 ASD_J1toE"),
+}
+
+
+def _spawn_emergency_vehicles():
+    """Process pending emergency spawn requests for corridor simulation."""
+    global _emergency_spawn_counter
+
+    while pending_emergency_spawns:
+        req = pending_emergency_spawns.pop(0)
+        approach = req.get("approach", "north")
+        if approach not in CORRIDOR_APPROACH_ROUTES:
+            print(f"[SPAWN] Unknown approach '{approach}', defaulting to north")
+            approach = "north"
+
+        _emergency_spawn_counter += 1
+        vid = f"manual_ambulance_{_emergency_spawn_counter}"
+        edge, route_edges = CORRIDOR_APPROACH_ROUTES[approach]
+        route_id = f"emer_route_{_emergency_spawn_counter}"
+
+        try:
+            traci.route.add(route_id, route_edges.split())
+            traci.vehicle.add(
+                vehID=vid,
+                routeID=route_id,
+                typeID=EMERGENCY_TYPE,
+                depart="now",
+                departSpeed="max",
+            )
+            print(f"[SPAWN] Ambulance '{vid}' deployed from {approach} ({edge})")
+        except traci.exceptions.TraCIException as e:
+            print(f"[SPAWN] Failed to spawn ambulance: {e}")
+
+
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
 async def simulation_loop(mode: str, model_dir: Path, speed: float):
@@ -488,6 +544,9 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                                         else random.randint(1, 6))
                     else:
                         actions[jid] = ACTION_HOLD
+
+                # ── Spawn any manually-requested emergency vehicles ───────
+                _spawn_emergency_vehicles()
 
                 # ── Apply actions (same as env.step start) ─────────────────
                 for jid in JUNCTION_IDS:

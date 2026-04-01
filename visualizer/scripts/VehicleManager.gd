@@ -19,7 +19,7 @@ extends Node3D
 ## close (bumper-to-bumper) on the compressed roads.
 const CAR_SIZE       := Vector3(0.6, 0.3, 1.0)
 const TROTRO_SIZE    := Vector3(0.6, 0.4, 1.4)
-const AMBULANCE_SIZE := Vector3(1.6, 0.8, 3.2)
+const AMBULANCE_SIZE := Vector3(0.7, 0.45, 1.5)
 const VEHICLE_Y      := 0.35
 
 # ── SUMO → Godot coordinate transform ────────────────────────────────────────
@@ -35,7 +35,7 @@ const SUMO_JUNC_HALF_Z: float = 7.2
 const SUMO_ROAD_LEN_X: float = 489.6   ## E/W roads (1000 - 510.4)
 const SUMO_ROAD_LEN_Z: float = 492.8   ## N/S roads (1000 - 507.2)
 ## Godot junction half-width (JUNCTION_SIZE / 2 from Intersection.gd)
-const GODOT_JUNC_HALF: float = 4.0
+const GODOT_JUNC_HALF: float = 3.5
 ## Godot road length from junction edge (ROAD_LENGTH from Intersection.gd)
 const GODOT_ROAD_LEN: float = 30.0
 
@@ -81,6 +81,19 @@ const C_GD_CROSS_ARM: float = 10.0  # Cross-street arm length in Godot
 # ── Animation ────────────────────────────────────────────────────────────────
 const LERP_SPEED: float = 5.0     ## Position/rotation interpolation speed
 const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed
+
+# ── Boundary fade-out zones ──────────────────────────────────────────────────
+## Vehicles approaching the edge of the visible Godot road gradually fade out
+## instead of piling up.  Hides the extreme compression (49:1) on boundary
+## roads and creates a natural "driving away" effect.
+## Single-junction bounds: ±(GODOT_JUNC_HALF + GODOT_ROAD_LEN)
+const SJ_BOUND: float = 33.5          # 3.5 + 30
+const SJ_FADE_DIST: float = 8.0       # Start fading 8 units before edge
+## Corridor bounds
+const CR_Z_MIN: float = -13.0         # J0_Z - junc_half - boundary_road
+const CR_Z_MAX: float = 49.0          # J2_Z + junc_half + boundary_road
+const CR_X_BOUND: float = 13.0        # junc_half + cross_arm
+const CR_FADE_DIST: float = 6.0       # Start fading 6 units before edge
 
 # ── Pool limits ──────────────────────────────────────────────────────────────
 var MAX_VEHICLES: int = 200
@@ -135,11 +148,6 @@ func _process(delta: float) -> void:
 		var info: Dictionary = _active[vid]
 		var node: Node3D = info["node"]
 
-		# --- Fade in newly spawned vehicles ---
-		if info["opacity"] < 1.0:
-			info["opacity"] = minf(info["opacity"] + FADE_SPEED * delta, 1.0)
-			_set_node_opacity(node, info["opacity"])
-
 		# --- Fade out despawning vehicles ---
 		if info.get("despawning", false):
 			info["opacity"] = maxf(info["opacity"] - FADE_SPEED * delta, 0.0)
@@ -153,6 +161,21 @@ func _process(delta: float) -> void:
 
 		# --- Lerp rotation ---
 		node.rotation.y = lerp_angle(node.rotation.y, info["target_rot"], LERP_SPEED * delta)
+
+		# --- Boundary fade: vehicles near road edges fade out smoothly ---
+		var bfade: float = _get_boundary_fade(node.position)
+		if bfade <= 0.0:
+			# Beyond visible area — despawn immediately
+			info["despawning"] = true
+			continue
+
+		# --- Fade in newly spawned vehicles (combine with boundary fade) ---
+		if info["opacity"] < 1.0:
+			info["opacity"] = minf(info["opacity"] + FADE_SPEED * delta, 1.0)
+
+		# Apply effective opacity = spawn fade * boundary fade
+		var effective_alpha: float = info["opacity"] * bfade
+		_set_node_opacity(node, effective_alpha)
 
 		# --- Ambulance light-bar pulse ---
 		if info["is_ambulance"]:
@@ -195,8 +218,13 @@ func update_vehicles(data: Dictionary) -> void:
 
 		if _active.has(vid):
 			# Update existing vehicle's target
-			_active[vid]["target_pos"] = pos
-			_active[vid]["target_rot"] = rot
+			# If new target is beyond boundary, start despawning instead
+			if _get_boundary_fade(pos) <= 0.0:
+				if not _active[vid].get("despawning", false):
+					_active[vid]["despawning"] = true
+			else:
+				_active[vid]["target_pos"] = pos
+				_active[vid]["target_rot"] = rot
 		else:
 			# Spawn new vehicle
 			if _active.size() >= MAX_VEHICLES:
@@ -223,12 +251,14 @@ func clear_all() -> void:
 
 func _sumo_to_godot(sx: float, sy: float) -> Vector3:
 	## Map SUMO 2D coordinates → Godot 3D position.
+	## NOTE: X axis is negated to flip left/right so the isometric camera
+	## shows right-hand traffic (Ghana drives on the right).
 	if corridor_mode:
 		## Corridor: piecewise mapping that expands junction areas
 		## and stretches road widths to match visual geometry.
 		var dx: float = sx - CORRIDOR_OFFSET_X  # Offset-subtracted
 		var dy: float = sy - CORRIDOR_OFFSET_Y
-		var gx: float = _map_corridor_x(dx)
+		var gx: float = -_map_corridor_x(dx)  # Negated for right-hand visual
 		var gz: float = _map_corridor_z(dy)
 		return Vector3(gx, VEHICLE_Y, gz)
 	else:
@@ -237,7 +267,7 @@ func _sumo_to_godot(sx: float, sy: float) -> Vector3:
 		## N/S edges at ±7.2 from center, E/W edges at ±10.4 from center.
 		var dx: float = sx - SUMO_ORIGIN_X
 		var dz: float = sy - SUMO_ORIGIN_Y
-		var gx: float = _map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)
+		var gx: float = -_map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)  # Negated for right-hand visual
 		var gz: float = _map_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
 		return Vector3(gx, VEHICLE_Y, gz)
 
@@ -257,9 +287,9 @@ func _map_axis(d: float, junc_half: float, road_len: float) -> float:
 
 func _sumo_angle_to_godot(angle_deg: float) -> float:
 	## SUMO angle (0=N clockwise) -> Godot rotation.y.
-	## SUMO 0=N(+Z), 90=E(+X), 180=S(-Z), 270=W(-X)
-	## Godot rot 0=face -Z, PI=face +Z, -PI/2=face +X, PI/2=face -X
-	return deg_to_rad(angle_deg - 180.0)
+	## X axis is mirrored for right-hand traffic visual, so east/west swap.
+	## Formula: 180 - angle (mirror of the original angle - 180).
+	return deg_to_rad(180.0 - angle_deg)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -328,6 +358,10 @@ func _map_corridor_z(dy: float) -> float:
 
 func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> void:
 	## Create or recycle a vehicle node and add to _active tracking.
+	# Skip vehicles that spawn beyond visible boundaries
+	if _get_boundary_fade(pos) <= 0.0:
+		return
+
 	var is_ambulance: bool = (vtype == "emergency")
 	var node: Node3D
 
@@ -490,8 +524,8 @@ func _make_ambulance_node() -> Node3D:
 
 	# White cross stripe (horizontal)
 	var stripe_h := CSGBox3D.new()
-	stripe_h.size = Vector3(AMBULANCE_SIZE.x + 0.02, 0.18, 0.5)
-	stripe_h.position = Vector3(0, 0.12, 0)
+	stripe_h.size = Vector3(AMBULANCE_SIZE.x + 0.02, 0.1, 0.25)
+	stripe_h.position = Vector3(0, 0.08, 0)
 	var cross_mat := StandardMaterial3D.new()
 	cross_mat.albedo_color = Color(1.0, 1.0, 1.0)
 	cross_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -501,8 +535,8 @@ func _make_ambulance_node() -> Node3D:
 
 	# White cross stripe (vertical along length)
 	var stripe_v := CSGBox3D.new()
-	stripe_v.size = Vector3(0.35, 0.18, AMBULANCE_SIZE.z + 0.02)
-	stripe_v.position = Vector3(0, 0.12, 0)
+	stripe_v.size = Vector3(0.18, 0.1, AMBULANCE_SIZE.z + 0.02)
+	stripe_v.position = Vector3(0, 0.08, 0)
 	var cross_mat_v := StandardMaterial3D.new()
 	cross_mat_v.albedo_color = Color(1.0, 1.0, 1.0)
 	cross_mat_v.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -510,10 +544,10 @@ func _make_ambulance_node() -> Node3D:
 	stripe_v.name = "CrossV"
 	root.add_child(stripe_v)
 
-	# Light bar — emissive, pulsing red/blue (child index 3)
+	# Light bar — emissive, pulsing red/blue
 	var light_bar := CSGBox3D.new()
-	light_bar.size = Vector3(1.0, 0.16, 0.4)
-	light_bar.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.1, 0)
+	light_bar.size = Vector3(0.5, 0.1, 0.2)
+	light_bar.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.06, 0)
 	var light_mat := StandardMaterial3D.new()
 	light_mat.albedo_color = Color(1, 0, 0)
 	light_mat.emission_enabled = true
@@ -526,10 +560,10 @@ func _make_ambulance_node() -> Node3D:
 
 	# OmniLight3D — visible glow that lights up surrounding road
 	var glow := OmniLight3D.new()
-	glow.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.3, 0)
+	glow.position = Vector3(0, AMBULANCE_SIZE.y / 2.0 + 0.2, 0)
 	glow.light_color = Color(1, 0, 0)
-	glow.light_energy = 5.0
-	glow.omni_range = 8.0
+	glow.light_energy = 3.0
+	glow.omni_range = 5.0
 	glow.omni_attenuation = 1.5
 	glow.shadow_enabled = false
 	glow.name = "SirenGlow"
@@ -575,3 +609,36 @@ func _set_node_opacity(node: Node3D, alpha: float) -> void:
 			if child is CSGBox3D and child.material:
 				var mat: StandardMaterial3D = child.material
 				mat.albedo_color.a = alpha
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# BOUNDARY FADE
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _get_boundary_fade(pos: Vector3) -> float:
+	## Returns 1.0 if fully visible, 0.0 if beyond boundary, fractional in
+	## the fade zone.  Works for both single-junction and corridor mode.
+	if corridor_mode:
+		# Z axis (north/south corridor length)
+		var fz: float = _edge_fade(pos.z, CR_Z_MIN, CR_Z_MAX, CR_FADE_DIST)
+		# X axis (east/west cross-streets)
+		var fx: float = _edge_fade(pos.x, -CR_X_BOUND, CR_X_BOUND, CR_FADE_DIST)
+		return minf(fz, fx)
+	else:
+		# Single junction — symmetric bounds on both axes
+		var fx: float = _edge_fade(pos.x, -SJ_BOUND, SJ_BOUND, SJ_FADE_DIST)
+		var fz: float = _edge_fade(pos.z, -SJ_BOUND, SJ_BOUND, SJ_FADE_DIST)
+		return minf(fx, fz)
+
+
+func _edge_fade(val: float, low: float, high: float, fade_dist: float) -> float:
+	## Returns 1.0 when val is inside [low+fade, high-fade],
+	## fades linearly to 0.0 at the boundaries [low, high],
+	## and returns 0.0 outside [low, high].
+	if val <= low or val >= high:
+		return 0.0
+	# Distance from the nearest edge
+	var dist_from_edge: float = minf(val - low, high - val)
+	if dist_from_edge >= fade_dist:
+		return 1.0
+	return clampf(dist_from_edge / fade_dist, 0.0, 1.0)

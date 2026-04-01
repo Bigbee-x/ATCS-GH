@@ -203,6 +203,21 @@ func send_mode_switch(target_mode: String) -> void:
 	print("[WS] Sent mode switch: %s" % target_mode)
 
 
+func send_spawn_emergency(approach: String = "") -> void:
+	## Request the server to spawn an emergency vehicle.
+	## approach: "north", "south", "east", "west", or "" for random.
+	if not _is_connected:
+		push_warning("[WS] Cannot spawn emergency — not connected")
+		return
+
+	var msg: String = JSON.stringify({
+		"action": "spawn_emergency",
+		"approach": approach,
+	})
+	_socket.send_text(msg)
+	print("[WS] Sent spawn emergency: approach=%s" % [approach if not approach.is_empty() else "random"])
+
+
 func is_connected_to_server() -> bool:
 	## Returns true if currently connected to the Python server.
 	return _is_connected

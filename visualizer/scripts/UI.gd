@@ -25,6 +25,10 @@ extends Control
 signal override_requested(approach: String)
 ## Emitted when the user toggles between ATCS and Fixed Timer modes
 signal mode_switch_requested(mode: String)
+## Emitted when the user clicks the Deploy Ambulance button
+signal emergency_spawn_requested(approach: String)
+## Emitted when the user toggles pedestrians on/off
+signal pedestrian_toggled(enabled: bool)
 
 # ── Corridor mode ──────────────────────────────────────────────────────────
 var corridor_mode: bool = false
@@ -58,6 +62,10 @@ var _btn_force_north: Button
 var _btn_force_south: Button
 var _btn_force_east: Button
 var _btn_force_west: Button
+var _btn_deploy_ambulance: Button            # Deploy Ambulance button
+var _btn_toggle_pedestrians: Button          # Pedestrian on/off toggle
+var _pedestrians_on: bool = true             # Current pedestrian toggle state
+var _ambulance_counter: int = 0              # Unique ID counter for spawned ambulances
 var _bottom_panel: PanelContainer           # Reference to bottom bar panel
 
 # Emergency banner
@@ -513,6 +521,84 @@ func _build_bottom_bar() -> void:
 	_btn_mode_toggle.pressed.connect(_on_mode_toggle_pressed)
 	hbox.add_child(_btn_mode_toggle)
 
+	# ── Deploy Ambulance button ──────────────────────────────────────────
+	_btn_deploy_ambulance = Button.new()
+	_btn_deploy_ambulance.text = "🚑 Deploy Ambulance"
+	_btn_deploy_ambulance.custom_minimum_size = Vector2(180, 34)
+	_btn_deploy_ambulance.add_theme_font_size_override("font_size", 12)
+	_btn_deploy_ambulance.add_theme_color_override("font_color", Color.WHITE)
+	_btn_deploy_ambulance.add_theme_color_override("font_hover_color", Color.WHITE)
+	_btn_deploy_ambulance.add_theme_color_override("font_pressed_color", Color(0.9, 0.85, 0.85))
+	_btn_deploy_ambulance.add_theme_color_override("font_focus_color", Color.WHITE)
+	# Red background
+	var amb_style := StyleBoxFlat.new()
+	amb_style.bg_color = Color(0.7, 0.08, 0.08, 0.95)
+	amb_style.border_color = Color(1.0, 0.3, 0.3, 0.8)
+	amb_style.border_width_left = 2
+	amb_style.border_width_right = 2
+	amb_style.border_width_top = 2
+	amb_style.border_width_bottom = 2
+	amb_style.corner_radius_top_left = 6
+	amb_style.corner_radius_top_right = 6
+	amb_style.corner_radius_bottom_left = 6
+	amb_style.corner_radius_bottom_right = 6
+	amb_style.content_margin_left = 12
+	amb_style.content_margin_right = 12
+	amb_style.content_margin_top = 6
+	amb_style.content_margin_bottom = 6
+	_btn_deploy_ambulance.add_theme_stylebox_override("normal", amb_style)
+	var amb_hover := amb_style.duplicate()
+	amb_hover.bg_color = Color(0.85, 0.12, 0.12, 0.98)
+	amb_hover.border_color = Color(1.0, 0.4, 0.4, 1.0)
+	_btn_deploy_ambulance.add_theme_stylebox_override("hover", amb_hover)
+	var amb_pressed := amb_style.duplicate()
+	amb_pressed.bg_color = Color(0.5, 0.04, 0.04, 0.95)
+	_btn_deploy_ambulance.add_theme_stylebox_override("pressed", amb_pressed)
+	var amb_focus := amb_style.duplicate()
+	amb_focus.border_color = Color(1.0, 0.4, 0.4, 1.0)
+	_btn_deploy_ambulance.add_theme_stylebox_override("focus", amb_focus)
+	_btn_deploy_ambulance.pressed.connect(_on_deploy_ambulance_pressed)
+	hbox.add_child(_btn_deploy_ambulance)
+
+	# ── Pedestrian toggle button ────────────────────────────────────────
+	_btn_toggle_pedestrians = Button.new()
+	_btn_toggle_pedestrians.text = "🚶 Pedestrians: ON"
+	_btn_toggle_pedestrians.custom_minimum_size = Vector2(170, 34)
+	_btn_toggle_pedestrians.add_theme_font_size_override("font_size", 12)
+	_btn_toggle_pedestrians.add_theme_color_override("font_color", Color.WHITE)
+	_btn_toggle_pedestrians.add_theme_color_override("font_hover_color", Color.WHITE)
+	_btn_toggle_pedestrians.add_theme_color_override("font_pressed_color", Color(0.85, 0.9, 0.85))
+	_btn_toggle_pedestrians.add_theme_color_override("font_focus_color", Color.WHITE)
+	# Green background (active)
+	var ped_style := StyleBoxFlat.new()
+	ped_style.bg_color = Color(0.12, 0.55, 0.25, 0.95)
+	ped_style.border_color = Color(0.3, 0.8, 0.4, 0.8)
+	ped_style.border_width_left = 2
+	ped_style.border_width_right = 2
+	ped_style.border_width_top = 2
+	ped_style.border_width_bottom = 2
+	ped_style.corner_radius_top_left = 6
+	ped_style.corner_radius_top_right = 6
+	ped_style.corner_radius_bottom_left = 6
+	ped_style.corner_radius_bottom_right = 6
+	ped_style.content_margin_left = 12
+	ped_style.content_margin_right = 12
+	ped_style.content_margin_top = 6
+	ped_style.content_margin_bottom = 6
+	_btn_toggle_pedestrians.add_theme_stylebox_override("normal", ped_style)
+	var ped_hover := ped_style.duplicate()
+	ped_hover.bg_color = Color(0.15, 0.65, 0.30, 0.98)
+	ped_hover.border_color = Color(0.4, 0.9, 0.5, 1.0)
+	_btn_toggle_pedestrians.add_theme_stylebox_override("hover", ped_hover)
+	var ped_pressed := ped_style.duplicate()
+	ped_pressed.bg_color = Color(0.08, 0.40, 0.18, 0.95)
+	_btn_toggle_pedestrians.add_theme_stylebox_override("pressed", ped_pressed)
+	var ped_focus := ped_style.duplicate()
+	ped_focus.border_color = Color(0.4, 0.9, 0.5, 1.0)
+	_btn_toggle_pedestrians.add_theme_stylebox_override("focus", ped_focus)
+	_btn_toggle_pedestrians.pressed.connect(_on_toggle_pedestrians_pressed)
+	hbox.add_child(_btn_toggle_pedestrians)
+
 	# Spacer
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -603,6 +689,42 @@ func _on_mode_toggle_pressed() -> void:
 		mode_switch_requested.emit("baseline")
 	else:
 		mode_switch_requested.emit("ai")
+
+
+func _on_deploy_ambulance_pressed() -> void:
+	## Deploy an ambulance from a random approach (or user can specify).
+	_ambulance_counter += 1
+	# Pick a random approach for variety
+	var approaches := ["north", "south", "east", "west"]
+	var approach: String = approaches[_ambulance_counter % approaches.size()]
+	emergency_spawn_requested.emit(approach)
+	# Brief visual feedback: disable button temporarily
+	_btn_deploy_ambulance.disabled = true
+	_btn_deploy_ambulance.text = "🚑 Deploying..."
+	get_tree().create_timer(2.0).timeout.connect(func():
+		_btn_deploy_ambulance.disabled = false
+		_btn_deploy_ambulance.text = "🚑 Deploy Ambulance"
+	)
+
+
+func _on_toggle_pedestrians_pressed() -> void:
+	## Toggle pedestrians on/off.
+	_pedestrians_on = not _pedestrians_on
+	pedestrian_toggled.emit(_pedestrians_on)
+	if _pedestrians_on:
+		_btn_toggle_pedestrians.text = "🚶 Pedestrians: ON"
+		# Green style
+		var style: StyleBoxFlat = _btn_toggle_pedestrians.get_theme_stylebox("normal") as StyleBoxFlat
+		if style:
+			style.bg_color = Color(0.12, 0.55, 0.25, 0.95)
+			style.border_color = Color(0.3, 0.8, 0.4, 0.8)
+	else:
+		_btn_toggle_pedestrians.text = "🚶 Pedestrians: OFF"
+		# Gray style
+		var style: StyleBoxFlat = _btn_toggle_pedestrians.get_theme_stylebox("normal") as StyleBoxFlat
+		if style:
+			style.bg_color = Color(0.35, 0.35, 0.40, 0.95)
+			style.border_color = Color(0.5, 0.5, 0.55, 0.8)
 
 
 func update_control_mode(new_mode: String) -> void:
