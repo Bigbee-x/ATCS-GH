@@ -39,3 +39,13 @@ data/training_log.csv
 .vscode/
 .idea/
 *.swp
+
+# Godot editor cache (regenerated on open)
+visualizer/.godot/editor/
+visualizer/.godot/uid_cache.bin
+
+# Logs
+logs/
+
+# Misc
+plan.md
