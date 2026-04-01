@@ -43,6 +43,7 @@ data/training_log.csv
 # Godot editor cache (regenerated on open)
 visualizer/.godot/editor/
 visualizer/.godot/uid_cache.bin
+*.gd.uid
 
 # Logs
 logs/
