@@ -28,17 +28,26 @@
   <vType id="car"
          accel="2.6" decel="4.5" emergencyDecel="9.0" sigma="0.5"
          length="4.5" minGap="2.5" maxSpeed="13.89"
-         guiShape="passenger" color="0.6,0.6,0.9"/>
+         guiShape="passenger" color="0.6,0.6,0.9"
+         jmCrossingGap="3.0"/>
 
   <vType id="trotro"
          accel="1.8" decel="3.5" emergencyDecel="7.0" sigma="0.7"
          length="7.0" minGap="3.0" maxSpeed="11.11"
-         guiShape="bus/city" color="1.0,0.8,0.0"/>
+         guiShape="bus/city" color="1.0,0.8,0.0"
+         jmCrossingGap="3.0"/>
 
-  <vType id="emergency"
-         accel="3.5" decel="6.0" emergencyDecel="9.0" sigma="0.1"
-         length="5.5" minGap="2.0" maxSpeed="16.67"
-         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.2"/>
+  <!-- Pedestrian — faster walking speed (Ghanaian crossing behavior) -->
+  <vType id="ped_fast" vClass="pedestrian"
+         speed="3.80"
+         length="0.25" minGap="0.5" width="0.65"/>
+
+  <vType id="emergency" vClass="emergency"
+         accel="3.5" decel="6.0" emergencyDecel="9.0" sigma="0.0"
+         tau="0.5" length="5.5" minGap="1.5" maxSpeed="16.67"
+         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.2"
+         lcStrategic="100" lcPushy="1.0" lcAssertive="1.0"
+         jmDriveAfterRedTime="3" jmDriveAfterYellowTime="3"/>
 
 
   <!-- ═══════════════════════════════════════════════════════════════
@@ -195,105 +204,90 @@
 
 
   <!-- ═══════════════════════════════════════════════════════════════
-       EMERGENCY VEHICLES — Test preemption across corridor
+       EMERGENCY VEHICLES — Deployed manually from Godot UI
+       (No auto-spawned ambulances — click "Deploy Ambulance" button)
   ═══════════════════════════════════════════════════════════════ -->
-
-  <!-- Ambulance traversing full corridor S→N (hits all 3 junctions) -->
-  <vehicle id="ambulance_1" type="emergency" route="rt_S2N"
-           depart="150" departLane="1" departSpeed="max" color="1,0,0"/>
-
-  <!-- Ambulance from J1 cross street heading south -->
-  <vehicle id="ambulance_2" type="emergency" route="rt_E1S"
-           depart="800" departLane="1" departSpeed="max" color="1,0,0"/>
-
-  <!-- Ambulance traversing full corridor N→S (30 min in) -->
-  <vehicle id="ambulance_3" type="emergency" route="rt_N2S"
-           depart="1800" departLane="1" departSpeed="max" color="1,0,0"/>
-
-  <!-- Ambulance from J2 cross street -->
-  <vehicle id="ambulance_4" type="emergency" route="rt_W2N"
-           depart="3600" departLane="1" departSpeed="max" color="1,0,0"/>
 
 
   <!-- ═══════════════════════════════════════════════════════════════
        PEDESTRIAN FLOWS — Crossings at All 3 Junctions
   ═══════════════════════════════════════════════════════════════ -->
 
-  <!-- ── J0 pedestrian crossings ──────────────────────────────────── -->
-  <personFlow id="ped_J0_N_e2w" begin="0" end="7200" perHour="100">
+  <!-- ── J0 pedestrian crossings (reduced ~60%) ──────────────────── -->
+  <personFlow id="ped_J0_N_e2w" type="ped_fast" begin="0" end="7200" perHour="60">
     <walk from="ACH_J0toJ1" to="ACH_J1toJ0"/>
   </personFlow>
-  <personFlow id="ped_J0_N_w2e" begin="0" end="7200" perHour="100">
+  <personFlow id="ped_J0_N_w2e" type="ped_fast" begin="0" end="7200" perHour="60">
     <walk from="ACH_J1toJ0" to="ACH_J0toJ1"/>
   </personFlow>
-  <personFlow id="ped_J0_S_e2w" begin="0" end="7200" perHour="100">
+  <personFlow id="ped_J0_S_e2w" type="ped_fast" begin="0" end="7200" perHour="60">
     <walk from="ACH_S2J0" to="ACH_J0toS"/>
   </personFlow>
-  <personFlow id="ped_J0_S_w2e" begin="0" end="7200" perHour="100">
+  <personFlow id="ped_J0_S_w2e" type="ped_fast" begin="0" end="7200" perHour="60">
     <walk from="ACH_J0toS" to="ACH_S2J0"/>
   </personFlow>
-  <personFlow id="ped_J0_E_n2s" begin="0" end="7200" perHour="60">
+  <personFlow id="ped_J0_E_n2s" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="AGG_E2J0" to="AGG_J0toE"/>
   </personFlow>
-  <personFlow id="ped_J0_E_s2n" begin="0" end="7200" perHour="60">
+  <personFlow id="ped_J0_E_s2n" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="AGG_J0toE" to="AGG_E2J0"/>
   </personFlow>
-  <personFlow id="ped_J0_W_n2s" begin="0" end="7200" perHour="40">
+  <personFlow id="ped_J0_W_n2s" type="ped_fast" begin="0" end="7200" perHour="25">
     <walk from="GUG_W2J0" to="GUG_J0toW"/>
   </personFlow>
-  <personFlow id="ped_J0_W_s2n" begin="0" end="7200" perHour="40">
+  <personFlow id="ped_J0_W_s2n" type="ped_fast" begin="0" end="7200" perHour="25">
     <walk from="GUG_J0toW" to="GUG_W2J0"/>
   </personFlow>
 
-  <!-- ── J1 pedestrian crossings (busier — near market area) ────── -->
-  <personFlow id="ped_J1_N_e2w" begin="0" end="7200" perHour="120">
+  <!-- ── J1 pedestrian crossings (busier — near market area, reduced ~60%) ── -->
+  <personFlow id="ped_J1_N_e2w" type="ped_fast" begin="0" end="7200" perHour="72">
     <walk from="ACH_J1toJ2" to="ACH_J2toJ1"/>
   </personFlow>
-  <personFlow id="ped_J1_N_w2e" begin="0" end="7200" perHour="120">
+  <personFlow id="ped_J1_N_w2e" type="ped_fast" begin="0" end="7200" perHour="72">
     <walk from="ACH_J2toJ1" to="ACH_J1toJ2"/>
   </personFlow>
-  <personFlow id="ped_J1_S_e2w" begin="0" end="7200" perHour="120">
+  <personFlow id="ped_J1_S_e2w" type="ped_fast" begin="0" end="7200" perHour="72">
     <walk from="ACH_J0toJ1" to="ACH_J1toJ0"/>
   </personFlow>
-  <personFlow id="ped_J1_S_w2e" begin="0" end="7200" perHour="120">
+  <personFlow id="ped_J1_S_w2e" type="ped_fast" begin="0" end="7200" perHour="72">
     <walk from="ACH_J1toJ0" to="ACH_J0toJ1"/>
   </personFlow>
-  <personFlow id="ped_J1_E_n2s" begin="0" end="7200" perHour="80">
+  <personFlow id="ped_J1_E_n2s" type="ped_fast" begin="0" end="7200" perHour="48">
     <walk from="ASD_E2J1" to="ASD_J1toE"/>
   </personFlow>
-  <personFlow id="ped_J1_E_s2n" begin="0" end="7200" perHour="80">
+  <personFlow id="ped_J1_E_s2n" type="ped_fast" begin="0" end="7200" perHour="48">
     <walk from="ASD_J1toE" to="ASD_E2J1"/>
   </personFlow>
-  <personFlow id="ped_J1_W_n2s" begin="0" end="7200" perHour="80">
+  <personFlow id="ped_J1_W_n2s" type="ped_fast" begin="0" end="7200" perHour="48">
     <walk from="RNG_W2J1" to="RNG_J1toW"/>
   </personFlow>
-  <personFlow id="ped_J1_W_s2n" begin="0" end="7200" perHour="80">
+  <personFlow id="ped_J1_W_s2n" type="ped_fast" begin="0" end="7200" perHour="48">
     <walk from="RNG_J1toW" to="RNG_W2J1"/>
   </personFlow>
 
-  <!-- ── J2 pedestrian crossings (lighter) ────────────────────────── -->
-  <personFlow id="ped_J2_N_e2w" begin="0" end="7200" perHour="60">
+  <!-- ── J2 pedestrian crossings (lighter, reduced ~60%) ────────── -->
+  <personFlow id="ped_J2_N_e2w" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="ACH_N2J2" to="ACH_J2toN"/>
   </personFlow>
-  <personFlow id="ped_J2_N_w2e" begin="0" end="7200" perHour="60">
+  <personFlow id="ped_J2_N_w2e" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="ACH_J2toN" to="ACH_N2J2"/>
   </personFlow>
-  <personFlow id="ped_J2_S_e2w" begin="0" end="7200" perHour="60">
+  <personFlow id="ped_J2_S_e2w" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="ACH_J1toJ2" to="ACH_J2toJ1"/>
   </personFlow>
-  <personFlow id="ped_J2_S_w2e" begin="0" end="7200" perHour="60">
+  <personFlow id="ped_J2_S_w2e" type="ped_fast" begin="0" end="7200" perHour="36">
     <walk from="ACH_J2toJ1" to="ACH_J1toJ2"/>
   </personFlow>
-  <personFlow id="ped_J2_E_n2s" begin="0" end="7200" perHour="30">
+  <personFlow id="ped_J2_E_n2s" type="ped_fast" begin="0" end="7200" perHour="18">
     <walk from="NMA_E2J2" to="NMA_J2toE"/>
   </personFlow>
-  <personFlow id="ped_J2_E_s2n" begin="0" end="7200" perHour="30">
+  <personFlow id="ped_J2_E_s2n" type="ped_fast" begin="0" end="7200" perHour="18">
     <walk from="NMA_J2toE" to="NMA_E2J2"/>
   </personFlow>
-  <personFlow id="ped_J2_W_n2s" begin="0" end="7200" perHour="30">
+  <personFlow id="ped_J2_W_n2s" type="ped_fast" begin="0" end="7200" perHour="18">
     <walk from="TSN_W2J2" to="TSN_J2toW"/>
   </personFlow>
-  <personFlow id="ped_J2_W_s2n" begin="0" end="7200" perHour="30">
+  <personFlow id="ped_J2_W_s2n" type="ped_fast" begin="0" end="7200" perHour="18">
     <walk from="TSN_J2toW" to="TSN_W2J2"/>
   </personFlow>
 

@@ -31,6 +31,11 @@
 
         <!-- Warn on collisions but keep running (don't abort the sim) -->
         <collision.action value="warn"/>
+
+        <!-- NOTE: pedestrian.model striping removed for now — it changes vehicle
+             yielding dynamics and breaks the pre-trained AI model. The Godot
+             visualizer handles pedestrian rendering via crossing-edge filtering.
+             Re-add after retraining the model with striping enabled. -->
     </processing>
 
     <report>

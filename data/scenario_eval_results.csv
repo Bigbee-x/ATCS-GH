@@ -1,6 +1,6 @@
 scenario,baseline_mean,baseline_std,ai_mean,ai_std,change_pct
-morning_rush,142.82,4.99,6.89,0.96,-95.2
-evening_rush,23.4,0.25,28.16,12.04,20.4
-off_peak,9.47,0.2,1.41,0.01,-85.1
-weekend_market,164.68,9.24,2.95,0.04,-98.2
-heavy_emergency,142.38,5.1,12.91,3.21,-90.9
+morning_rush,266.55,3.59,34.75,1.57,-87.0
+evening_rush,187.93,1.87,74612.11,1419.57,39602.1
+off_peak,6.05,0.09,2.08,0.09,-65.5
+weekend_market,219.76,0.98,5.45,0.26,-97.5
+heavy_emergency,266.55,3.59,34.75,1.57,-87.0

@@ -34,19 +34,28 @@ VEHICLE_TYPES = dedent("""\
   <vType id="car"
          accel="2.6" decel="4.5" emergencyDecel="9.0" sigma="0.5"
          length="4.5" minGap="2.5" maxSpeed="13.89"
-         guiShape="passenger" color="0.6,0.6,0.9"/>
+         guiShape="passenger" color="0.6,0.6,0.9"
+         jmCrossingGap="3.0"/>
 
   <!-- Trotro (shared minibus) — slower, longer -->
   <vType id="trotro"
          accel="1.8" decel="3.5" emergencyDecel="7.0" sigma="0.7"
          length="7.0" minGap="3.0" maxSpeed="11.11"
-         guiShape="bus/city" color="1.0,0.8,0.0"/>
+         guiShape="bus/city" color="1.0,0.8,0.0"
+         jmCrossingGap="3.0"/>
 
-  <!-- Emergency vehicle (ambulance) -->
-  <vType id="emergency"
-         accel="3.5" decel="6.0" emergencyDecel="9.0" sigma="0.1"
-         length="5.5" minGap="2.0" maxSpeed="16.67"
-         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.2"/>""")
+  <!-- Pedestrian — faster walking speed (Ghanaian crossing behavior) -->
+  <vType id="ped_fast" vClass="pedestrian"
+         speed="3.80"
+         length="0.25" minGap="0.5" width="0.65"/>
+
+  <!-- Emergency vehicle (ambulance) — vClass gives blue-light privileges -->
+  <vType id="emergency" vClass="emergency"
+         accel="3.5" decel="6.0" emergencyDecel="9.0" sigma="0.0"
+         tau="0.5" length="5.5" minGap="1.5" maxSpeed="16.67"
+         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.2"
+         lcStrategic="100" lcPushy="1.0" lcAssertive="1.0"
+         jmDriveAfterRedTime="3" jmDriveAfterYellowTime="3"/>""")
 
 ROUTE_DEFS = dedent("""\
   <!-- From North (Achimota Forest Rd — Nsawam direction) -->
@@ -99,11 +108,8 @@ SCENARIOS = {
             {"id": "flow_WN",   "type": "car",    "route": "route_WN", "vph": 150},
             {"id": "flow_WS",   "type": "car",    "route": "route_WS", "vph": 50},
         ],
-        "ambulances": [
-            {"id": "ambulance_1", "route": "route_NS", "depart": 130},
-            {"id": "ambulance_2", "route": "route_WN", "depart": 700},
-            {"id": "ambulance_3", "route": "route_SN", "depart": 1800},
-        ],
+        # Ambulances are deployed manually from the Godot UI — no auto-spawn
+        "ambulances": [],
     },
 
     # ── 2. Evening Rush (reversed dominant direction) ─────────────────────────
@@ -130,11 +136,7 @@ SCENARIOS = {
             {"id": "flow_WN",   "type": "car",    "route": "route_WN", "vph": 50},
             {"id": "flow_WS",   "type": "car",    "route": "route_WS", "vph": 150},
         ],
-        "ambulances": [
-            {"id": "ambulance_1", "route": "route_SN", "depart": 200},
-            {"id": "ambulance_2", "route": "route_EN", "depart": 900},
-            {"id": "ambulance_3", "route": "route_NS", "depart": 2000},
-        ],
+        "ambulances": [],
     },
 
     # ── 3. Off-Peak / Midday ──────────────────────────────────────────────────
@@ -158,9 +160,7 @@ SCENARIOS = {
             {"id": "flow_WN",   "type": "car",    "route": "route_WN", "vph": 40},
             {"id": "flow_WS",   "type": "car",    "route": "route_WS", "vph": 20},
         ],
-        "ambulances": [
-            {"id": "ambulance_1", "route": "route_NS", "depart": 3600},
-        ],
+        "ambulances": [],
     },
 
     # ── 4. Weekend / Market Day ───────────────────────────────────────────────
@@ -187,15 +187,12 @@ SCENARIOS = {
             {"id": "flow_WN",   "type": "car",    "route": "route_WN", "vph": 100},
             {"id": "flow_WS",   "type": "car",    "route": "route_WS", "vph": 50},
         ],
-        "ambulances": [
-            {"id": "ambulance_1", "route": "route_EW", "depart": 500},
-            {"id": "ambulance_2", "route": "route_WN", "depart": 4000},
-        ],
+        "ambulances": [],
     },
 
     # ── 5. Heavy Emergency ────────────────────────────────────────────────────
     "heavy_emergency": {
-        "description": "Heavy Emergency — morning rush + 8 ambulances from all approaches",
+        "description": "Heavy Emergency — morning rush (ambulances deployed via UI)",
         "total_approx": 2640,
         "flows": [
             # Same flows as morning rush
@@ -215,16 +212,7 @@ SCENARIOS = {
             {"id": "flow_WN",   "type": "car",    "route": "route_WN", "vph": 150},
             {"id": "flow_WS",   "type": "car",    "route": "route_WS", "vph": 50},
         ],
-        "ambulances": [
-            {"id": "ambulance_1", "route": "route_NS", "depart": 120},
-            {"id": "ambulance_2", "route": "route_SN", "depart": 400},
-            {"id": "ambulance_3", "route": "route_WN", "depart": 700},
-            {"id": "ambulance_4", "route": "route_EN", "depart": 1200},
-            {"id": "ambulance_5", "route": "route_NS", "depart": 1800},
-            {"id": "ambulance_6", "route": "route_SN", "depart": 2400},
-            {"id": "ambulance_7", "route": "route_EW", "depart": 3600},
-            {"id": "ambulance_8", "route": "route_WN", "depart": 5400},
-        ],
+        "ambulances": [],
     },
 }
 
@@ -276,22 +264,22 @@ def generate_route_xml(name: str) -> str:
     lines.append("  <!-- Pedestrian crossing flows -->")
     total_vph = sum(f["vph"] for f in scenario["flows"])
     # Scale pedestrian volume proportionally to vehicle volume
-    # Morning rush baseline: ~2640 veh/hr → ~400 ped/hr total
+    # Morning rush baseline: ~2640 veh/hr → ~242 ped/hr total (reduced for flow)
     ped_scale = total_vph / 2640.0
     ped_flows = [
-        ("ped_cross_N_e2w", "ACH_N2J", "ACH_J2N", int(100 * ped_scale)),
-        ("ped_cross_N_w2e", "ACH_J2N", "ACH_N2J", int(100 * ped_scale)),
-        ("ped_cross_S_e2w", "ACH_S2J", "ACH_J2S", int(100 * ped_scale)),
-        ("ped_cross_S_w2e", "ACH_J2S", "ACH_S2J", int(100 * ped_scale)),
-        ("ped_cross_E_n2s", "AGG_E2J", "AGG_J2E", int(60 * ped_scale)),
-        ("ped_cross_E_s2n", "AGG_J2E", "AGG_E2J", int(60 * ped_scale)),
-        ("ped_cross_W_n2s", "GUG_W2J", "GUG_J2W", int(40 * ped_scale)),
-        ("ped_cross_W_s2n", "GUG_J2W", "GUG_W2J", int(40 * ped_scale)),
+        ("ped_cross_N_e2w", "ACH_N2J", "ACH_J2N", int(60 * ped_scale)),
+        ("ped_cross_N_w2e", "ACH_J2N", "ACH_N2J", int(60 * ped_scale)),
+        ("ped_cross_S_e2w", "ACH_S2J", "ACH_J2S", int(60 * ped_scale)),
+        ("ped_cross_S_w2e", "ACH_J2S", "ACH_S2J", int(60 * ped_scale)),
+        ("ped_cross_E_n2s", "AGG_E2J", "AGG_J2E", int(36 * ped_scale)),
+        ("ped_cross_E_s2n", "AGG_J2E", "AGG_E2J", int(36 * ped_scale)),
+        ("ped_cross_W_n2s", "GUG_W2J", "GUG_J2W", int(25 * ped_scale)),
+        ("ped_cross_W_s2n", "GUG_J2W", "GUG_W2J", int(25 * ped_scale)),
     ]
     for pid, from_edge, to_edge, per_hour in ped_flows:
         if per_hour > 0:
             lines.append(
-                f'  <personFlow id="{pid}" begin="0" end="7200" perHour="{per_hour}">'
+                f'  <personFlow id="{pid}" type="ped_fast" begin="0" end="7200" perHour="{per_hour}">'
                 f'\n    <walk from="{from_edge}" to="{to_edge}"/>'
                 f'\n  </personFlow>'
             )
