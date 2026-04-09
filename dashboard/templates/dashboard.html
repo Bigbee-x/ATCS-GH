@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATCS-GH Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1117;
+            --bg-card: #1a1d28;
+            --bg-card-hover: #222636;
+            --accent: #4f8cff;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --accent-purple: #a855f7;
+            --accent-orange: #f97316;
+            --text-primary: #e8eaed;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border: #2d3348;
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ── Header ─────────────────────────────────────────── */
+        .header {
+            background: linear-gradient(135deg, #1a1d28 0%, #0f1117 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+        .header .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .status-badge.training {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .status-badge.complete {
+            background: rgba(79, 140, 255, 0.15);
+            color: var(--accent);
+            border: 1px solid rgba(79, 140, 255, 0.3);
+        }
+        .pulse {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ── Layout ─────────────────────────────────────────── */
+        .container { padding: 24px 32px; max-width: 1440px; margin: 0 auto; }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .full-width { grid-column: 1 / -1; }
+
+        /* ── Cards ──────────────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+        .card:hover { background: var(--bg-card-hover); }
+        .card h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .card .detail {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .value.green { color: var(--accent-green); }
+        .value.red { color: var(--accent-red); }
+        .value.blue { color: var(--accent); }
+        .value.yellow { color: var(--accent-yellow); }
+        .value.purple { color: var(--accent-purple); }
+
+        /* ── Chart Cards ────────────────────────────────────── */
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+        }
+        .chart-card h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+        .chart-wrap {
+            position: relative;
+            height: 280px;
+        }
+
+        /* ── Scenario Table ─────────────────────────────────── */
+        .table-wrap { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(45, 51, 72, 0.5);
+        }
+        tr:hover td { background: var(--bg-card-hover); }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge.better { background: rgba(34, 197, 94, 0.15); color: var(--accent-green); }
+        .badge.worse { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+
+        /* ── Progress Bar ───────────────────────────────────── */
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+        .progress-bar .fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-purple));
+            transition: width 0.5s ease;
+        }
+
+        /* ── Section Headers ────────────────────────────────── */
+        .section-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            margin-top: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* ── Tabs ───────────────────────────────────────────── */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            padding: 4px;
+            border: 1px solid var(--border);
+            width: fit-content;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            border: none;
+            background: none;
+        }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* ── Responsive ─────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+            .container { padding: 16px; }
+            .header { padding: 16px; }
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-muted);
+        }
+
+        /* ── Live Tab ───────────────────────────────────────── */
+        .live-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .live-status.connected {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--accent-green);
+        }
+        .live-status.disconnected {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+        }
+        .live-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .live-status.connected .live-dot { background: var(--accent-green); animation: pulse 2s infinite; }
+        .live-status.disconnected .live-dot { background: var(--accent-red); }
+
+        .live-kpi {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .live-kpi .card { padding: 14px; }
+        .live-kpi .card .value { font-size: 1.5rem; }
+
+        .phase-timeline {
+            display: flex;
+            height: 28px;
+            border-radius: 6px;
+            overflow: hidden;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .phase-block {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.8);
+            min-width: 2px;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .corridor-section {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .junction-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+        .junction-tab {
+            padding: 6px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+        .junction-tab:hover { color: var(--text-primary); }
+        .junction-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+    </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<div class="header">
+    <div>
+        <h1>ATCS-GH Dashboard</h1>
+        <div class="subtitle">Adaptive Traffic Control System &mdash; Achimota/Neoplan Junction, Accra</div>
+    </div>
+    <div id="statusBadge" class="status-badge training">
+        <div class="pulse"></div>
+        <span id="statusText">Loading...</span>
+    </div>
+</div>
+
+<!-- ── Main Content ────────────────────────────────────────────────────── -->
+<div class="container">
+
+    <!-- ── KPI Cards ──────────────────────────────────────────────────── -->
+    <div class="grid-4">
+        <div class="card">
+            <h3>Training Progress</h3>
+            <div class="value blue" id="kpiProgress">--</div>
+            <div class="detail" id="kpiProgressDetail">episodes completed</div>
+            <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+        </div>
+        <div class="card">
+            <h3>Best Avg Wait</h3>
+            <div class="value green" id="kpiBestWait">--</div>
+            <div class="detail" id="kpiBestDetail">--</div>
+        </div>
+        <div class="card">
+            <h3>Improvement</h3>
+            <div class="value green" id="kpiImprovement">--</div>
+            <div class="detail">over training duration</div>
+        </div>
+        <div class="card">
+            <h3>Exploration (Epsilon)</h3>
+            <div class="value purple" id="kpiEpsilon">--</div>
+            <div class="detail" id="kpiEpsilonDetail">--</div>
+        </div>
+    </div>
+
+    <!-- ── Tabs ───────────────────────────────────────────────────────── -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('training')">Training</button>
+        <button class="tab" onclick="switchTab('scenarios')">Scenario Analysis</button>
+        <button class="tab" onclick="switchTab('comparison')">AI vs Baseline</button>
+        <button class="tab" onclick="switchTab('live')">Live Simulation</button>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB: TRAINING                                                     -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="tab-training">
+        <div class="grid-2">
+            <div class="chart-card">
+                <h3>Average Wait Time (per episode)</h3>
+                <div class="chart-wrap"><canvas id="chartWait"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Total Reward (per episode)</h3>
+                <div class="chart-wrap"><canvas id="chartReward"></canvas></div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="chart-card">
+                <h3>Peak Queue Length</h3>
+                <div class="chart-wrap"><canvas id="chartQueue"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Epsilon Decay</h3>
+                <div class="chart-wrap"><canvas id="chartEpsilon"></canvas></div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="chart-card full-width">
+                <h3>Wait Time by Scenario</h3>
+                <div class="chart-wrap"><canvas id="chartScenarioWait"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB: SCENARIO ANALYSIS                                            -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="tab-scenarios" style="display:none">
+        <div class="section-header">Per-Scenario Training Performance</div>
+        <div class="grid-3" id="scenarioCards"></div>
+
+        <div class="chart-card" style="margin-top: 20px;">
+            <h3>Scenario Convergence (Last 5 Avg Wait)</h3>
+            <div class="chart-wrap"><canvas id="chartScenarioBar"></canvas></div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB: AI vs BASELINE                                               -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="tab-comparison" style="display:none">
+        <div class="section-header">Evaluation Results (AI vs Fixed Timer Baseline)</div>
+
+        <div class="chart-card" style="margin-bottom: 20px;">
+            <h3>Average Wait Time Comparison</h3>
+            <div class="chart-wrap"><canvas id="chartComparison"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+            <h3>Detailed Results</h3>
+            <div class="table-wrap">
+                <table id="evalTable">
+                    <thead>
+                        <tr>
+                            <th>Scenario</th>
+                            <th>Baseline (avg wait)</th>
+                            <th>AI (avg wait)</th>
+                            <th>Change</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB: LIVE SIMULATION                                              -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div id="tab-live" style="display:none">
+
+        <!-- Connection Status -->
+        <div id="liveStatus" class="live-status disconnected">
+            <div class="live-dot"></div>
+            <span id="liveStatusText">Disconnected — start a simulation to see live data</span>
+        </div>
+
+        <!-- Live KPI Cards -->
+        <div class="live-kpi">
+            <div class="card">
+                <h3>Sim Time</h3>
+                <div class="value blue" id="liveSimTime">--</div>
+            </div>
+            <div class="card">
+                <h3>Vehicles Completed</h3>
+                <div class="value green" id="liveVehicles">--</div>
+            </div>
+            <div class="card">
+                <h3>Avg Wait</h3>
+                <div class="value yellow" id="liveAvgWait">--</div>
+            </div>
+            <div class="card">
+                <h3>Current Phase</h3>
+                <div class="value purple" id="livePhase">--</div>
+            </div>
+            <div class="card">
+                <h3>AI Decision</h3>
+                <div class="value blue" id="liveAction">--</div>
+            </div>
+            <div class="card">
+                <h3>Total Reward</h3>
+                <div class="value green" id="liveTotalReward">--</div>
+            </div>
+        </div>
+
+        <!-- Phase Timeline -->
+        <div class="chart-card" style="margin-bottom:20px">
+            <h3>Phase Timeline</h3>
+            <div id="phaseTimeline" class="phase-timeline"></div>
+        </div>
+
+        <!-- Main Charts -->
+        <div class="grid-2">
+            <div class="chart-card">
+                <h3>Queue Depth (per approach)</h3>
+                <div class="chart-wrap"><canvas id="liveChartQueue"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Wait Time (per approach)</h3>
+                <div class="chart-wrap"><canvas id="liveChartWait"></canvas></div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="chart-card">
+                <h3>Cumulative Reward</h3>
+                <div class="chart-wrap"><canvas id="liveChartReward"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>Throughput (vehicles completed)</h3>
+                <div class="chart-wrap"><canvas id="liveChartThroughput"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Corridor Section (auto-shown when corridor data detected) -->
+        <div id="corridorSection" class="corridor-section" style="display:none">
+            <div class="section-header">Corridor — Per-Junction Breakdown</div>
+
+            <div class="live-kpi">
+                <div class="card">
+                    <h3>Corridor Avg Wait</h3>
+                    <div class="value yellow" id="liveCorridorWait">--</div>
+                </div>
+                <div class="card">
+                    <h3>J0 Avg Wait</h3>
+                    <div class="value blue" id="liveJ0Wait">--</div>
+                </div>
+                <div class="card">
+                    <h3>J1 Avg Wait</h3>
+                    <div class="value purple" id="liveJ1Wait">--</div>
+                </div>
+                <div class="card">
+                    <h3>J2 Avg Wait</h3>
+                    <div class="value green" id="liveJ2Wait">--</div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="chart-card">
+                    <h3>Per-Junction Queue Depth</h3>
+                    <div class="chart-wrap"><canvas id="liveChartCorridorQueue"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <h3>Per-Junction Wait Time</h3>
+                    <div class="chart-wrap"><canvas id="liveChartCorridorWait"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── JavaScript ──────────────────────────────────────────────────────── -->
+<script>
+    // Chart.js global config
+    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.borderColor = '#2d3348';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    const SCENARIO_COLORS = {
+        'morning_rush.rou':     '#f97316',
+        'evening_rush.rou':     '#a855f7',
+        'off_peak.rou':         '#22c55e',
+        'weekend_market.rou':   '#eab308',
+        'heavy_emergency.rou':  '#ef4444',
+    };
+
+    const SCENARIO_LABELS = {
+        'morning_rush.rou':     'Morning Rush',
+        'evening_rush.rou':     'Evening Rush',
+        'off_peak.rou':         'Off-Peak',
+        'weekend_market.rou':   'Weekend Market',
+        'heavy_emergency.rou':  'Heavy Emergency',
+    };
+
+    let charts = {};
+    let activeTab = 'training';
+    let refreshInterval;
+
+    // ── Tab Switching ──────────────────────────────────────────────────
+    function switchTab(tab) {
+        activeTab = tab;
+        document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        ['training', 'scenarios', 'comparison', 'live'].forEach(t => {
+            document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
+        });
+        if (tab === 'live') {
+            connectLiveWS();
+        }
+        refresh();
+    }
+
+    // ── Data Fetching ──────────────────────────────────────────────────
+    async function fetchJSON(url) {
+        const res = await fetch(url);
+        return res.json();
+    }
+
+    // ── Refresh All ────────────────────────────────────────────────────
+    async function refresh() {
+        try {
+            const [log, summary, evalData] = await Promise.all([
+                fetchJSON('/api/training-log'),
+                fetchJSON('/api/training-summary'),
+                fetchJSON('/api/scenario-eval'),
+            ]);
+
+            updateKPIs(summary);
+            if (activeTab === 'training') updateTrainingCharts(log);
+            if (activeTab === 'scenarios') updateScenarioTab(log, summary);
+            if (activeTab === 'comparison') updateComparisonTab(evalData);
+        } catch (e) {
+            console.error('Refresh error:', e);
+        }
+    }
+
+    // ── KPI Updates ────────────────────────────────────────────────────
+    function updateKPIs(s) {
+        if (s.status === 'no_data') {
+            document.getElementById('statusText').textContent = 'No Training Data';
+            return;
+        }
+
+        const pct = Math.round(s.total_episodes / s.target_episodes * 100);
+        const done = s.total_episodes >= s.target_episodes;
+
+        document.getElementById('kpiProgress').textContent = `${s.total_episodes}/${s.target_episodes}`;
+        document.getElementById('kpiProgressDetail').textContent = `${pct}% complete`;
+        document.getElementById('progressFill').style.width = pct + '%';
+
+        document.getElementById('kpiBestWait').textContent = s.best_wait + 's';
+        document.getElementById('kpiBestDetail').textContent = `episode ${s.best_episode}`;
+
+        document.getElementById('kpiImprovement').textContent = s.improvement_pct + '%';
+        document.getElementById('kpiImprovement').className = 'value ' + (s.improvement_pct > 0 ? 'green' : 'red');
+
+        document.getElementById('kpiEpsilon').textContent = s.epsilon.toFixed(3);
+        document.getElementById('kpiEpsilonDetail').textContent = s.epsilon <= 0.02 ? 'exploitation mode' : 'exploring';
+
+        const badge = document.getElementById('statusBadge');
+        const statusText = document.getElementById('statusText');
+        if (done) {
+            badge.className = 'status-badge complete';
+            badge.querySelector('.pulse').style.display = 'none';
+            statusText.textContent = 'Training Complete';
+        } else {
+            badge.className = 'status-badge training';
+            badge.querySelector('.pulse').style.display = 'block';
+            statusText.textContent = `Training — Ep ${s.total_episodes}`;
+        }
+    }
+
+    // ── Training Charts ────────────────────────────────────────────────
+    function updateTrainingCharts(log) {
+        const eps = log.map(r => r.episode);
+        const waits = log.map(r => r.avg_wait);
+        const rewards = log.map(r => r.reward);
+        const queues = log.map(r => r.peak_queue);
+        const epsilons = log.map(r => r.epsilon);
+
+        // Color points by scenario
+        const bgColors = log.map(r => SCENARIO_COLORS[r.scenario] || '#4f8cff');
+
+        // Wait Time Chart
+        createOrUpdate('chartWait', {
+            type: 'line',
+            data: {
+                labels: eps,
+                datasets: [{
+                    label: 'Avg Wait (s)',
+                    data: waits,
+                    borderColor: '#4f8cff',
+                    backgroundColor: 'rgba(79, 140, 255, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                    pointBackgroundColor: bgColors,
+                    borderWidth: 1.5,
+                }]
+            },
+            options: chartOptions('Wait Time (s)')
+        });
+
+        // Reward Chart
+        createOrUpdate('chartReward', {
+            type: 'line',
+            data: {
+                labels: eps,
+                datasets: [{
+                    label: 'Total Reward',
+                    data: rewards,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2,
+                    pointBackgroundColor: bgColors,
+                    borderWidth: 1.5,
+                }]
+            },
+            options: chartOptions('Reward')
+        });
+
+        // Queue Chart
+        createOrUpdate('chartQueue', {
+            type: 'bar',
+            data: {
+                labels: eps,
+                datasets: [{
+                    label: 'Peak Queue',
+                    data: queues,
+                    backgroundColor: bgColors.map(c => c + '80'),
+                    borderColor: bgColors,
+                    borderWidth: 1,
+                }]
+            },
+            options: chartOptions('Vehicles')
+        });
+
+        // Epsilon Chart
+        createOrUpdate('chartEpsilon', {
+            type: 'line',
+            data: {
+                labels: eps,
+                datasets: [{
+                    label: 'Epsilon',
+                    data: epsilons,
+                    borderColor: '#a855f7',
+                    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                }]
+            },
+            options: chartOptions('Epsilon (exploration)')
+        });
+
+        // Per-scenario wait time
+        const scenarioSeries = {};
+        log.forEach(r => {
+            if (!scenarioSeries[r.scenario]) scenarioSeries[r.scenario] = { eps: [], waits: [] };
+            scenarioSeries[r.scenario].eps.push(r.episode);
+            scenarioSeries[r.scenario].waits.push(r.avg_wait);
+        });
+
+        const datasets = Object.entries(scenarioSeries).map(([s, d]) => ({
+            label: SCENARIO_LABELS[s] || s,
+            data: d.eps.map((ep, i) => ({ x: ep, y: d.waits[i] })),
+            borderColor: SCENARIO_COLORS[s] || '#4f8cff',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 3,
+            borderWidth: 2,
+        }));
+
+        createOrUpdate('chartScenarioWait', {
+            type: 'scatter',
+            data: { datasets },
+            options: {
+                ...chartOptions('Wait Time (s)'),
+                scales: {
+                    x: { title: { display: true, text: 'Episode' }, grid: { color: '#2d3348' } },
+                    y: { title: { display: true, text: 'Avg Wait (s)' }, grid: { color: '#2d3348' } },
+                },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                }
+            }
+        });
+    }
+
+    // ── Scenario Tab ───────────────────────────────────────────────────
+    function updateScenarioTab(log, summary) {
+        const container = document.getElementById('scenarioCards');
+        container.innerHTML = '';
+
+        if (summary.scenarios) {
+            for (const [s, stats] of Object.entries(summary.scenarios)) {
+                const color = SCENARIO_COLORS[s] || '#4f8cff';
+                const label = SCENARIO_LABELS[s] || s;
+                container.innerHTML += `
+                    <div class="card">
+                        <h3 style="color:${color}">${label}</h3>
+                        <div class="value" style="color:${color}">${stats.last_avg}s</div>
+                        <div class="detail">last 5 avg | best: ${stats.best_wait}s</div>
+                        <div class="detail">${stats.episodes} episodes trained</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Bar chart
+        const labels = Object.keys(summary.scenarios || {}).map(s => SCENARIO_LABELS[s] || s);
+        const lastAvgs = Object.values(summary.scenarios || {}).map(s => s.last_avg);
+        const bestWaits = Object.values(summary.scenarios || {}).map(s => s.best_wait);
+        const colors = Object.keys(summary.scenarios || {}).map(s => SCENARIO_COLORS[s] || '#4f8cff');
+
+        createOrUpdate('chartScenarioBar', {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Last 5 Avg', data: lastAvgs, backgroundColor: colors.map(c => c + 'CC') },
+                    { label: 'Best', data: bestWaits, backgroundColor: colors.map(c => c + '66') },
+                ]
+            },
+            options: {
+                ...chartOptions('Wait Time (s)'),
+                plugins: { legend: { display: true } },
+            }
+        });
+    }
+
+    // ── Comparison Tab ─────────────────────────────────────────────────
+    function updateComparisonTab(evalData) {
+        if (!evalData.length) {
+            document.querySelector('#tab-comparison .section-header').textContent =
+                'No evaluation data yet — run eval_scenarios.py after training';
+            return;
+        }
+
+        // Filter out obviously broken data (like evening_rush with 74k wait)
+        const valid = evalData.filter(r => r.ai_mean < 5000);
+
+        const labels = valid.map(r => r.scenario.replace(/_/g, ' '));
+        const baselineVals = valid.map(r => r.baseline_mean);
+        const aiVals = valid.map(r => r.ai_mean);
+
+        createOrUpdate('chartComparison', {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Baseline (Fixed Timer)',
+                        data: baselineVals,
+                        backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                        borderColor: '#ef4444',
+                        borderWidth: 1,
+                    },
+                    {
+                        label: 'AI (DQN)',
+                        data: aiVals,
+                        backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                        borderColor: '#22c55e',
+                        borderWidth: 1,
+                    }
+                ]
+            },
+            options: {
+                ...chartOptions('Avg Wait Time (s)'),
+                plugins: { legend: { display: true } },
+            }
+        });
+
+        // Table
+        const tbody = document.querySelector('#evalTable tbody');
+        tbody.innerHTML = '';
+        evalData.forEach(r => {
+            const better = r.change_pct < 0;
+            const changeTxt = (r.change_pct > 0 ? '+' : '') + r.change_pct.toFixed(1) + '%';
+            tbody.innerHTML += `
+                <tr>
+                    <td style="font-weight:600">${r.scenario.replace(/_/g, ' ')}</td>
+                    <td>${r.baseline_mean.toFixed(1)}s <span style="color:var(--text-muted)">&plusmn;${r.baseline_std.toFixed(1)}</span></td>
+                    <td>${r.ai_mean.toFixed(1)}s <span style="color:var(--text-muted)">&plusmn;${r.ai_std.toFixed(1)}</span></td>
+                    <td style="color:${better ? 'var(--accent-green)' : 'var(--accent-red)'}">${changeTxt}</td>
+                    <td><span class="badge ${better ? 'better' : 'worse'}">${better ? 'BETTER' : 'WORSE'}</span></td>
+                </tr>
+            `;
+        });
+    }
+
+    // ── Chart Helpers ──────────────────────────────────────────────────
+    function chartOptions(yLabel) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+                legend: { display: false },
+                tooltip: { mode: 'index', intersect: false },
+            },
+            scales: {
+                x: { grid: { color: '#2d3348' }, ticks: { maxTicksLimit: 20 } },
+                y: { grid: { color: '#2d3348' }, title: { display: true, text: yLabel } },
+            },
+        };
+    }
+
+    function createOrUpdate(id, config) {
+        if (charts[id]) {
+            charts[id].destroy();
+        }
+        const ctx = document.getElementById(id);
+        if (ctx) {
+            charts[id] = new Chart(ctx, config);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // LIVE SIMULATION TAB
+    // ══════════════════════════════════════════════════════════════════════
+
+    const LIVE_MAX_POINTS = 200;
+    const APPROACH_COLORS = {
+        north: '#4f8cff', south: '#ef4444', east: '#22c55e', west: '#eab308'
+    };
+    const JUNCTION_COLORS = { J0: '#4f8cff', J1: '#a855f7', J2: '#22c55e' };
+    const PHASE_COLORS = {
+        'NS_THROUGH': '#22c55e', 'NS_LEFT': '#86efac', 'NS_YELLOW': '#eab308',
+        'EW_THROUGH': '#4f8cff', 'EW_LEFT': '#93c5fd', 'EW_YELLOW': '#f97316',
+        'NS_ALL': '#10b981', 'EW_ALL': '#3b82f6', 'UNKNOWN': '#6b7280',
+    };
+
+    let liveWS = null;
+    let liveConnected = false;
+    let liveMode = 'single'; // or 'corridor'
+    let liveCharts = {};
+    let liveData = {
+        timestamps: [],
+        queues: { north: [], south: [], east: [], west: [] },
+        waits:  { north: [], south: [], east: [], west: [] },
+        throughput: [],
+        rewards: [],
+        phases: [], // { name, count }
+        // Corridor per-junction totals
+        junctionQueues: { J0: [], J1: [], J2: [] },
+        junctionWaits:  { J0: [], J1: [], J2: [] },
+    };
+
+    function connectLiveWS() {
+        if (liveWS && (liveWS.readyState === WebSocket.OPEN || liveWS.readyState === WebSocket.CONNECTING)) {
+            return; // Already connected or connecting
+        }
+        try {
+            liveWS = new WebSocket('ws://localhost:8765');
+        } catch (e) {
+            setLiveStatus(false);
+            return;
+        }
+
+        liveWS.onopen = () => setLiveStatus(true);
+        liveWS.onclose = () => {
+            setLiveStatus(false);
+            // Auto-reconnect after 3s if still on live tab
+            setTimeout(() => { if (activeTab === 'live') connectLiveWS(); }, 3000);
+        };
+        liveWS.onerror = () => setLiveStatus(false);
+        liveWS.onmessage = (evt) => {
+            try {
+                const data = JSON.parse(evt.data);
+                if (data.type === 'state_update') {
+                    processLiveUpdate(data);
+                } else if (data.type === 'sim_restart' || data.type === 'sim_complete') {
+                    resetLiveData();
+                }
+            } catch (e) { /* ignore parse errors */ }
+        };
+    }
+
+    function setLiveStatus(connected) {
+        liveConnected = connected;
+        const el = document.getElementById('liveStatus');
+        const txt = document.getElementById('liveStatusText');
+        if (connected) {
+            el.className = 'live-status connected';
+            txt.textContent = 'Connected to simulation (ws://localhost:8765)';
+        } else {
+            el.className = 'live-status disconnected';
+            txt.textContent = 'Disconnected — start a simulation to see live data';
+        }
+    }
+
+    function resetLiveData() {
+        liveData.timestamps = [];
+        for (const k of ['north','south','east','west']) { liveData.queues[k] = []; liveData.waits[k] = []; }
+        liveData.throughput = []; liveData.rewards = []; liveData.phases = [];
+        for (const j of ['J0','J1','J2']) { liveData.junctionQueues[j] = []; liveData.junctionWaits[j] = []; }
+        document.getElementById('phaseTimeline').innerHTML = '';
+    }
+
+    function trimArray(arr) { while (arr.length > LIVE_MAX_POINTS) arr.shift(); }
+
+    function processLiveUpdate(data) {
+        const t = data.sim_time || data.step || 0;
+        liveData.timestamps.push(t);
+        trimArray(liveData.timestamps);
+
+        // Detect corridor mode
+        const isCorridor = !!(data.mode === 'corridor' || data.junctions);
+        if (isCorridor && liveMode !== 'corridor') {
+            liveMode = 'corridor';
+            document.getElementById('corridorSection').style.display = 'block';
+        } else if (!isCorridor && liveMode !== 'single') {
+            liveMode = 'single';
+            document.getElementById('corridorSection').style.display = 'none';
+        }
+
+        // Per-approach data (uses top-level keys for single, or J0 for corridor)
+        const queues = data.queues || (data.junctions && data.junctions.J0 && data.junctions.J0.queues) || {};
+        const waits  = data.wait_times || (data.junctions && data.junctions.J0 && data.junctions.J0.wait_times) || {};
+
+        for (const k of ['north','south','east','west']) {
+            liveData.queues[k].push(queues[k] || 0);
+            liveData.waits[k].push(waits[k] || 0);
+            trimArray(liveData.queues[k]);
+            trimArray(liveData.waits[k]);
+        }
+
+        // Throughput & reward
+        liveData.throughput.push(data.vehicles_completed || 0);
+        liveData.rewards.push(data.total_reward || 0);
+        trimArray(liveData.throughput);
+        trimArray(liveData.rewards);
+
+        // Phase timeline
+        const phaseName = data.phase_name || (data.junctions && data.junctions.J0 && data.junctions.J0.phase_name) || 'UNKNOWN';
+        const timeline = document.getElementById('phaseTimeline');
+        const lastBlock = timeline.lastElementChild;
+        if (lastBlock && lastBlock.dataset.phase === phaseName) {
+            // Extend existing block
+            let count = parseInt(lastBlock.dataset.count) + 1;
+            lastBlock.dataset.count = count;
+            lastBlock.style.flexGrow = count;
+            if (count > 3) lastBlock.textContent = phaseName.replace('_', ' ');
+        } else {
+            const block = document.createElement('div');
+            block.className = 'phase-block';
+            block.dataset.phase = phaseName;
+            block.dataset.count = '1';
+            block.style.flexGrow = '1';
+            block.style.background = PHASE_COLORS[phaseName] || '#6b7280';
+            timeline.appendChild(block);
+            // Keep timeline manageable (max 100 blocks)
+            while (timeline.children.length > 100) timeline.removeChild(timeline.firstChild);
+        }
+
+        // Corridor per-junction data
+        if (isCorridor && data.junctions) {
+            for (const jid of ['J0','J1','J2']) {
+                const jd = data.junctions[jid];
+                if (jd) {
+                    const jq = jd.queues || {};
+                    const totalQ = (jq.north||0) + (jq.south||0) + (jq.east||0) + (jq.west||0);
+                    liveData.junctionQueues[jid].push(totalQ);
+                    liveData.junctionWaits[jid].push(jd.avg_wait || 0);
+                    trimArray(liveData.junctionQueues[jid]);
+                    trimArray(liveData.junctionWaits[jid]);
+                }
+            }
+        }
+
+        // Update KPIs
+        const fmtTime = (s) => { const m = Math.floor(s/60); return m + ':' + String(s%60).padStart(2,'0'); };
+        document.getElementById('liveSimTime').textContent = fmtTime(t);
+        document.getElementById('liveVehicles').textContent = data.vehicles_completed || 0;
+        document.getElementById('liveAvgWait').textContent = (data.avg_wait || 0).toFixed(1) + 's';
+        document.getElementById('livePhase').textContent = (phaseName || '--').replace('_', ' ');
+        document.getElementById('liveAction').textContent = data.ai_decision || '--';
+        document.getElementById('liveTotalReward').textContent = Math.round(data.total_reward || 0).toLocaleString();
+
+        if (isCorridor && data.junctions) {
+            document.getElementById('liveCorridorWait').textContent = (data.corridor_avg_wait || 0).toFixed(1) + 's';
+            for (const jid of ['J0','J1','J2']) {
+                const jd = data.junctions[jid];
+                if (jd) document.getElementById('live' + jid + 'Wait').textContent = (jd.avg_wait || 0).toFixed(1) + 's';
+            }
+        }
+
+        // Update charts (throttle to every 2nd update for performance)
+        if (t % 2 === 0) renderLiveCharts();
+    }
+
+    function renderLiveCharts() {
+        const labels = liveData.timestamps;
+
+        // Queue chart
+        updateLiveChart('liveChartQueue', 'Queue Depth', labels,
+            Object.entries(APPROACH_COLORS).map(([k, c]) => ({
+                label: k.charAt(0).toUpperCase() + k.slice(1),
+                data: liveData.queues[k],
+                borderColor: c, backgroundColor: 'transparent',
+                tension: 0.3, pointRadius: 0, borderWidth: 2,
+            }))
+        );
+
+        // Wait chart
+        updateLiveChart('liveChartWait', 'Wait Time (s)', labels,
+            Object.entries(APPROACH_COLORS).map(([k, c]) => ({
+                label: k.charAt(0).toUpperCase() + k.slice(1),
+                data: liveData.waits[k],
+                borderColor: c, backgroundColor: 'transparent',
+                tension: 0.3, pointRadius: 0, borderWidth: 2,
+            }))
+        );
+
+        // Reward chart
+        updateLiveChart('liveChartReward', 'Cumulative Reward', labels, [{
+            label: 'Total Reward', data: liveData.rewards,
+            borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)',
+            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+        }]);
+
+        // Throughput chart
+        updateLiveChart('liveChartThroughput', 'Vehicles', labels, [{
+            label: 'Completed', data: liveData.throughput,
+            borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0.1)',
+            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+        }]);
+
+        // Corridor charts
+        if (liveMode === 'corridor') {
+            updateLiveChart('liveChartCorridorQueue', 'Total Queue', labels,
+                Object.entries(JUNCTION_COLORS).map(([j, c]) => ({
+                    label: j, data: liveData.junctionQueues[j],
+                    borderColor: c, backgroundColor: 'transparent',
+                    tension: 0.3, pointRadius: 0, borderWidth: 2,
+                }))
+            );
+            updateLiveChart('liveChartCorridorWait', 'Avg Wait (s)', labels,
+                Object.entries(JUNCTION_COLORS).map(([j, c]) => ({
+                    label: j, data: liveData.junctionWaits[j],
+                    borderColor: c, backgroundColor: 'transparent',
+                    tension: 0.3, pointRadius: 0, borderWidth: 2,
+                }))
+            );
+        }
+    }
+
+    function updateLiveChart(canvasId, yLabel, labels, datasets) {
+        if (liveCharts[canvasId]) {
+            // Update existing chart in-place (fast, no animation)
+            const chart = liveCharts[canvasId];
+            chart.data.labels = labels;
+            datasets.forEach((ds, i) => {
+                if (chart.data.datasets[i]) {
+                    chart.data.datasets[i].data = ds.data;
+                } else {
+                    chart.data.datasets.push(ds);
+                }
+            });
+            chart.update('none');
+        } else {
+            // Create new chart
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            liveCharts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    ...chartOptions(yLabel),
+                    animation: false,
+                    plugins: {
+                        legend: { display: datasets.length > 1, position: 'top',
+                            labels: { boxWidth: 12, padding: 8, font: { size: 11 } }
+                        },
+                        tooltip: { mode: 'index', intersect: false },
+                    },
+                },
+            });
+        }
+    }
+
+    // ── Auto-Refresh ───────────────────────────────────────────────────
+    async function init() {
+        await refresh();
+        // Refresh every 15 seconds during training
+        refreshInterval = setInterval(refresh, 15000);
+    }
+
+    init();
+</script>
+</body>
+</html>

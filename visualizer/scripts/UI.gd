@@ -1017,6 +1017,14 @@ func _update_corridor_display(data: Dictionary) -> void:
 		_lbl_emergency.text = "EMERGENCY — %s %s — %s" % [emerg_jid, emerg_approach, emerg_vid]
 
 
+func reset_charts() -> void:
+	## Clear all chart data (call on simulation restart).
+	if _single_chart_queue: _single_chart_queue.clear_data()
+	if _single_chart_wait: _single_chart_wait.clear_data()
+	if _corridor_chart_queue: _corridor_chart_queue.clear_data()
+	if _corridor_chart_wait: _corridor_chart_wait.clear_data()
+
+
 func set_connection_status(connected: bool) -> void:
 	## Update the connection status indicator.
 	if connected:

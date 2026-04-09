@@ -103,6 +103,14 @@ func _draw() -> void:
 	if sz.x < 10 or sz.y < 10:
 		return
 
+	# Auto-scale: find the actual peak across all series
+	var effective_max: float = max_value
+	for approach in _data:
+		var arr: PackedFloat32Array = _data[approach]
+		for j in range(arr.size()):
+			if arr[j] > effective_max:
+				effective_max = arr[j] * 1.2  # 20% headroom
+
 	var chart_top: float = 16.0      ## Space for title
 	var chart_bottom: float = 14.0   ## Space for legend
 	var chart_left: float = 28.0     ## Space for Y-axis labels
@@ -127,7 +135,7 @@ func _draw() -> void:
 
 		# Y-axis label (values go top=max, bottom=0)
 		if _font:
-			var val: float = max_value * (1.0 - frac)
+			var val: float = effective_max * (1.0 - frac)
 			var label_text: String = "%d" % int(val) if val == int(val) else "%.0f" % val
 			draw_string(_font, Vector2(2, y_pos + 4), label_text, HORIZONTAL_ALIGNMENT_LEFT, 24, _font_size - 1, LABEL_COLOR)
 
@@ -142,7 +150,7 @@ func _draw() -> void:
 
 		for j in range(count):
 			var x: float = chart_left + (float(j) / float(MAX_HISTORY)) * chart_w
-			var normalized: float = clampf(arr[j] / max_value, 0.0, 1.0)
+			var normalized: float = clampf(arr[j] / effective_max, 0.0, 1.0)
 			var y: float = chart_top + (1.0 - normalized) * chart_h
 			points.append(Vector2(x, y))
 
