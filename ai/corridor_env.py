@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH | Corridor Traffic Environment — 3-Junction N6 Nsawam Road
 ═══════════════════════════════════════════════════════════════════
@@ -197,7 +198,7 @@ def _approach_signal(n_conns: int, mode: str) -> str:
         return {
             "through": "GGGrr",
             "left":    "grrGr",
-            "all":     "GGGGr",
+            "all":     "GGGgr",  # left is permissive 'g' (yield to oncoming)
             "yellow":  "yyyyy",
             "red":     "rrrrr",
         }[mode]
@@ -205,7 +206,7 @@ def _approach_signal(n_conns: int, mode: str) -> str:
         return {
             "through": "GGrr",
             "left":    "grGr",
-            "all":     "GGGr",
+            "all":     "GGgr",   # left is permissive 'g' (yield to oncoming)
             "yellow":  "yyyy",
             "red":     "rrrr",
         }[mode]
@@ -467,7 +468,7 @@ class CorridorEnv:
             elif action != ACTION_HOLD and self._can_switch(jid):
                 target = ACTION_TO_PHASE.get(action)
                 if target is not None and target != js.phase:
-                    self._initiate_switch(jid, target)
+                        self._initiate_switch(jid, target)
 
         # ── Advance DECISION_INTERVAL simulation steps ───────────────────────
         block_arrived = 0

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH | Corridor WebSocket Visualizer Server
 ════════════════════════════════════════════════
@@ -42,6 +43,8 @@ from corridor_env import (
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
     NS_ALL, EW_ALL,
     ACTION_HOLD, ACTION_TO_PHASE, ACTION_NAMES, ACTION_SIZE,
+    ACTION_NS_THROUGH, ACTION_NS_LEFT,
+    ACTION_EW_THROUGH, ACTION_EW_LEFT,
     ACTION_NS_ALL, ACTION_EW_ALL,
     STATE_SIZE, DECISION_INTERVAL, SIM_DURATION,
     MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
@@ -89,29 +92,41 @@ class SimMode:
 # ── Fixed-timer baseline controller ──────────────────────────────────────
 
 class BaselineTimer:
-    """Fixed-cycle traffic light timer for one junction (no AI).
+    """Fixed-cycle 4-phase traffic light timer for one junction (no AI).
 
-    Cycle: NS green (60s) → EW green (30s) = 90s
+    Proper 4-phase cycle with protected left turns:
+      1. NS_THROUGH (40s) — N/S straight + right, left blocked
+      2. NS_LEFT    (15s) — N/S protected left turn
+      3. EW_THROUGH (25s) — E/W straight + right, left blocked
+      4. EW_LEFT    (10s) — E/W protected left turn
+    Total cycle: 90s
+
     Yellow transitions are handled automatically by CorridorEnv when we
     request a phase switch — we just output the target action each step.
     """
-    NS_DUR = 60   # NS green duration (seconds)
-    EW_DUR = 30   # EW green duration (seconds)
-    CYCLE  = NS_DUR + EW_DUR  # 90s total
+    PHASES = [
+        (ACTION_NS_THROUGH, 40),
+        (ACTION_NS_LEFT,    15),
+        (ACTION_EW_THROUGH, 25),
+        (ACTION_EW_LEFT,    10),
+    ]
+    CYCLE = sum(dur for _, dur in PHASES)  # 90s
 
     def __init__(self, offset: float = 0.0):
         self.offset = offset
 
     def get_action(self, sim_step: int) -> int:
-        """Return ACTION_NS_ALL or ACTION_EW_ALL based on cycle position."""
+        """Return proper 4-phase action based on cycle position."""
         adjusted = sim_step - self.offset
         if adjusted < 0:
-            return ACTION_NS_ALL  # Default to NS during offset delay
+            return ACTION_NS_THROUGH  # Default to NS through during offset
         cycle_pos = adjusted % self.CYCLE
-        if cycle_pos < self.NS_DUR:
-            return ACTION_NS_ALL
-        else:
-            return ACTION_EW_ALL
+        elapsed = 0
+        for action, duration in self.PHASES:
+            elapsed += duration
+            if cycle_pos < elapsed:
+                return action
+        return self.PHASES[0][0]
 
 
 # ── Global state ─────────────────────────────────────────────────────────────

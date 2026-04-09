@@ -36,7 +36,7 @@ const GODOT_ROAD_LEN    := 30.0   # Road arm length in Godot
 const ROAD_LENGTH       := 30.0
 const NS_ROAD_WIDTH     := 6.4
 const E_ROAD_WIDTH      := 6.4
-const W_ROAD_WIDTH      := 3.2
+const W_ROAD_WIDTH      := 6.4
 const JUNCTION_SIZE     := 7.0
 const SIDEWALK_WIDTH    := 1.5
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH Phase 2 | DQN Training Script
 ═══════════════════════════════════════
@@ -39,12 +40,22 @@ from traffic_env import TrafficEnv, STATE_SIZE, ACTION_SIZE
 from dqn_agent   import DQNAgent
 
 # ── Training configuration ────────────────────────────────────────────────────
-DEFAULT_EPISODES  = 200
+DEFAULT_EPISODES  = 250
 CHECKPOINT_FREQ   = 10          # save checkpoint every N episodes
 LOG_FILE          = PROJECT_ROOT / "data"  / "training_log.csv"
 CHECKPOINT_DIR    = PROJECT_ROOT / "ai"    / "checkpoints"
 BEST_MODEL_PATH   = PROJECT_ROOT / "ai"    / "best_model.pth"
 FINAL_MODEL_PATH  = PROJECT_ROOT / "ai"    / "trained_model.pth"
+
+# ── Multi-scenario training ──────────────────────────────────────────────────
+SCENARIO_DIR = PROJECT_ROOT / "simulation" / "scenarios"
+SCENARIOS = [
+    SCENARIO_DIR / "morning_rush.rou.xml",
+    SCENARIO_DIR / "evening_rush.rou.xml",
+    SCENARIO_DIR / "off_peak.rou.xml",
+    SCENARIO_DIR / "weekend_market.rou.xml",
+    SCENARIO_DIR / "heavy_emergency.rou.xml",
+]
 
 # Phase 1 baseline — loaded dynamically from baseline CSV (falls back to hardcoded)
 BASELINE_CSV = PROJECT_ROOT / "data" / "baseline_results.csv"
@@ -94,8 +105,8 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         # Estimate which episode we're resuming from (rough)
         print(f"[TRAIN] Resuming from {resume_from}  (ε={agent.epsilon:.3f})")
 
-    # ── Initialise environment ────────────────────────────────────────────────
-    env = TrafficEnv(gui=gui, verbose=False)
+    # ── Multi-scenario rotation ─────────────────────────────────────────────
+    n_scenarios = len(SCENARIOS)
 
     log_rows:       list[dict] = []
     best_avg_wait:  float      = float("inf")
@@ -103,22 +114,32 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     _csv_header_written: bool  = False      # track incremental CSV state
 
     print("\n" + "═" * 72)
-    print("  ATCS-GH Phase 2 — DQN Training")
+    print("  ATCS-GH Phase 2 — DQN Multi-Scenario Training")
     print("═" * 72)
     print(f"  Device       : {agent.device}")
     print(f"  Episodes     : {n_episodes}")
+    print(f"  Scenarios    : {n_scenarios} (rotating each episode)")
+    for s in SCENARIOS:
+        print(f"                 • {s.stem}")
     print(f"  State size   : {STATE_SIZE}  |  Action size: {ACTION_SIZE}")
     print(f"  Batch size   : {DQNAgent.BATCH_SIZE}  |  Buffer: {DQNAgent.BUFFER_SIZE:,}")
     print(f"  ε start/min  : {DQNAgent.EPSILON_START} → {DQNAgent.EPSILON_MIN}")
     print(f"  Baseline     : avg wait = {BASELINE_AVG_WAIT}s  (Phase 1 fixed timer)")
     print(f"  Checkpoints  : every {CHECKPOINT_FREQ} episodes → {CHECKPOINT_DIR.name}/")
     print("═" * 72)
-    print(f"\n  {'Ep':>5}  {'Reward':>10}  {'Avg Wait':>9}  {'Peak Q':>7}  "
+    print(f"\n  {'Ep':>5}  {'Scenario':>16}  {'Reward':>10}  {'Avg Wait':>9}  {'Peak Q':>7}  "
           f"{'ε':>6}  {'Δ Baseline':>11}  {'Time':>6}  Note")
-    print("  " + "─" * 68)
+    print("  " + "─" * 88)
 
     for episode in range(start_episode, start_episode + n_episodes):
         ep_start = time.time()
+
+        # Rotate through scenarios so agent sees all demand patterns
+        scenario_path = SCENARIOS[(episode - 1) % n_scenarios]
+        scenario_name = scenario_path.stem
+
+        # Create environment with this episode's scenario route file
+        env = TrafficEnv(gui=gui, verbose=False, route_file=str(scenario_path))
 
         # Vary the SUMO seed each episode to prevent overfitting
         seed  = episode * 137     # deterministic but varied per episode
@@ -162,6 +183,7 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         # ── Logging ───────────────────────────────────────────────────────────
         row = {
             "episode":               episode,
+            "scenario":              scenario_name,
             "total_reward":          round(total_reward, 1),
             "avg_wait_s":            round(avg_wait, 2),
             "peak_queue":            peak_queue,
@@ -187,6 +209,7 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         # ── Progress line ─────────────────────────────────────────────────────
         direction = "▲" if delta_pct > 0 else "▼"
         print(f"  {episode:>5}  "
+              f"{scenario_name:>16}  "
               f"{total_reward:>10,.0f}  "
               f"{avg_wait:>8.1f}s  "
               f"{peak_queue:>7}  "
@@ -201,8 +224,6 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
     total_wall = time.time() - training_start
     _print_summary(log_rows, best_avg_wait, total_wall)
-
-    env.close()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

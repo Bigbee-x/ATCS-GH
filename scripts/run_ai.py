@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH | AI Controller -- Inference Runner (Achimota/Neoplan Junction)
 =======================================================================
@@ -408,7 +409,7 @@ def print_report(sim_time: int, stats: dict, model_path: Path) -> None:
         "ACH_N2J": "Achimota Forest Rd from Nsawam (2-lane)",
         "ACH_S2J": "Achimota Forest Rd from CBD    (2-lane)",
         "AGG_E2J": "Aggrey Street                  (2-lane)",
-        "GUG_W2J": "Guggisberg Street              (1-lane)",
+        "GUG_W2J": "Guggisberg Street              (2-lane)",
     }
 
     avg_wait   = stats["overall_avg_wait"]

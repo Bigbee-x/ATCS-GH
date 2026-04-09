@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH | Traffic Environment — Achimota/Neoplan Junction
 ══════════════════════════════════════════════════════════
@@ -24,7 +25,7 @@ State vector (42 dims):
    em_N, em_S, em_E, em_W,     4  emergency vehicle flags (binary)
    pw_0..pw_3]                  4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
 
-  Lanes: ACH_N2J_1/2, ACH_S2J_1/2, AGG_E2J_1/2, GUG_W2J_1
+  Lanes: ACH_N2J_1/2, ACH_S2J_1/2, AGG_E2J_1/2, GUG_W2J_1/2
   (Lane 0 on each edge is the pedestrian sidewalk)
 
 Actions (7):
@@ -102,7 +103,7 @@ INCOMING_LANES = [
     "ACH_N2J_1", "ACH_N2J_2",   # Achimota Forest Rd from Nsawam (vehicle lanes)
     "ACH_S2J_1", "ACH_S2J_2",   # Achimota Forest Rd from CBD    (vehicle lanes)
     "AGG_E2J_1", "AGG_E2J_2",   # Aggrey Street from east        (vehicle lanes)
-    "GUG_W2J_1",                 # Guggisberg Street from west    (vehicle lane)
+    "GUG_W2J_1", "GUG_W2J_2",   # Guggisberg Street from west    (vehicle lanes)
 ]
 # Note: lane index 0 on each edge is the pedestrian sidewalk
 EMERGENCY_TYPE = "emergency"
@@ -140,19 +141,23 @@ PHASE_NAMES = {
     6: "NS_ALL",     7: "EW_ALL",
 }
 
-# 23-character signal state strings for setRedYellowGreenState()
-# Positions: N(0-4) E(5-8) S(9-13) W(14-18) crossings(19-22)
-# Crossings: c0=N_arm(19), c1=E_arm(20), c2=S_arm(21), c3=W_arm(22)
+# 24-character signal state strings for setRedYellowGreenState()
+# Connection layout (20 vehicle + 4 crossings = 24):
+#   N(0-4):  right, straight, straight, left, uturn   — ACH_N2J
+#   E(5-9):  right, straight, straight, left, uturn   — AGG_E2J
+#   S(10-14): right, straight, straight, left, uturn  — ACH_S2J
+#   W(15-19): right, straight, straight, left, uturn  — GUG_W2J
+#   Crossings(20-23): c0(N), c1(E), c2(S), c3(W)
 PHASE_SIGNALS = {
-    #                  N----E---S----W----XWLK
-    NS_THROUGH: "GGGrrrrrrGGGrrrrrrrrGrG",   # N/S straight+right; EW crossings green
-    NS_LEFT:    "grrGrrrrrgrrGrrrrrrrGrG",   # N/S left protected; EW crossings green
-    NS_YELLOW:  "yyyyyrrrryyyyyrrrrrrrrr",   # N/S all yellow; all crossings red
-    EW_THROUGH: "rrrrrGGrrrrrrrGGGrrGrGr",  # EW straight+right; NS crossings green
-    EW_LEFT:    "rrrrrgrGrrrrrrgrrGrGrGr",   # EW left protected; NS crossings green
-    EW_YELLOW:  "rrrrryyyyrrrrryyyyyrrrr",   # EW all yellow; all crossings red
-    NS_ALL:     "GGGGrrrrrGGGGrrrrrrrGrG",  # N/S ALL green; EW crossings green
-    EW_ALL:     "rrrrrGGGrrrrrrGGGGrGrGr",  # EW ALL green; NS crossings green
+    #                N----E----S----W----XWLK
+    NS_THROUGH: "GGGrrrrrrrGGGrrrrrrrrGrG",  # N/S straight+right; left/EW red; EW crossings green
+    NS_LEFT:    "grrGrrrrrrgrrGrrrrrrrGrG",  # N/S protected left; straight red
+    NS_YELLOW:  "yyyyyrrrrryyyyyrrrrrrrrr",   # N/S yellow; all crossings red
+    EW_THROUGH: "rrrrrGGGrrrrrrrGGGrrGrGr",  # E/W straight+right; left/NS red; NS crossings green
+    EW_LEFT:    "rrrrrgrrGrrrrrrgrrGrGrGr",  # E/W protected left; straight red
+    EW_YELLOW:  "rrrrryyyyyrrrrryyyyyrrrr",   # E/W yellow; all crossings red
+    NS_ALL:     "GGGgrrrrrrGGGgrrrrrrrGrG",  # N/S through+right, left permissive (yield)
+    EW_ALL:     "rrrrrGGGgrrrrrrGGGgrGrGr",  # E/W through+right, left permissive (yield)
 }
 
 # Green phases (non-yellow)
@@ -213,7 +218,7 @@ YELLOW_DURATION    = 3     # seconds of yellow clearance
 SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 
 # Exported constants for use by train_agent.py / run_ai.py
-STATE_SIZE  = 42   # 7*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
+STATE_SIZE  = 45   # 8*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
 ACTION_SIZE = 7
 
 # ── Reward weights ────────────────────────────────────────────────────────────

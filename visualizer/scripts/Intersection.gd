@@ -35,7 +35,7 @@ const EW_ALL     := 7
 const ROAD_LENGTH     := 30.0   # Length of each road arm (Godot units)
 const NS_ROAD_WIDTH   := 6.4    # Achimota Forest Rd: 2 lanes per direction
 const E_ROAD_WIDTH    := 6.4    # Aggrey Street: 2 lanes per direction
-const W_ROAD_WIDTH    := 3.2    # Guggisberg Street: 1 lane per direction
+const W_ROAD_WIDTH    := 6.4    # Guggisberg Street: 2 lanes per direction
 const ROAD_THICKNESS  := 0.1    # Road surface height
 const JUNCTION_SIZE   := 7.0    # Central junction (slight widening at intersection)
 const SIDEWALK_HEIGHT := 0.15   # Raised sidewalk height
@@ -525,12 +525,10 @@ func _build_lane_overlays() -> void:
 	var half_junc: float = JUNCTION_SIZE / 2.0
 	var ns_lane_w: float = NS_ROAD_WIDTH / 4.0
 	var e_lane_w: float = E_ROAD_WIDTH / 4.0
-	var w_lane_w: float = W_ROAD_WIDTH / 2.0
+	var w_lane_w: float = W_ROAD_WIDTH / 4.0   # Now 2-lane like the others
 
 	# Lane configs: lane_id -> {pos, size}
-	# Lane indices shifted: lane 0 is now sidewalk, vehicle lanes are 1,2
-	# N/S: 2 vehicle lanes each, E (Aggrey St): 2, W (Guggisberg): 1
-	# X positions mirrored (negated) to match right-hand traffic visual mapping.
+	# All approaches now 2-lane. X positions mirrored (negated) for right-hand traffic.
 	var lane_configs: Dictionary = {
 		"ACH_N2J_1": {"pos": Vector3(ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
 		"ACH_N2J_2": {"pos": Vector3(-ns_lane_w, 0.12, half_junc + ROAD_LENGTH / 2.0), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
@@ -538,7 +536,8 @@ func _build_lane_overlays() -> void:
 		"ACH_S2J_2": {"pos": Vector3(ns_lane_w, 0.12, -(half_junc + ROAD_LENGTH / 2.0)), "size": Vector3(ns_lane_w * 1.8, 0.02, ROAD_LENGTH)},
 		"AGG_E2J_1": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
 		"AGG_E2J_2": {"pos": Vector3(-(half_junc + ROAD_LENGTH / 2.0), 0.12, -e_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, e_lane_w * 1.8)},
-		"GUG_W2J_1": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -w_lane_w * 0.5), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
+		"GUG_W2J_1": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, -w_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
+		"GUG_W2J_2": {"pos": Vector3(half_junc + ROAD_LENGTH / 2.0, 0.12, w_lane_w), "size": Vector3(ROAD_LENGTH, 0.02, w_lane_w * 1.8)},
 	}
 
 	for lane_id in lane_configs:

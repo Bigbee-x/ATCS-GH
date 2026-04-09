@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ATCS-GH Phase 2 | Deep Q-Network Agent
 ════════════════════════════════════════
