@@ -1191,6 +1191,19 @@
 
     // ── Auto-Refresh ───────────────────────────────────────────────────
     async function init() {
+        // Check URL for ?tab=live (auto-opened from Godot)
+        const tabNames = ['training', 'scenarios', 'comparison', 'live'];
+        const urlTab = new URLSearchParams(window.location.search).get('tab');
+        if (urlTab && tabNames.includes(urlTab)) {
+            activeTab = urlTab;
+            const buttons = document.querySelectorAll('.tabs .tab');
+            buttons.forEach((btn, i) => btn.classList.toggle('active', tabNames[i] === urlTab));
+            tabNames.forEach(t => {
+                document.getElementById('tab-' + t).style.display = t === urlTab ? 'block' : 'none';
+            });
+            if (urlTab === 'live') connectLiveWS();
+        }
+
         await refresh();
         // Refresh every 15 seconds during training
         refreshInterval = setInterval(refresh, 15000);

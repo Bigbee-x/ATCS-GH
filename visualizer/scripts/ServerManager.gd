@@ -19,8 +19,11 @@ enum ServerType { NONE, SINGLE_JUNCTION, CORRIDOR }
 # ── Configuration ───────────────────────────────────────────────────────────
 const PYTHON_PATH := "/Users/osborn/.pyenv/versions/3.11.7/bin/python3"
 const LOG_FILE := "/tmp/atcs_gh_server.log"
+const DASHBOARD_LOG := "/tmp/atcs_gh_dashboard.log"
 const POLL_INTERVAL := 1.0        # Seconds between health checks / log reads
 const PORT := 8765
+const DASHBOARD_PORT := 5050
+const DASHBOARD_SCRIPT := "dashboard/app.py"
 
 const SERVER_SCRIPTS: Dictionary = {
 	ServerType.SINGLE_JUNCTION: "scripts/visualizer_server.py",
@@ -36,6 +39,7 @@ const SERVER_NAMES: Dictionary = {
 # ── State ───────────────────────────────────────────────────────────────────
 var current_server: ServerType = ServerType.NONE
 var server_pid: int = -1
+var _dashboard_pid: int = -1
 var _log_file_pos: int = 0
 var _is_starting: bool = false
 var _poll_timer: Timer
@@ -163,6 +167,9 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 
 	print("[ServerManager] Started %s server — PID %d" % [get_server_type_name(), server_pid])
 
+	# Launch the dashboard and open browser
+	_start_dashboard()
+
 	# Start the poll timer
 	_poll_timer.start()
 
@@ -172,6 +179,7 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 
 func stop_server() -> void:
 	## Kill the running server process and reset state.
+	_stop_dashboard()
 	if server_pid > 0:
 		if OS.is_process_running(server_pid):
 			print("[ServerManager] Killing %s server — PID %d" % [
@@ -253,3 +261,53 @@ func _read_new_log_lines() -> String:
 	_log_file_pos = length
 	f.close()
 	return new_text
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DASHBOARD
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _start_dashboard() -> void:
+	## Launch the Flask dashboard and open the Live Simulation tab in the browser.
+	if _dashboard_pid > 0 and OS.is_process_running(_dashboard_pid):
+		# Dashboard already running — just open the browser
+		_open_dashboard_browser()
+		return
+
+	var dash_script: String = _project_root.path_join(DASHBOARD_SCRIPT)
+	if not FileAccess.file_exists(dash_script):
+		push_warning("[ServerManager] Dashboard script not found: %s" % dash_script)
+		return
+
+	var dash_cmd: String = 'cd "%s" && exec "%s" "%s" > "%s" 2>&1' % [
+		_project_root, PYTHON_PATH, dash_script, DASHBOARD_LOG
+	]
+
+	_dashboard_pid = OS.create_process("/bin/bash", ["-c", dash_cmd])
+
+	if _dashboard_pid <= 0:
+		push_warning("[ServerManager] Failed to start dashboard")
+		return
+
+	print("[ServerManager] Dashboard started — PID %d (http://localhost:%d)" % [
+		_dashboard_pid, DASHBOARD_PORT])
+
+	# Brief delay for Flask to bind the port, then open browser
+	await get_tree().create_timer(1.5).timeout
+	_open_dashboard_browser()
+
+
+func _open_dashboard_browser() -> void:
+	## Open the dashboard Live Simulation tab in the default browser.
+	var url: String = "http://localhost:%d?tab=live" % DASHBOARD_PORT
+	OS.shell_open(url)
+	print("[ServerManager] Opened dashboard in browser: %s" % url)
+
+
+func _stop_dashboard() -> void:
+	## Kill the dashboard process if running.
+	if _dashboard_pid > 0:
+		if OS.is_process_running(_dashboard_pid):
+			print("[ServerManager] Killing dashboard — PID %d" % _dashboard_pid)
+			OS.kill(_dashboard_pid)
+		_dashboard_pid = -1
