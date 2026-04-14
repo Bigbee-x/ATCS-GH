@@ -47,8 +47,8 @@ const J2_Z := 36.0
 const JUNCTION_CENTERS: Array = [0.0, 18.0, 36.0]
 
 # Road arm lengths
-const BOUNDARY_ARM      := 10.0   # Boundary road arms
-const CROSS_ARM         := 10.0   # Cross-street arms
+const BOUNDARY_ARM      := 30.0   # Boundary road arms
+const CROSS_ARM         := 30.0   # Cross-street arms
 
 # Junction names
 const JUNCTION_IDS: Array = ["J0", "J1", "J2"]
@@ -253,7 +253,7 @@ func _create_materials() -> void:
 
 func _build_ground() -> void:
 	var ground := CSGBox3D.new()
-	ground.size = Vector3(40.0, 0.02, 70.0)
+	ground.size = Vector3(80.0, 0.02, 110.0)
 	ground.position = Vector3(0, -0.06, J1_Z)  # Center on corridor midpoint
 	ground.material = _mat_grass
 	ground.name = "Ground"

@@ -324,8 +324,8 @@ def _collect_pedestrian_data() -> list[dict]:
     try:
         for pid in traci.person.getIDList():
             x, y = traci.person.getPosition(pid)
-            # Only include pedestrians near the junction (within ~100m)
-            if 400 < x < 600 and 400 < y < 600:
+            # Only include pedestrians near the junction (within ~300m)
+            if 1200 < x < 1800 and 1200 < y < 1800:
                 pedestrians.append({
                     "id":    pid,
                     "x":     round(x, 2),

@@ -32,7 +32,7 @@ const NS_ALL     := 6
 const EW_ALL     := 7
 
 # ── Road geometry constants (Achimota/Neoplan Junction calibration) ──────────
-const ROAD_LENGTH     := 30.0   # Length of each road arm (Godot units)
+const ROAD_LENGTH     := 90.0   # Length of each road arm (Godot units)
 const NS_ROAD_WIDTH   := 6.4    # Achimota Forest Rd: 2 lanes per direction
 const E_ROAD_WIDTH    := 6.4    # Aggrey Street: 2 lanes per direction
 const W_ROAD_WIDTH    := 6.4    # Guggisberg Street: 2 lanes per direction
@@ -225,7 +225,7 @@ func _create_materials() -> void:
 func _build_ground() -> void:
 	## Build the ground plane (grass area surrounding the intersection).
 	var ground := CSGBox3D.new()
-	ground.size = Vector3(80.0, 0.02, 80.0)
+	ground.size = Vector3(200.0, 0.02, 200.0)
 	ground.position = Vector3(0, -0.06, 0)
 	ground.material = _mat_grass
 	ground.name = "Ground"

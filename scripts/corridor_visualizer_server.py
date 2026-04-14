@@ -283,11 +283,11 @@ def _collect_pedestrian_data() -> list[dict]:
             x, y = traci.person.getPosition(pid)
             # Include pedestrians near any of the 3 junctions
             # J0 is at (0,0), J1 at (0,300), J2 at (0,600) in SUMO coords
-            # offset by SUMO center (500,500)
-            # So J0=(500,500), J1=(500,800), J2=(500,1100)
-            # Include if within ~200m of corridor axis (300 < x < 700)
-            # and within corridor Y range (300 < y < 1300)
-            if 300 < x < 700 and 300 < y < 1300:
+            # offset by SUMO center (1500,1500)
+            # So J0=(1500,1500), J1=(1500,1800), J2=(1500,2100)
+            # Include if within ~200m of corridor axis (1300 < x < 1700)
+            # and within corridor Y range (0 < y < 3600)
+            if 1300 < x < 1700 and 0 < y < 3600:
                 pedestrians.append({
                     "id":    pid,
                     "x":     round(x, 2),

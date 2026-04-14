@@ -24,30 +24,30 @@ const VEHICLE_Y      := 0.35
 
 # ── SUMO → Godot coordinate transform ────────────────────────────────────────
 ## Junction J0 center in SUMO coordinates (from .net.xml)
-const SUMO_ORIGIN_X: float = 500.0
-const SUMO_ORIGIN_Y: float = 500.0
+const SUMO_ORIGIN_X: float = 1500.0
+const SUMO_ORIGIN_Y: float = 1500.0
 ## Per-axis SUMO junction boundary distances from center (from intersection.net.xml)
-## X axis (E/W): junction edges at x=489.6 and x=510.4
+## X axis (E/W): junction edges at x=1489.6 and x=1510.4
 const SUMO_JUNC_HALF_X: float = 10.4
-## Z axis (N/S — SUMO Y): junction edges at y=492.8 and y=507.2
+## Z axis (N/S — SUMO Y): junction edges at y=1492.8 and y=1507.2
 const SUMO_JUNC_HALF_Z: float = 7.2
 ## Per-axis SUMO road lengths from junction edge to network endpoint
-const SUMO_ROAD_LEN_X: float = 489.6   ## E/W roads (1000 - 510.4)
-const SUMO_ROAD_LEN_Z: float = 492.8   ## N/S roads (1000 - 507.2)
+const SUMO_ROAD_LEN_X: float = 1489.6   ## E/W roads (3000 - 1510.4)
+const SUMO_ROAD_LEN_Z: float = 1492.8   ## N/S roads (3000 - 1507.2)
 ## Godot junction half-width (JUNCTION_SIZE / 2 from Intersection.gd)
 const GODOT_JUNC_HALF: float = 3.5
 ## Godot road length from junction edge (ROAD_LENGTH from Intersection.gd)
-const GODOT_ROAD_LEN: float = 30.0
+const GODOT_ROAD_LEN: float = 90.0
 
 # ── Corridor mode ────────────────────────────────────────────────────────────
 ## When true, use piecewise mapping for corridor (3-junction layout).
 ## Expands junction areas and stretches road widths to match visual geometry.
 var corridor_mode: bool = false
 
-## SUMO net-offset: corridor.net.xml applies netOffset="500,500" to all coords
-## TraCI returns offset coords: J0=(500,500), J1=(500,800), J2=(500,1100)
-const CORRIDOR_OFFSET_X: float = 500.0
-const CORRIDOR_OFFSET_Y: float = 500.0
+## SUMO net-offset: corridor.net.xml applies netOffset to all coords
+## TraCI returns offset coords: J0=(1500,1500), J1=(1500,1800), J2=(1500,2100)
+const CORRIDOR_OFFSET_X: float = 1500.0
+const CORRIDOR_OFFSET_Y: float = 1500.0
 
 ## ── Corridor SUMO geometry (from corridor.net.xml junction shapes) ──────────
 ## Raw junction Y positions (offset-subtracted)
@@ -64,9 +64,9 @@ const C_JUNC_HALF_X: float = 10.4 # All junctions: x ∈ [-10.4, 10.4]
 ## SUMO road lengths between junction edges
 const C_ROAD_J0J1: float = 279.2  # 289.6 - 10.4
 const C_ROAD_J1J2: float = 282.4  # 592.8 - 310.4
-const C_SOUTH_ROAD: float = 489.6 # S boundary to J0 south edge
-const C_NORTH_ROAD: float = 492.8 # J2 north edge to N boundary
-const C_CROSS_ROAD: float = 489.6 # Junction edge to E/W boundary
+const C_SOUTH_ROAD: float = 1489.6 # S boundary to J0 south edge
+const C_NORTH_ROAD: float = 1492.8 # J2 north edge to N boundary
+const C_CROSS_ROAD: float = 1489.6 # Junction edge to E/W boundary
 
 ## ── Corridor Godot geometry (must match CorridorBuilder.gd) ────────────────
 const C_GD_J0_Z: float = 0.0
@@ -75,8 +75,8 @@ const C_GD_J2_Z: float = 36.0
 const C_GD_JUNC_HALF: float = 3.0   # JUNCTION_SIZE / 2
 const C_GD_ROAD_J0J1: float = 12.0  # 15.0 - 3.0
 const C_GD_ROAD_J1J2: float = 12.0  # 33.0 - 21.0
-const C_GD_BOUNDARY: float = 10.0   # Boundary road length in Godot
-const C_GD_CROSS_ARM: float = 10.0  # Cross-street arm length in Godot
+const C_GD_BOUNDARY: float = 30.0   # Boundary road length in Godot
+const C_GD_CROSS_ARM: float = 30.0  # Cross-street arm length in Godot
 
 # ── Animation ────────────────────────────────────────────────────────────────
 const LERP_SPEED: float = 5.0     ## Position/rotation interpolation speed
@@ -87,13 +87,13 @@ const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed
 ## instead of piling up.  Hides the extreme compression (49:1) on boundary
 ## roads and creates a natural "driving away" effect.
 ## Single-junction bounds: ±(GODOT_JUNC_HALF + GODOT_ROAD_LEN)
-const SJ_BOUND: float = 33.5          # 3.5 + 30
-const SJ_FADE_DIST: float = 8.0       # Start fading 8 units before edge
+const SJ_BOUND: float = 93.5          # 3.5 + 90
+const SJ_FADE_DIST: float = 15.0      # Start fading 15 units before edge
 ## Corridor bounds
-const CR_Z_MIN: float = -13.0         # J0_Z - junc_half - boundary_road
-const CR_Z_MAX: float = 49.0          # J2_Z + junc_half + boundary_road
-const CR_X_BOUND: float = 13.0        # junc_half + cross_arm
-const CR_FADE_DIST: float = 6.0       # Start fading 6 units before edge
+const CR_Z_MIN: float = -33.0         # J0_Z - junc_half - boundary_road
+const CR_Z_MAX: float = 69.0          # J2_Z + junc_half + boundary_road
+const CR_X_BOUND: float = 33.0        # junc_half + cross_arm
+const CR_FADE_DIST: float = 12.0      # Start fading 12 units before edge
 
 # ── Pool limits ──────────────────────────────────────────────────────────────
 var MAX_VEHICLES: int = 200

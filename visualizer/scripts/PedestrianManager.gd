@@ -23,17 +23,17 @@ const TOTAL_HEIGHT      := 0.52    # Approximate total (legs + body + head)
 const SIDEWALK_Y        := 0.15    # Matches Intersection.gd SIDEWALK_HEIGHT
 
 # ── SUMO coordinate transform ──────────────────────────────────────────────────
-const SUMO_CENTER       := 500.0   # SUMO junction center (single-junction mode)
+const SUMO_CENTER       := 1500.0  # SUMO junction center (single-junction mode)
 ## Piecewise mapping constants (must match VehicleManager.gd)
 const SUMO_JUNC_HALF_X  := 10.4   # Junction half-extent in SUMO X
 const SUMO_JUNC_HALF_Z  := 7.2    # Junction half-extent in SUMO Y (Z in Godot)
-const SUMO_ROAD_LEN_X   := 489.6  # E/W road length in SUMO
-const SUMO_ROAD_LEN_Z   := 492.8  # N/S road length in SUMO
+const SUMO_ROAD_LEN_X   := 1489.6 # E/W road length in SUMO
+const SUMO_ROAD_LEN_Z   := 1492.8 # N/S road length in SUMO
 const GODOT_JUNC_HALF   := 3.5    # JUNCTION_SIZE / 2 in Godot
-const GODOT_ROAD_LEN    := 30.0   # Road arm length in Godot
+const GODOT_ROAD_LEN    := 90.0   # Road arm length in Godot
 
 # ── Road geometry (must match Intersection.gd for single junction) ────────────
-const ROAD_LENGTH       := 30.0
+const ROAD_LENGTH       := 90.0
 const NS_ROAD_WIDTH     := 6.4
 const E_ROAD_WIDTH      := 6.4
 const W_ROAD_WIDTH      := 6.4
@@ -47,8 +47,8 @@ const C_NS_ROAD_WIDTH   := 5.0
 const C_JUNCTION_SIZE   := 6.0
 const C_JUNCTION_HALF   := 3.0
 const C_SIDEWALK_WIDTH  := 0.5
-const C_CROSS_ARM       := 10.0
-const C_BOUNDARY_ARM    := 10.0
+const C_CROSS_ARM       := 30.0
+const C_BOUNDARY_ARM    := 30.0
 const C_J0_Z            := 0.0
 const C_J1_Z            := 18.0
 const C_J2_Z            := 36.0
@@ -66,14 +66,14 @@ const C_SUMO_JUNC_HALF_X: float = 10.4
 # SUMO road lengths between junction edges
 const C_SUMO_ROAD_J0J1: float = 279.2
 const C_SUMO_ROAD_J1J2: float = 282.4
-const C_SUMO_SOUTH_ROAD: float = 489.6
-const C_SUMO_NORTH_ROAD: float = 492.8
-const C_SUMO_CROSS_ROAD: float = 489.6
+const C_SUMO_SOUTH_ROAD: float = 1489.6
+const C_SUMO_NORTH_ROAD: float = 1492.8
+const C_SUMO_CROSS_ROAD: float = 1489.6
 # Godot corridor targets
 const C_GD_JUNC_HALF: float = 3.0
 const C_GD_ROAD_J0J1: float = 12.0
 const C_GD_ROAD_J1J2: float = 12.0
-const C_GD_BOUNDARY: float = 10.0
+const C_GD_BOUNDARY: float = 30.0
 
 # ── Appearance palettes ───────────────────────────────────────────────────────
 const SHIRT_COLORS: Array = [
@@ -333,8 +333,8 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 		seen[pid] = true
 
 		# Convert SUMO coords to Godot coords (piecewise mapping matching VehicleManager)
-		var sumo_x: float = float(ped_data.get("x", 500.0))
-		var sumo_y: float = float(ped_data.get("y", 500.0))
+		var sumo_x: float = float(ped_data.get("x", 1500.0))
+		var sumo_y: float = float(ped_data.get("y", 1500.0))
 		var godot_x: float
 		var godot_z: float
 		if corridor_mode:

@@ -7,7 +7,7 @@
 
   Corridor layout (local metre coordinates, origin at J0):
 
-      N (0, 1100) ── 500m north of J2
+      N (0, 2100) ── 1500m north of J2
       |
     [J2] (0, 600) ── Nima Bypass (E) / Tesano Rd (W)
       |   300m
@@ -15,7 +15,7 @@
       |   300m
     [J0] (0, 0)   ── Aggrey St (E) / Guggisberg St (W) [original junction]
       |
-      S (0, -500) ── 500m south of J0
+      S (0, -1500) ── 1500m south of J0
 
   Green wave design: at 50 km/h, 300m takes ~21.6s.
   Ideal phase offset between consecutive junctions: ~22 seconds.
@@ -27,18 +27,18 @@
     <node id="J2" x="0"   y="600"  type="traffic_light"/>
 
     <!-- ═══ Corridor endpoints (N/S) ═══ -->
-    <node id="S"  x="0"   y="-500" type="priority"/>
-    <node id="N"  x="0"   y="1100" type="priority"/>
+    <node id="S"  x="0"    y="-1500" type="priority"/>
+    <node id="N"  x="0"    y="2100"  type="priority"/>
 
     <!-- ═══ J0 cross-street endpoints ═══ -->
-    <node id="E0" x="500"  y="0"   type="priority"/>  <!-- Aggrey Street -->
-    <node id="W0" x="-500" y="0"   type="priority"/>  <!-- Guggisberg Street -->
+    <node id="E0" x="1500"  y="0"   type="priority"/>  <!-- Aggrey Street -->
+    <node id="W0" x="-1500" y="0"   type="priority"/>  <!-- Guggisberg Street -->
 
     <!-- ═══ J1 cross-street endpoints ═══ -->
-    <node id="E1" x="400"  y="300" type="priority"/>  <!-- Asylum Down Road -->
-    <node id="W1" x="-400" y="300" type="priority"/>  <!-- Ring Road -->
+    <node id="E1" x="1200"  y="300" type="priority"/>  <!-- Asylum Down Road -->
+    <node id="W1" x="-1200" y="300" type="priority"/>  <!-- Ring Road -->
 
     <!-- ═══ J2 cross-street endpoints ═══ -->
-    <node id="E2" x="500"  y="600" type="priority"/>  <!-- Nima Bypass -->
-    <node id="W2" x="-300" y="600" type="priority"/>  <!-- Tesano Road -->
+    <node id="E2" x="1500"  y="600" type="priority"/>  <!-- Nima Bypass -->
+    <node id="W2" x="-900"  y="600" type="priority"/>  <!-- Tesano Road -->
 </nodes>

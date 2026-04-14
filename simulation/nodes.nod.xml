@@ -7,10 +7,10 @@
 
   Junction layout (local metre coordinates, origin at junction centre):
     J0 — central signalised junction (Achimota/Neoplan)
-    N  — Achimota Forest Rd toward Nsawam (500m north)
-    S  — Achimota Forest Rd toward Accra CBD (500m south)
-    E  — Aggrey Street eastbound (500m east)
-    W  — Guggisberg Street westbound (500m west)
+    N  — Achimota Forest Rd toward Nsawam (1500m north)
+    S  — Achimota Forest Rd toward Accra CBD (1500m south)
+    E  — Aggrey Street eastbound (1500m east)
+    W  — Guggisberg Street westbound (1500m west)
 
   Coordinate system: metres, origin at junction centre.
   These files are fed to `netconvert` by scripts/build_network.py
@@ -21,8 +21,8 @@
     <node id="J0" x="0"    y="0"    type="traffic_light"/>
 
     <!-- Arm endpoints — "priority" lets the junction manage right-of-way -->
-    <node id="N"  x="0"    y="500"  type="priority"/>
-    <node id="S"  x="0"    y="-500" type="priority"/>
-    <node id="E"  x="500"  y="0"    type="priority"/>
-    <node id="W"  x="-500" y="0"    type="priority"/>
+    <node id="N"  x="0"     y="1500"  type="priority"/>
+    <node id="S"  x="0"     y="-1500" type="priority"/>
+    <node id="E"  x="1500"  y="0"     type="priority"/>
+    <node id="W"  x="-1500" y="0"     type="priority"/>
 </nodes>
