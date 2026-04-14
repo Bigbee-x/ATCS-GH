@@ -341,35 +341,42 @@ func _build_stop_lines() -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_traffic_lights() -> void:
-	## Build traffic light poles at each junction corner.
-	# Each light faces inward toward approaching traffic.
-	# Positions are at the left side of each approach (driver's perspective).
-	var half_junc: float = JUNCTION_SIZE / 2.0 + 0.3
+	## Build overhead mast-arm traffic lights for each approach.
+	## Each pole stands on its own road's sidewalk, pushed 2 units past the
+	## junction edge along the road arm so it's clearly on the correct road.
+	## A horizontal mast arm extends from the pole top over the road lanes.
 
-	# Traffic lights placed at the curb (road edge + small offset onto sidewalk).
-	# Each light sits on the left side of the incoming traffic (driver's perspective).
-	var ns_curb: float = NS_ROAD_WIDTH / 2.0 + 0.3   # 3.5 — just outside N/S road edge
-	var e_curb: float  = E_ROAD_WIDTH / 2.0 + 0.3     # 3.5 — just outside E road edge
-	var w_curb: float  = W_ROAD_WIDTH / 2.0 + 0.3     # 1.9 — just outside W road edge
+	# Curb offset: how far from road center the pole sits (on sidewalk)
+	var curb: float = NS_ROAD_WIDTH / 2.0 + 0.5   # 3.7 — on sidewalk
 
-	# X positions are mirrored (negated) to match the right-hand traffic
-	# visual mapping in VehicleManager.gd.
+	# Along-road offset: how far from junction center, along the road arm.
+	# Pushed 2 units past the junction edge so the pole is clearly on its
+	# own road — NOT at the corner where it could look like the other road.
+	var along: float = JUNCTION_SIZE / 2.0 + 2.0   # 5.5 — well past junction edge
+
+	# Overhead structure constants
+	const POLE_HEIGHT: float = 5.5
+	const ARM_LEN: float = 3.7                     # Reaches to road center
+
+	# Pole positions — each pole is on its OWN road's sidewalk:
+	#   north/south: X = ±curb (beside N/S road), Z = ±along (along N/S road)
+	#   east/west:   X = ±along (along E/W road), Z = ±curb (beside E/W road)
 	var configs: Dictionary = {
 		"north": {
-			"pos": Vector3(ns_curb, 0, half_junc),
-			"rot_y": 0.0,  # Faces south (toward oncoming N traffic)
+			"pos": Vector3(curb, 0, along),
+			"rot_y": 0.0,
 		},
 		"south": {
-			"pos": Vector3(-ns_curb, 0, -half_junc),
-			"rot_y": PI,  # Faces north
+			"pos": Vector3(-curb, 0, -along),
+			"rot_y": PI,
 		},
 		"east": {
-			"pos": Vector3(-half_junc, 0, e_curb),
-			"rot_y": PI / 2.0,  # Faces east (mirrored)
+			"pos": Vector3(-along, 0, curb),
+			"rot_y": -PI / 2.0,
 		},
 		"west": {
-			"pos": Vector3(half_junc, 0, -w_curb),
-			"rot_y": -PI / 2.0,  # Faces west (mirrored)
+			"pos": Vector3(along, 0, -curb),
+			"rot_y": PI / 2.0,
 		},
 	}
 
@@ -381,50 +388,76 @@ func _build_traffic_lights() -> void:
 		pole_root.name = "TrafficLight_%s" % approach
 		add_child(pole_root)
 
-		# Vertical pole
+		# ── Vertical pole ────────────────────────────────────────────────
 		var pole := CSGCylinder3D.new()
-		pole.radius = 0.06
-		pole.height = 3.5
-		pole.position = Vector3(0, 1.75, 0)
+		pole.radius = 0.1
+		pole.height = POLE_HEIGHT
+		pole.position = Vector3(0, POLE_HEIGHT / 2.0, 0)
 		pole.material = _mat_pole
 		pole.name = "Pole"
 		pole_root.add_child(pole)
 
-		# Housing (dark box behind the light bulbs)
+		# ── Horizontal mast arm (extends over road in local -X) ──────────
+		var arm := CSGBox3D.new()
+		arm.size = Vector3(ARM_LEN, 0.14, 0.14)
+		arm.position = Vector3(-ARM_LEN / 2.0, POLE_HEIGHT, 0)
+		arm.material = _mat_pole
+		arm.name = "MastArm"
+		pole_root.add_child(arm)
+
+		# ── Diagonal brace ───────────────────────────────────────────────
+		var brace_h: float = ARM_LEN * 0.55
+		var brace_v: float = 1.6
+		var brace_len: float = sqrt(brace_h * brace_h + brace_v * brace_v)
+		var brace := CSGBox3D.new()
+		brace.size = Vector3(brace_len, 0.06, 0.06)
+		brace.rotation.z = -atan2(brace_v, brace_h)
+		brace.position = Vector3(-brace_h / 2.0, POLE_HEIGHT - brace_v / 2.0, 0)
+		brace.material = _mat_pole
+		brace.name = "Brace"
+		pole_root.add_child(brace)
+
+		# ── Signal housing (hangs from arm tip, over road) ───────────────
 		var housing := CSGBox3D.new()
-		housing.size = Vector3(0.35, 1.1, 0.22)
-		housing.position = Vector3(0, 3.2, 0.12)
+		housing.size = Vector3(0.45, 1.3, 0.30)
+		housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 0.75, 0)
 		housing.material = _mat_pole
 		housing.name = "Housing"
 		pole_root.add_child(housing)
 
-		# Three bulbs: red (top), yellow (middle), green (bottom)
+		# ── Visor / sun shade ────────────────────────────────────────────
+		var visor := CSGBox3D.new()
+		visor.size = Vector3(0.55, 0.06, 0.40)
+		visor.position = Vector3(-ARM_LEN, POLE_HEIGHT - 0.05, 0.15)
+		visor.material = _mat_pole
+		visor.name = "Visor"
+		pole_root.add_child(visor)
+
+		# ── Three bulbs: red (top), yellow (mid), green (bottom) ─────────
 		var bulb_data: Array = [
-			{"name": "red",    "y": 3.55, "color": Color(1, 0, 0)},
-			{"name": "yellow", "y": 3.20, "color": Color(1, 0.85, 0)},
-			{"name": "green",  "y": 2.85, "color": Color(0, 1, 0.2)},
+			{"name": "red",    "y": POLE_HEIGHT - 0.30, "color": Color(1, 0, 0)},
+			{"name": "yellow", "y": POLE_HEIGHT - 0.65, "color": Color(1, 0.85, 0)},
+			{"name": "green",  "y": POLE_HEIGHT - 1.00, "color": Color(0, 1, 0.2)},
 		]
 
 		var approach_lights: Dictionary = {}
 
 		for bd in bulb_data:
-			# Bulb mesh (sphere)
 			var bulb := CSGSphere3D.new()
-			bulb.radius = 0.1
+			bulb.radius = 0.13
 			bulb.radial_segments = 12
 			bulb.rings = 6
-			bulb.position = Vector3(0, bd["y"], 0.25)
+			bulb.position = Vector3(-ARM_LEN, bd["y"], 0.18)
 			bulb.material = _mat_light_off
 			bulb.name = "Bulb_%s" % bd["name"]
 			pole_root.add_child(bulb)
 
-			# Glow light (OmniLight3D for volumetric glow effect)
 			var glow := OmniLight3D.new()
-			glow.position = Vector3(0, bd["y"], 0.25)
-			glow.light_energy = 0.0  # Off initially
+			glow.position = Vector3(-ARM_LEN, bd["y"], 0.18)
+			glow.light_energy = 0.0
 			glow.light_color = bd["color"]
-			glow.omni_range = 3.0
-			glow.omni_attenuation = 2.0
+			glow.omni_range = 5.0
+			glow.omni_attenuation = 1.5
 			glow.shadow_enabled = false
 			glow.name = "Glow_%s" % bd["name"]
 			pole_root.add_child(glow)
@@ -434,28 +467,27 @@ func _build_traffic_lights() -> void:
 				"glow": glow,
 			}
 
-		# Turn arrow indicator (small box below the main signal)
+		# ── Turn arrow indicator (hangs below main signal) ───────────────
 		var arrow_housing := CSGBox3D.new()
-		arrow_housing.size = Vector3(0.35, 0.4, 0.22)
-		arrow_housing.position = Vector3(0, 2.45, 0.12)
+		arrow_housing.size = Vector3(0.45, 0.45, 0.30)
+		arrow_housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0)
 		arrow_housing.material = _mat_pole
 		arrow_housing.name = "ArrowHousing"
 		pole_root.add_child(arrow_housing)
 
-		# Arrow shape: small left-pointing triangle using CSGBox3D
 		var arrow_mesh := CSGBox3D.new()
-		arrow_mesh.size = Vector3(0.18, 0.18, 0.04)
-		arrow_mesh.position = Vector3(0, 2.45, 0.26)
+		arrow_mesh.size = Vector3(0.22, 0.22, 0.05)
+		arrow_mesh.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0.18)
 		arrow_mesh.material = _mat_arrow_off
 		arrow_mesh.name = "Arrow"
 		pole_root.add_child(arrow_mesh)
 
 		var arrow_glow := OmniLight3D.new()
-		arrow_glow.position = Vector3(0, 2.45, 0.26)
+		arrow_glow.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0.18)
 		arrow_glow.light_energy = 0.0
 		arrow_glow.light_color = Color(0, 1, 0.3)
-		arrow_glow.omni_range = 2.0
-		arrow_glow.omni_attenuation = 2.0
+		arrow_glow.omni_range = 3.5
+		arrow_glow.omni_attenuation = 1.5
 		arrow_glow.shadow_enabled = false
 		arrow_glow.name = "ArrowGlow"
 		pole_root.add_child(arrow_glow)
@@ -483,15 +515,15 @@ func _set_light(approach: String, active_color: String) -> void:
 			match color_name:
 				"red":
 					mesh.material = _mat_red_on
-					glow.light_energy = 2.5
+					glow.light_energy = 3.5
 					glow.light_color = Color(1, 0, 0)
 				"yellow":
 					mesh.material = _mat_yellow_on
-					glow.light_energy = 2.5
+					glow.light_energy = 3.5
 					glow.light_color = Color(1, 0.85, 0)
 				"green":
 					mesh.material = _mat_green_on
-					glow.light_energy = 2.5
+					glow.light_energy = 3.5
 					glow.light_color = Color(0, 1, 0.2)
 		else:
 			mesh.material = _mat_light_off
@@ -509,7 +541,7 @@ func _set_arrow(approach: String, is_on: bool) -> void:
 	var arrow_glow: OmniLight3D = bulbs["arrow"]["glow"]
 	if is_on:
 		arrow_mesh.material = _mat_arrow_on
-		arrow_glow.light_energy = 3.0
+		arrow_glow.light_energy = 4.0
 	else:
 		arrow_mesh.material = _mat_arrow_off
 		arrow_glow.light_energy = 0.0

@@ -22,6 +22,7 @@ extends Node3D
 @onready var audio_manager: Node = $AudioManager
 @onready var ui: Control = $UI/UIRoot
 @onready var camera: Camera3D = $IsometricCamera
+@onready var tod_manager: Node = $TimeOfDayManager
 
 # ── Camera state ─────────────────────────────────────────────────────────────
 var _camera_default_position: Vector3
@@ -85,6 +86,14 @@ func _ready() -> void:
 	# ── Connect UI pedestrian toggle signal ──────────────────────────────
 	ui.pedestrian_toggled.connect(_on_pedestrian_toggled)
 
+	# ── Wire up TimeOfDayManager ─────────────────────────────────────────
+	tod_manager.sun = $DirectionalLight3D
+	tod_manager.world_env = $WorldEnvironment
+	tod_manager.time_changed.connect(_on_time_changed)
+	tod_manager.night_mode_changed.connect(_on_night_mode_changed)
+	ui.time_of_day_changed.connect(_on_ui_time_changed)
+	ui.tod_mode_changed.connect(_on_ui_tod_mode_changed)
+
 	print("[Main] All signals connected. Waiting for server data...")
 
 
@@ -111,6 +120,11 @@ func _on_state_updated(data: Dictionary) -> void:
 	vehicle_manager.update_vehicles(data)
 	audio_manager.update_audio(data)
 	ui.update_display(data)
+
+	# Feed sim time to day/night cycle if in sim-linked mode
+	var sim_time: float = data.get("sim_time", -1.0)
+	if sim_time >= 0.0:
+		tod_manager.update_from_sim_time(sim_time)
 
 	# Update SUMO-driven crossing pedestrians
 	var ped_list: Array = data.get("pedestrians", [])
@@ -187,6 +201,29 @@ func _on_pedestrian_toggled(enabled: bool) -> void:
 	## Toggle pedestrians on/off from UI button.
 	pedestrian_manager.set_pedestrians_enabled(enabled)
 	print("[Main] Pedestrians %s" % ("enabled" if enabled else "disabled"))
+
+
+func _on_time_changed(hour: float) -> void:
+	## Update UI with current time-of-day.
+	ui.update_time_display(hour)
+
+
+func _on_night_mode_changed(is_night: bool) -> void:
+	## Handle night mode transitions (headlights, glow intensity).
+	var vm := vehicle_manager as Node3D
+	if vm.has_method("set_night_mode"):
+		vm.set_night_mode(is_night)
+	print("[Main] Night mode: %s" % ("ON" if is_night else "OFF"))
+
+
+func _on_ui_time_changed(hour: float) -> void:
+	## User adjusted time via UI slider.
+	tod_manager.set_time(hour)
+
+
+func _on_ui_tod_mode_changed(mode_idx: int) -> void:
+	## User changed time-of-day mode (0=Manual, 1=Auto, 2=SimLinked).
+	tod_manager.set_mode(mode_idx)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

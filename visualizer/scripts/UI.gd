@@ -29,6 +29,10 @@ signal mode_switch_requested(mode: String)
 signal emergency_spawn_requested(approach: String)
 ## Emitted when the user toggles pedestrians on/off
 signal pedestrian_toggled(enabled: bool)
+## Emitted when the user changes the time-of-day slider
+signal time_of_day_changed(hour: float)
+## Emitted when the user changes the TOD mode (0=Manual, 1=Auto, 2=SimLinked)
+signal tod_mode_changed(mode_idx: int)
 
 # ── Corridor mode ──────────────────────────────────────────────────────────
 var corridor_mode: bool = false
@@ -68,6 +72,14 @@ var _pedestrians_on: bool = true             # Current pedestrian toggle state
 var _ambulance_counter: int = 0              # Unique ID counter for spawned ambulances
 var _bottom_panel: PanelContainer           # Reference to bottom bar panel
 
+# Time-of-day controls
+var _tod_panel: PanelContainer
+var _lbl_tod_time: Label
+var _slider_tod: HSlider
+var _btn_tod_mode: Button
+var _tod_mode_idx: int = 1                  # 0=Manual, 1=Auto, 2=SimLinked
+const TOD_MODE_NAMES: Array = ["Manual", "Auto", "Sim"]
+
 # Emergency banner
 var _emergency_banner: PanelContainer
 var _lbl_emergency: Label
@@ -106,6 +118,7 @@ func _ready() -> void:
 	_build_right_panel()
 	_build_corridor_right_panel()
 	_build_bottom_bar()
+	_build_tod_panel()
 	_build_emergency_banner()
 
 	# Set initial state
@@ -616,6 +629,105 @@ func _build_bottom_bar() -> void:
 
 	_btn_force_west = _make_override_button("Guggisberg", "west")
 	hbox.add_child(_btn_force_west)
+
+
+func _build_tod_panel() -> void:
+	## Build the time-of-day control panel (top-left, below top bar).
+	_tod_panel = PanelContainer.new()
+	_tod_panel.position = Vector2(12, 58)
+	_tod_panel.custom_minimum_size = Vector2(220, 0)
+	_style_panel(_tod_panel)
+	add_child(_tod_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	_tod_panel.add_child(vbox)
+
+	# Title row with time display and mode button
+	var hbox_top := HBoxContainer.new()
+	hbox_top.add_theme_constant_override("separation", 8)
+	vbox.add_child(hbox_top)
+
+	var lbl_icon := _make_label("☀", 14)
+	lbl_icon.name = "TODIcon"
+	hbox_top.add_child(lbl_icon)
+
+	_lbl_tod_time = _make_label("10:00 AM", 13)
+	_lbl_tod_time.add_theme_color_override("font_color", ACCENT_ORANGE)
+	_lbl_tod_time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox_top.add_child(_lbl_tod_time)
+
+	_btn_tod_mode = Button.new()
+	_btn_tod_mode.text = "Auto"
+	_btn_tod_mode.custom_minimum_size = Vector2(55, 24)
+	_btn_tod_mode.add_theme_font_size_override("font_size", 11)
+	_btn_tod_mode.add_theme_color_override("font_color", Color.WHITE)
+	var mode_style := StyleBoxFlat.new()
+	mode_style.bg_color = Color(0.25, 0.25, 0.35, 0.9)
+	mode_style.corner_radius_top_left = 4
+	mode_style.corner_radius_top_right = 4
+	mode_style.corner_radius_bottom_left = 4
+	mode_style.corner_radius_bottom_right = 4
+	mode_style.content_margin_left = 6
+	mode_style.content_margin_right = 6
+	mode_style.content_margin_top = 2
+	mode_style.content_margin_bottom = 2
+	_btn_tod_mode.add_theme_stylebox_override("normal", mode_style)
+	var mode_hover := mode_style.duplicate()
+	mode_hover.bg_color = Color(0.35, 0.35, 0.50, 0.95)
+	_btn_tod_mode.add_theme_stylebox_override("hover", mode_hover)
+	_btn_tod_mode.pressed.connect(_on_tod_mode_pressed)
+	hbox_top.add_child(_btn_tod_mode)
+
+	# Time slider
+	_slider_tod = HSlider.new()
+	_slider_tod.min_value = 0.0
+	_slider_tod.max_value = 24.0
+	_slider_tod.step = 0.1
+	_slider_tod.value = 10.0
+	_slider_tod.custom_minimum_size = Vector2(200, 20)
+	_slider_tod.value_changed.connect(_on_tod_slider_changed)
+	vbox.add_child(_slider_tod)
+
+
+func _on_tod_mode_pressed() -> void:
+	## Cycle through TOD modes: Manual → Auto → Sim → Manual.
+	_tod_mode_idx = (_tod_mode_idx + 1) % 3
+	_btn_tod_mode.text = TOD_MODE_NAMES[_tod_mode_idx]
+	_slider_tod.editable = (_tod_mode_idx == 0)  # Only editable in manual
+	tod_mode_changed.emit(_tod_mode_idx)
+
+
+func _on_tod_slider_changed(value: float) -> void:
+	## User dragged the time slider.
+	if _tod_mode_idx == 0:  # Only emit in manual mode
+		time_of_day_changed.emit(value)
+
+
+func update_time_display(hour: float) -> void:
+	## Update the time label and slider from TimeOfDayManager.
+	if _slider_tod and _tod_mode_idx != 0:
+		_slider_tod.set_value_no_signal(hour)
+
+	if _lbl_tod_time:
+		var h12: int = int(hour) % 12
+		if h12 == 0:
+			h12 = 12
+		var m: int = int(fmod(hour, 1.0) * 60.0)
+		var ampm: String = "AM" if int(hour) < 12 or int(hour) >= 24 else "PM"
+		_lbl_tod_time.text = "%d:%02d %s" % [h12, m, ampm]
+
+		# Update icon
+		var icon_lbl: Label = _tod_panel.find_child("TODIcon", true, false)
+		if icon_lbl:
+			if hour >= 19.0 or hour < 6.0:
+				icon_lbl.text = "🌙"
+			elif hour >= 17.0:
+				icon_lbl.text = "🌅"
+			elif hour >= 6.0 and hour < 7.0:
+				icon_lbl.text = "🌅"
+			else:
+				icon_lbl.text = "☀"
 
 
 func _build_emergency_banner() -> void:

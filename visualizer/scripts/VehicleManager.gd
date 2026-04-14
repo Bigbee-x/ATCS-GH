@@ -124,12 +124,35 @@ var _amb_pool: Array = []
 ## Ambulance light-bar pulse timer
 var _pulse_time: float = 0.0
 
+## Shared vehicle materials (created once, reused across all vehicles)
+var _mat_windshield: StandardMaterial3D
+var _mat_undercarriage: StandardMaterial3D
+var _mat_roof_rack: StandardMaterial3D
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LIFECYCLE
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _ready() -> void:
+	## Create shared vehicle materials.
+	_mat_windshield = StandardMaterial3D.new()
+	_mat_windshield.albedo_color = Color(0.1, 0.15, 0.25, 0.7)
+	_mat_windshield.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mat_windshield.metallic = 0.6
+	_mat_windshield.roughness = 0.2
+
+	_mat_undercarriage = StandardMaterial3D.new()
+	_mat_undercarriage.albedo_color = Color(0.08, 0.08, 0.08, 1.0)
+	_mat_undercarriage.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mat_undercarriage.roughness = 0.9
+
+	_mat_roof_rack = StandardMaterial3D.new()
+	_mat_roof_rack.albedo_color = Color(0.35, 0.35, 0.38, 1.0)
+	_mat_roof_rack.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mat_roof_rack.metallic = 0.5
+	_mat_roof_rack.roughness = 0.4
+
 	## Pre-warm the car pool with a few nodes.
 	for i in range(40):
 		var car := _make_car_mesh(i)
@@ -189,6 +212,16 @@ func _process(delta: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ═════════════════════════════════════════════════════════════════════════════
+
+func set_night_mode(enabled: bool) -> void:
+	## Toggle headlight effect on vehicle windshields for night mode.
+	if _mat_windshield:
+		_mat_windshield.emission_enabled = enabled
+		if enabled:
+			_mat_windshield.emission = Color(0.9, 0.85, 0.6)
+			_mat_windshield.emission_energy_multiplier = 2.0
+		else:
+			_mat_windshield.emission_enabled = false
 
 func set_corridor_mode(enabled: bool) -> void:
 	## Switch between single-junction and corridor coordinate mapping.
@@ -406,11 +439,10 @@ func _release_vehicle(vid: String) -> void:
 # NODE POOL — CARS
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _acquire_car(vid: String) -> CSGBox3D:
+func _acquire_car(vid: String) -> Node3D:
 	## Get a car node from the pool, or create one.
 	if _car_pool.size() > 0:
-		var recycled: CSGBox3D = _car_pool.pop_back()
-		# Re-color based on new vehicle ID
+		var recycled: Node3D = _car_pool.pop_back()
 		_color_car(recycled, vid)
 		return recycled
 
@@ -420,72 +452,169 @@ func _acquire_car(vid: String) -> CSGBox3D:
 	return new_car
 
 
-func _make_car_mesh_for_vid(vid: String) -> CSGBox3D:
-	## Create a car CSGBox3D with color determined by vehicle ID hash.
-	var car := CSGBox3D.new()
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-
-	# Hash the vehicle ID to get a consistent color & size
-	var h: int = vid.hash()
-	var is_trotro: bool = (abs(h) % 7 == 0)  # ~14% chance of trotro
-
-	if is_trotro:
-		car.size = TROTRO_SIZE
-		mat.albedo_color = Color(0.95, 0.75, 0.05, 1.0)
-		mat.metallic = 0.1
-		mat.roughness = 0.7
-	else:
-		car.size = CAR_SIZE
-		var color_idx: int = abs(h) % CAR_COLORS.size()
-		mat.albedo_color = CAR_COLORS[color_idx]
-		mat.metallic = 0.3
-		mat.roughness = 0.5
-
-	car.material = mat
-	car.name = "Car_%s" % vid.substr(0, 12)
-	return car
-
-
-func _make_car_mesh(index: int) -> CSGBox3D:
-	## Pre-warm variant: create a car with index-based color.
-	var car := CSGBox3D.new()
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-
-	if index % 7 == 0:
-		car.size = TROTRO_SIZE
-		mat.albedo_color = Color(0.95, 0.75, 0.05, 1.0)
-		mat.metallic = 0.1
-		mat.roughness = 0.7
-	else:
-		car.size = CAR_SIZE
-		mat.albedo_color = CAR_COLORS[index % CAR_COLORS.size()]
-		mat.metallic = 0.3
-		mat.roughness = 0.5
-
-	car.material = mat
-	car.name = "PoolCar_%d" % index
-	return car
-
-
-func _color_car(car: CSGBox3D, vid: String) -> void:
-	## Recolor an existing car node based on a new vehicle ID.
-	var mat: StandardMaterial3D = car.material
-	if mat == null:
-		return
+func _make_car_mesh_for_vid(vid: String) -> Node3D:
+	## Create an enhanced car Node3D with body, cabin, windshield, undercarriage.
 	var h: int = vid.hash()
 	var is_trotro: bool = (abs(h) % 7 == 0)
 
 	if is_trotro:
-		car.size = TROTRO_SIZE
-		mat.albedo_color = Color(0.95, 0.75, 0.05, 1.0)
+		var color := Color(0.95, 0.75, 0.05, 1.0)
+		return _build_trotro_node("Car_%s" % vid.substr(0, 12), color)
 	else:
-		car.size = CAR_SIZE
 		var color_idx: int = abs(h) % CAR_COLORS.size()
-		mat.albedo_color = CAR_COLORS[color_idx]
+		var color: Color = CAR_COLORS[color_idx]
+		return _build_car_node("Car_%s" % vid.substr(0, 12), color)
 
-	mat.albedo_color.a = 1.0
+
+func _make_car_mesh(index: int) -> Node3D:
+	## Pre-warm variant: create a car with index-based color.
+	if index % 7 == 0:
+		return _build_trotro_node("PoolCar_%d" % index, Color(0.95, 0.75, 0.05, 1.0))
+	else:
+		return _build_car_node("PoolCar_%d" % index, CAR_COLORS[index % CAR_COLORS.size()])
+
+
+func _build_car_node(node_name: String, body_color: Color) -> Node3D:
+	## Build a sedan: body + cabin + windshield + undercarriage.
+	var root := Node3D.new()
+	root.name = node_name
+	root.set_meta("is_trotro", false)
+
+	# Body
+	var body := CSGBox3D.new()
+	body.size = CAR_SIZE
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = body_color
+	body_mat.metallic = 0.3
+	body_mat.roughness = 0.5
+	body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	body.material = body_mat
+	body.name = "Body"
+	root.add_child(body)
+
+	# Cabin / roof step (darker shade, creates windshield silhouette)
+	var cabin := CSGBox3D.new()
+	cabin.size = Vector3(0.52, 0.12, 0.4)
+	cabin.position = Vector3(0, 0.21, -0.1)
+	var cabin_mat := StandardMaterial3D.new()
+	cabin_mat.albedo_color = body_color * 0.8
+	cabin_mat.albedo_color.a = 1.0
+	cabin_mat.metallic = 0.3
+	cabin_mat.roughness = 0.5
+	cabin_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cabin.material = cabin_mat
+	cabin.name = "Cabin"
+	root.add_child(cabin)
+
+	# Windshield (front-facing dark glass slab)
+	var windshield := CSGBox3D.new()
+	windshield.size = Vector3(0.50, 0.10, 0.02)
+	windshield.position = Vector3(0, 0.20, -0.30)
+	windshield.material = _mat_windshield
+	windshield.name = "Windshield"
+	root.add_child(windshield)
+
+	# Undercarriage (dark strip reads as wheels from isometric angle)
+	var undercarriage := CSGBox3D.new()
+	undercarriage.size = Vector3(0.64, 0.05, 0.85)
+	undercarriage.position = Vector3(0, -0.15, 0)
+	undercarriage.material = _mat_undercarriage
+	undercarriage.name = "Undercarriage"
+	root.add_child(undercarriage)
+
+	return root
+
+
+func _build_trotro_node(node_name: String, body_color: Color) -> Node3D:
+	## Build a trotro/minibus: body + roof rack + windshield + undercarriage.
+	var root := Node3D.new()
+	root.name = node_name
+	root.set_meta("is_trotro", true)
+
+	# Body
+	var body := CSGBox3D.new()
+	body.size = TROTRO_SIZE
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = body_color
+	body_mat.metallic = 0.1
+	body_mat.roughness = 0.7
+	body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	body.material = body_mat
+	body.name = "Body"
+	root.add_child(body)
+
+	# Roof rack (key trotro visual differentiator)
+	var rack := CSGBox3D.new()
+	rack.size = Vector3(0.50, 0.03, 1.1)
+	rack.position = Vector3(0, 0.22, 0)
+	rack.material = _mat_roof_rack
+	rack.name = "RoofRack"
+	root.add_child(rack)
+
+	# Windshield
+	var windshield := CSGBox3D.new()
+	windshield.size = Vector3(0.55, 0.14, 0.02)
+	windshield.position = Vector3(0, 0.22, -0.68)
+	windshield.material = _mat_windshield
+	windshield.name = "Windshield"
+	root.add_child(windshield)
+
+	# Undercarriage
+	var undercarriage := CSGBox3D.new()
+	undercarriage.size = Vector3(0.64, 0.05, 1.3)
+	undercarriage.position = Vector3(0, -0.18, 0)
+	undercarriage.material = _mat_undercarriage
+	undercarriage.name = "Undercarriage"
+	root.add_child(undercarriage)
+
+	return root
+
+
+func _color_car(car_node: Node3D, vid: String) -> void:
+	## Recolor an existing car node based on a new vehicle ID.
+	var h: int = vid.hash()
+	var is_trotro: bool = (abs(h) % 7 == 0)
+	var was_trotro: bool = car_node.get_meta("is_trotro", false)
+
+	# If vehicle type changed, rebuild the node in-place
+	if is_trotro != was_trotro:
+		# Remove old children
+		for child in car_node.get_children():
+			child.queue_free()
+		# Rebuild as correct type
+		var template: Node3D
+		if is_trotro:
+			template = _build_trotro_node("temp", Color(0.95, 0.75, 0.05, 1.0))
+		else:
+			var color_idx: int = abs(h) % CAR_COLORS.size()
+			template = _build_car_node("temp", CAR_COLORS[color_idx])
+		# Move children from template to existing node
+		for child in template.get_children():
+			template.remove_child(child)
+			car_node.add_child(child)
+		car_node.set_meta("is_trotro", is_trotro)
+		template.queue_free()
+		return
+
+	# Same type — just recolor body and cabin
+	var body_color: Color
+	if is_trotro:
+		body_color = Color(0.95, 0.75, 0.05, 1.0)
+	else:
+		var color_idx: int = abs(h) % CAR_COLORS.size()
+		body_color = CAR_COLORS[color_idx]
+
+	for child in car_node.get_children():
+		if child.name == "Body" and child is CSGBox3D:
+			var mat: StandardMaterial3D = child.material
+			if mat:
+				mat.albedo_color = body_color
+				mat.albedo_color.a = 1.0
+		elif child.name == "Cabin" and child is CSGBox3D:
+			var mat: StandardMaterial3D = child.material
+			if mat:
+				mat.albedo_color = body_color * 0.8
+				mat.albedo_color.a = 1.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -569,6 +698,14 @@ func _make_ambulance_node() -> Node3D:
 	glow.name = "SirenGlow"
 	root.add_child(glow)
 
+	# Undercarriage (consistent with cars/trotros)
+	var undercarriage := CSGBox3D.new()
+	undercarriage.size = Vector3(0.74, 0.05, 1.4)
+	undercarriage.position = Vector3(0, -0.20, 0)
+	undercarriage.material = _mat_undercarriage
+	undercarriage.name = "Undercarriage"
+	root.add_child(undercarriage)
+
 	return root
 
 
@@ -598,17 +735,11 @@ func _pulse_light_bar(amb_node: Node3D) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _set_node_opacity(node: Node3D, alpha: float) -> void:
-	## Set the alpha on all materials of a vehicle node.
-	if node is CSGBox3D:
-		var mat: StandardMaterial3D = node.material
-		if mat:
+	## Set the alpha on all materials of a vehicle node (car, trotro, ambulance).
+	for child in node.get_children():
+		if child is CSGBox3D and child.material:
+			var mat: StandardMaterial3D = child.material
 			mat.albedo_color.a = alpha
-	else:
-		# Ambulance — iterate children
-		for child in node.get_children():
-			if child is CSGBox3D and child.material:
-				var mat: StandardMaterial3D = child.material
-				mat.albedo_color.a = alpha
 
 
 # ═════════════════════════════════════════════════════════════════════════════
