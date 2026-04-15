@@ -209,10 +209,12 @@ func _on_time_changed(hour: float) -> void:
 
 
 func _on_night_mode_changed(is_night: bool) -> void:
-	## Handle night mode transitions (headlights, glow intensity).
+	## Handle night mode transitions (headlights, street lights, glow).
 	var vm := vehicle_manager as Node3D
 	if vm.has_method("set_night_mode"):
 		vm.set_night_mode(is_night)
+	if intersection.has_method("set_street_lights_night"):
+		intersection.set_street_lights_night(is_night)
 	print("[Main] Night mode: %s" % ("ON" if is_night else "OFF"))
 
 

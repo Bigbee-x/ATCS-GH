@@ -128,6 +128,9 @@ var _pulse_time: float = 0.0
 var _mat_windshield: StandardMaterial3D
 var _mat_undercarriage: StandardMaterial3D
 var _mat_roof_rack: StandardMaterial3D
+var _mat_headlight: StandardMaterial3D   # Warm white, emissive at night
+var _mat_taillight: StandardMaterial3D   # Red, emissive at night
+var _is_night: bool = false
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -152,6 +155,22 @@ func _ready() -> void:
 	_mat_roof_rack.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_mat_roof_rack.metallic = 0.5
 	_mat_roof_rack.roughness = 0.4
+
+	# Headlights — warm white, emission always on (nodes toggled via visibility)
+	_mat_headlight = StandardMaterial3D.new()
+	_mat_headlight.albedo_color = Color(1.0, 0.97, 0.85, 1.0)
+	_mat_headlight.emission_enabled = true
+	_mat_headlight.emission = Color(1.0, 0.95, 0.8)
+	_mat_headlight.emission_energy_multiplier = 4.0
+	_mat_headlight.roughness = 0.2
+
+	# Taillights — red, emission always on (nodes toggled via visibility)
+	_mat_taillight = StandardMaterial3D.new()
+	_mat_taillight.albedo_color = Color(0.9, 0.1, 0.05, 1.0)
+	_mat_taillight.emission_enabled = true
+	_mat_taillight.emission = Color(1.0, 0.1, 0.05)
+	_mat_taillight.emission_energy_multiplier = 3.0
+	_mat_taillight.roughness = 0.2
 
 	## Pre-warm the car pool with a few nodes.
 	for i in range(40):
@@ -214,14 +233,39 @@ func _process(delta: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func set_night_mode(enabled: bool) -> void:
-	## Toggle headlight effect on vehicle windshields for night mode.
+	## Toggle headlights, taillights, and windshield glow for night mode.
+	## Uses VISIBILITY toggle (not material changes) so shared materials
+	## aren't disrupted by the per-vehicle opacity system.
+	_is_night = enabled
+
+	# Windshield glow (shared material — safe since it's subtle)
 	if _mat_windshield:
 		_mat_windshield.emission_enabled = enabled
 		if enabled:
 			_mat_windshield.emission = Color(0.9, 0.85, 0.6)
-			_mat_windshield.emission_energy_multiplier = 2.0
-		else:
-			_mat_windshield.emission_enabled = false
+			_mat_windshield.emission_energy_multiplier = 1.5
+
+	# Toggle visibility of headlight/taillight nodes on ALL vehicles
+	_toggle_all_vehicle_lights(enabled)
+
+
+func _toggle_all_vehicle_lights(show: bool) -> void:
+	## Show/hide headlight and taillight CSG nodes on every vehicle.
+	# Active vehicles
+	for vid in _active:
+		var node: Node3D = _active[vid]["node"]
+		_set_lights_visible(node, show)
+	# Pooled cars (so they're correct when next acquired)
+	for car in _car_pool:
+		_set_lights_visible(car, show)
+
+
+func _set_lights_visible(node: Node3D, show: bool) -> void:
+	## Toggle visibility of Headlight_* and Taillight_* children.
+	for child in node.get_children():
+		var cname: String = child.name
+		if cname.begins_with("Headlight") or cname.begins_with("Taillight"):
+			child.visible = show
 
 func set_corridor_mode(enabled: bool) -> void:
 	## Switch between single-junction and corridor coordinate mapping.
@@ -522,6 +566,26 @@ func _build_car_node(node_name: String, body_color: Color) -> Node3D:
 	undercarriage.name = "Undercarriage"
 	root.add_child(undercarriage)
 
+	# Headlights (two small boxes at front — hidden during day, shown at night)
+	for side in [-1.0, 1.0]:
+		var hl := CSGBox3D.new()
+		hl.size = Vector3(0.1, 0.06, 0.04)
+		hl.position = Vector3(side * 0.2, 0.05, -0.52)
+		hl.material = _mat_headlight
+		hl.name = "Headlight_L" if side < 0 else "Headlight_R"
+		hl.visible = _is_night
+		root.add_child(hl)
+
+	# Taillights (two small boxes at rear — hidden during day, shown at night)
+	for side in [-1.0, 1.0]:
+		var tl := CSGBox3D.new()
+		tl.size = Vector3(0.1, 0.06, 0.04)
+		tl.position = Vector3(side * 0.2, 0.05, 0.52)
+		tl.material = _mat_taillight
+		tl.name = "Taillight_L" if side < 0 else "Taillight_R"
+		tl.visible = _is_night
+		root.add_child(tl)
+
 	return root
 
 
@@ -566,6 +630,26 @@ func _build_trotro_node(node_name: String, body_color: Color) -> Node3D:
 	undercarriage.material = _mat_undercarriage
 	undercarriage.name = "Undercarriage"
 	root.add_child(undercarriage)
+
+	# Headlights (hidden during day, shown at night)
+	for side in [-1.0, 1.0]:
+		var hl := CSGBox3D.new()
+		hl.size = Vector3(0.12, 0.08, 0.04)
+		hl.position = Vector3(side * 0.2, 0.05, -0.72)
+		hl.material = _mat_headlight
+		hl.name = "Headlight_L" if side < 0 else "Headlight_R"
+		hl.visible = _is_night
+		root.add_child(hl)
+
+	# Taillights (hidden during day, shown at night)
+	for side in [-1.0, 1.0]:
+		var tl := CSGBox3D.new()
+		tl.size = Vector3(0.12, 0.08, 0.04)
+		tl.position = Vector3(side * 0.2, 0.05, 0.72)
+		tl.material = _mat_taillight
+		tl.name = "Taillight_L" if side < 0 else "Taillight_R"
+		tl.visible = _is_night
+		root.add_child(tl)
 
 	return root
 
@@ -736,8 +820,13 @@ func _pulse_light_bar(amb_node: Node3D) -> void:
 
 func _set_node_opacity(node: Node3D, alpha: float) -> void:
 	## Set the alpha on all materials of a vehicle node (car, trotro, ambulance).
+	## Skips headlights/taillights — they use shared materials that must not be
+	## touched by per-vehicle opacity (emission would flicker).
 	for child in node.get_children():
 		if child is CSGBox3D and child.material:
+			var cname: String = child.name
+			if cname.begins_with("Headlight") or cname.begins_with("Taillight"):
+				continue
 			var mat: StandardMaterial3D = child.material
 			mat.albedo_color.a = alpha
 

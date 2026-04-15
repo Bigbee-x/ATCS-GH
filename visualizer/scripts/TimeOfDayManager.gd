@@ -207,7 +207,7 @@ func _apply_time(hour: float) -> void:
 			_environment.fog_light_color = kf_a[5].lerp(kf_b[5], t)  # Tint fog with ambient
 
 	# ── Night mode detection ───────────────────────────────────────────
-	var now_night: bool = (hour >= 19.0 or hour < 6.0)
+	var now_night: bool = (hour >= 18.0 or hour < 6.0)
 	if now_night != _is_night:
 		_is_night = now_night
 		night_mode_changed.emit(_is_night)

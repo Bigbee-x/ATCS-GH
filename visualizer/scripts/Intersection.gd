@@ -64,6 +64,10 @@ var _mat_arrow_off: StandardMaterial3D
 ## Maps lane_id (e.g. "ACH_N2J_0") to {mesh: MeshInstance3D, mat: StandardMaterial3D}
 var _lane_overlays: Dictionary = {}
 
+# ── Street light references (for night mode toggle) ─────────────────────────
+var _street_lights: Array = []   # Array of OmniLight3D nodes
+var _mat_lamp_housing: StandardMaterial3D
+
 # ── Emergency state ──────────────────────────────────────────────────────────
 var _emergency_active: bool = false
 var _emergency_pulse_time: float = 0.0
@@ -83,7 +87,8 @@ func _ready() -> void:
 	_build_road_arm("east",  Vector3(-1, 0, 0), E_ROAD_WIDTH)   # Mirrored X for right-hand visual
 	_build_road_arm("west",  Vector3(1, 0, 0), W_ROAD_WIDTH)    # Mirrored X for right-hand visual
 	_build_traffic_lights()
-	_build_lane_overlays()
+	#_build_lane_overlays()  # Disabled — visual clutter on dark roads
+	_build_street_lights()
 	_build_watermark()
 	_build_emergency_overlay()
 	_build_stop_lines()
@@ -216,6 +221,12 @@ func _create_materials() -> void:
 	# Turn arrow OFF (dim)
 	_mat_arrow_off = StandardMaterial3D.new()
 	_mat_arrow_off.albedo_color = Color(0.08, 0.08, 0.08)
+
+	# Street lamp housing — dark metal with warm emissive face
+	_mat_lamp_housing = StandardMaterial3D.new()
+	_mat_lamp_housing.albedo_color = Color(0.2, 0.2, 0.22)
+	_mat_lamp_housing.metallic = 0.5
+	_mat_lamp_housing.roughness = 0.4
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -683,3 +694,90 @@ func _build_crosswalks() -> void:
 			stripe.material = _mat_marking
 			stripe.name = "Crosswalk_%s_%d" % [cw["name"], i]
 			add_child(stripe)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STREET LIGHTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _build_street_lights() -> void:
+	## Place sodium-yellow street lamps along both sides of every road arm.
+	## Each lamp: thin pole + housing + OmniLight3D (off by default, toggled at night).
+	var half_junc: float = JUNCTION_SIZE / 2.0
+	var spacing: float = 15.0          # Distance between lamp posts
+	var pole_height: float = 4.0       # Lamp post height
+	var curb: float = NS_ROAD_WIDTH / 2.0 + 0.6  # On the sidewalk edge
+
+	# Road arm configs: direction vector, road width
+	var arms: Array = [
+		{"dir": Vector3(0, 0, 1),  "width": NS_ROAD_WIDTH},   # north
+		{"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH},   # south
+		{"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH},    # east
+		{"dir": Vector3(1, 0, 0),  "width": W_ROAD_WIDTH},    # west
+	]
+
+	for arm in arms:
+		var direction: Vector3 = arm["dir"]
+		var road_w: float = arm["width"]
+		var side_offset: float = road_w / 2.0 + 0.6
+
+		# Place lamps on both sides of the road
+		for side in [-1.0, 1.0]:
+			var lateral: Vector3  # Perpendicular to road direction
+			if abs(direction.z) > 0:
+				lateral = Vector3(side * side_offset, 0, 0)
+			else:
+				lateral = Vector3(0, 0, side * side_offset)
+
+			# Walk along the road arm from junction edge to near the end
+			var dist: float = half_junc + 5.0  # Start past junction
+			while dist < ROAD_LENGTH - 5.0:
+				var pos: Vector3 = direction * dist + lateral
+
+				# Pole
+				var pole := CSGCylinder3D.new()
+				pole.radius = 0.04
+				pole.height = pole_height
+				pole.position = pos + Vector3(0, pole_height / 2.0, 0)
+				pole.material = _mat_pole
+				add_child(pole)
+
+				# Lamp arm (short horizontal extension toward road)
+				var arm_dir: Vector3
+				if abs(direction.z) > 0:
+					arm_dir = Vector3(-side * 0.6, 0, 0)
+				else:
+					arm_dir = Vector3(0, 0, -side * 0.6)
+				var lamp_arm := CSGBox3D.new()
+				lamp_arm.size = Vector3(0.6 if abs(direction.z) > 0 else 0.05, 0.05, 0.05 if abs(direction.z) > 0 else 0.6)
+				lamp_arm.position = pos + Vector3(0, pole_height, 0) + arm_dir * 0.5
+				lamp_arm.material = _mat_pole
+				add_child(lamp_arm)
+
+				# Lamp housing (small box at arm tip)
+				var housing := CSGBox3D.new()
+				housing.size = Vector3(0.25, 0.08, 0.25)
+				housing.position = pos + Vector3(0, pole_height - 0.04, 0) + arm_dir
+				housing.material = _mat_lamp_housing
+				add_child(housing)
+
+				# Light source (warm sodium yellow — off during day)
+				var light := OmniLight3D.new()
+				light.position = pos + Vector3(0, pole_height - 0.1, 0) + arm_dir
+				light.light_color = Color(1.0, 0.85, 0.5)  # Warm sodium yellow
+				light.light_energy = 0.0                     # Off by default (daytime)
+				light.omni_range = 12.0
+				light.omni_attenuation = 1.5
+				light.shadow_enabled = false
+				light.name = "StreetLight"
+				add_child(light)
+				_street_lights.append(light)
+
+				dist += spacing
+
+
+func set_street_lights_night(enabled: bool) -> void:
+	## Turn street lights on (night) or off (day).
+	var energy: float = 1.2 if enabled else 0.0
+	for light in _street_lights:
+		light.light_energy = energy

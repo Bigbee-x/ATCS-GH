@@ -30,17 +30,19 @@ SCENARIO_DIR = PROJECT_ROOT / "simulation" / "scenarios"
 # ── Shared XML fragments ──────────────────────────────────────────────────────
 
 VEHICLE_TYPES = dedent("""\
-  <!-- Standard passenger car (Toyota Corolla / Kia Rio) -->
+  <!-- Standard passenger car — speedDev=0.2 gives realistic speed variation -->
   <vType id="car"
          accel="2.6" decel="4.5" emergencyDecel="9.0" sigma="0.5"
-         length="4.5" minGap="2.5" maxSpeed="13.89"
+         length="4.5" minGap="2.5" maxSpeed="19.44"
+         speedFactor="1.0" speedDev="0.2"
          guiShape="passenger" color="0.6,0.6,0.9"
          jmCrossingGap="3.0"/>
 
-  <!-- Trotro (shared minibus) — slower, longer -->
+  <!-- Trotro (shared minibus) — slower mean, some variation between drivers -->
   <vType id="trotro"
          accel="1.8" decel="3.5" emergencyDecel="7.0" sigma="0.7"
-         length="7.0" minGap="3.0" maxSpeed="11.11"
+         length="7.0" minGap="3.0" maxSpeed="16.67"
+         speedFactor="0.9" speedDev="0.15"
          guiShape="bus/city" color="1.0,0.8,0.0"
          jmCrossingGap="3.0"/>
 
@@ -49,11 +51,11 @@ VEHICLE_TYPES = dedent("""\
          speed="3.80"
          length="0.25" minGap="0.5" width="0.65"/>
 
-  <!-- Emergency vehicle (ambulance) — vClass gives blue-light privileges -->
+  <!-- Emergency vehicle (ambulance) — always on the run! -->
   <vType id="emergency" vClass="emergency"
-         accel="3.5" decel="6.0" emergencyDecel="9.0" sigma="0.0"
-         tau="0.5" length="5.5" minGap="1.5" maxSpeed="16.67"
-         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.2"
+         accel="4.5" decel="7.0" emergencyDecel="9.0" sigma="0.0"
+         tau="0.3" length="5.5" minGap="1.0" maxSpeed="27.78"
+         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.4" speedDev="0.1"
          lcStrategic="100" lcPushy="1.0" lcAssertive="1.0"
          jmDriveAfterRedTime="3" jmDriveAfterYellowTime="3"/>""")
 
