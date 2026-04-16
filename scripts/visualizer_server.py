@@ -93,6 +93,7 @@ from traffic_env import (
     ACTION_NS_THROUGH, ACTION_NS_LEFT,
     ACTION_EW_THROUGH, ACTION_EW_LEFT,
     ACTION_NS_ALL, ACTION_EW_ALL,
+    sanitize_action,
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
@@ -486,7 +487,10 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                           f"action={ACTION_NAMES[action]}")
 
                 elif active_control_mode == SimMode.AI and agent is not None:
-                    action = agent.select_action(state)
+                    # Remap permissive-left actions (NS_ALL/EW_ALL) to their
+                    # protected-through equivalents so the live viz matches
+                    # the baseline's clean protected-left phasing.
+                    action = sanitize_action(agent.select_action(state))
 
                 elif active_control_mode == SimMode.BASELINE:
                     action = baseline_timer.get_action(env._sim_step)

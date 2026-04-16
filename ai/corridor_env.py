@@ -138,6 +138,40 @@ ACTION_TO_PHASE = {
 ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
                 "NS_ALL", "EW_ALL"]
 
+
+class ActionSanitizer:
+    """Alternating remap of NS_ALL/EW_ALL to protected THROUGH/LEFT phases.
+
+    See ``ai/traffic_env.ActionSanitizer`` for the full rationale.
+    Summary: when the AI picks NS_ALL, alternately serve NS_LEFT then
+    NS_THROUGH on subsequent picks (and likewise for EW_ALL). Corridor
+    callers should instantiate **one sanitizer per junction** so each
+    junction's alternation is independent.
+    """
+
+    def __init__(self) -> None:
+        self._ns_serve_left_next = True
+        self._ew_serve_left_next = True
+
+    def __call__(self, action: int) -> int:
+        if action == ACTION_NS_ALL:
+            remapped = ACTION_NS_LEFT if self._ns_serve_left_next else ACTION_NS_THROUGH
+            self._ns_serve_left_next = not self._ns_serve_left_next
+            return remapped
+        if action == ACTION_EW_ALL:
+            remapped = ACTION_EW_LEFT if self._ew_serve_left_next else ACTION_EW_THROUGH
+            self._ew_serve_left_next = not self._ew_serve_left_next
+            return remapped
+        return action
+
+
+_default_sanitizer = ActionSanitizer()
+
+
+def sanitize_action(action: int) -> int:
+    """Back-compat wrapper around the module-level ActionSanitizer."""
+    return _default_sanitizer(action)
+
 EMERGENCY_TYPE = "emergency"
 
 

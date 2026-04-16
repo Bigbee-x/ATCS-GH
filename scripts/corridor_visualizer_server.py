@@ -46,6 +46,7 @@ from corridor_env import (
     ACTION_NS_THROUGH, ACTION_NS_LEFT,
     ACTION_EW_THROUGH, ACTION_EW_LEFT,
     ACTION_NS_ALL, ACTION_EW_ALL,
+    ActionSanitizer,
     STATE_SIZE, DECISION_INTERVAL, SIM_DURATION,
     MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     EMERGENCY_TYPE,
@@ -449,6 +450,12 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
     # ── Load agents ──────────────────────────────────────────────────────
     agents: dict[str, DQNAgent | None] = {jid: None for jid in JUNCTION_IDS}
 
+    # One ActionSanitizer per junction — alternation state must be independent
+    # so J0's NS_ALL → NS_LEFT doesn't also flip J1's alternator.
+    sanitizers: dict[str, ActionSanitizer] = {
+        jid: ActionSanitizer() for jid in JUNCTION_IDS
+    }
+
     if mode == SimMode.AI:
         all_loaded = True
         for jid in JUNCTION_IDS:
@@ -550,13 +557,19 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                         print(f"[SIM] {jid} override: {override['approach']} "
                               f"-> {ACTION_NAMES[action]}")
                     elif active_control_mode == SimMode.AI and agents[jid] is not None:
-                        actions[jid] = agents[jid].select_action(states[jid])
+                        # Alternate NS_ALL/EW_ALL between protected through and
+                        # left phases so both movements get served. Per-junction
+                        # alternation keeps state independent across J0/J1/J2.
+                        actions[jid] = sanitizers[jid](
+                            agents[jid].select_action(states[jid]))
                     elif active_control_mode == SimMode.BASELINE:
                         actions[jid] = baseline_timers[jid].get_action(
                             env._sim_step)
                     elif active_control_mode == SimMode.DEMO:
+                        # Random over the 4 protected phase actions only
+                        # (exclude NS_ALL=5 / EW_ALL=6 permissive-left phases).
                         actions[jid] = (0 if random.random() < 0.6
-                                        else random.randint(1, 6))
+                                        else random.randint(1, 4))
                     else:
                         actions[jid] = ACTION_HOLD
 

@@ -64,6 +64,7 @@ from traffic_env import (
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    sanitize_action,
     STATE_SIZE, ACTION_SIZE, NUM_PHASES,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
@@ -219,7 +220,8 @@ def run_one_seed(agent: DQNAgent, seed: int,
                         in_yellow = True
                         yellow_cd = YELLOW_DURATION
                 else:
-                    action = agent.select_action(state)
+                    # Collapse NS_ALL/EW_ALL to protected-through phases.
+                    action = sanitize_action(agent.select_action(state))
                     if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
                         t_phase = ACTION_TO_PHASE[action]
                         if t_phase != phase:

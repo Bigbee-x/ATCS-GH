@@ -202,6 +202,58 @@ ACTION_TO_PHASE = {
 ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
                 "NS_ALL", "EW_ALL"]
 
+
+class ActionSanitizer:
+    """Remap permissive-left phases to protected phases, alternating lefts and throughs.
+
+    NS_ALL/EW_ALL would normally light the through-green and the left-arrow
+    simultaneously — a "permissive left" that forces left-turners to yield
+    to oncoming through traffic. That doesn't match the fixed-timer
+    baseline (which serves lefts with a dedicated protected-left phase).
+
+    A naive fix is to collapse NS_ALL → NS_THROUGH, but that starves lefts
+    because the trained policy relied on NS_ALL to serve both movements in
+    one green. Instead, we **alternate** each time an ALL-phase is picked:
+
+        1st NS_ALL in a row → NS_LEFT    (serve the starved lefts first)
+        2nd NS_ALL in a row → NS_THROUGH
+        3rd NS_ALL in a row → NS_LEFT
+        ...
+
+    Same for EW_ALL ↔ {EW_THROUGH, EW_LEFT}. This preserves the agent's
+    directional intent (N/S or E/W priority) while splitting the combined
+    movement across two decision ticks, so both through AND protected-left
+    eventually get a turn. Training is intentionally untouched so existing
+    checkpoints (7-action output head) still load.
+    """
+
+    def __init__(self) -> None:
+        # Start by serving lefts first when the AI picks an ALL-phase — they
+        # were the starved movement under the naive collapse fix.
+        self._ns_serve_left_next = True
+        self._ew_serve_left_next = True
+
+    def __call__(self, action: int) -> int:
+        if action == ACTION_NS_ALL:
+            remapped = ACTION_NS_LEFT if self._ns_serve_left_next else ACTION_NS_THROUGH
+            self._ns_serve_left_next = not self._ns_serve_left_next
+            return remapped
+        if action == ACTION_EW_ALL:
+            remapped = ACTION_EW_LEFT if self._ew_serve_left_next else ACTION_EW_THROUGH
+            self._ew_serve_left_next = not self._ew_serve_left_next
+            return remapped
+        return action
+
+
+# Module-level default instance — backwards-compatible shim so callers that
+# import `sanitize_action` keep working without wiring up an instance.
+_default_sanitizer = ActionSanitizer()
+
+
+def sanitize_action(action: int) -> int:
+    """Back-compat wrapper around the module-level ActionSanitizer."""
+    return _default_sanitizer(action)
+
 # ── State normalisation ───────────────────────────────────────────────────────
 MAX_QUEUE      = 50.0    # vehicles per approach (per edge, all lanes summed)
 MAX_QUEUE_LANE = 25.0    # vehicles per lane

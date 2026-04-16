@@ -65,6 +65,7 @@ from traffic_env import (
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    sanitize_action,
     STATE_SIZE, ACTION_SIZE, NUM_PHASES,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
@@ -243,7 +244,9 @@ def run_ai_episode(agent: DQNAgent, seed: int, route_file: str,
                     next_green = target
                 elif not emerg:
                     state = build_state(phase, phase_timer, in_yellow)
-                    action = agent.select_action(state)
+                    # Collapse NS_ALL/EW_ALL to protected-through for fair
+                    # comparison with the baseline's protected-left cycle.
+                    action = sanitize_action(agent.select_action(state))
                     if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
                         t_phase = ACTION_TO_PHASE.get(action, phase)
                         if t_phase != phase:
