@@ -478,23 +478,51 @@ func _build_traffic_lights() -> void:
 				"glow": glow,
 			}
 
-		# ── Turn arrow indicator (hangs below main signal) ───────────────
+		# ── Dedicated LEFT-TURN arrow signal (separate "doghouse" unit) ──
+		# Smaller square housing below the main 3-bulb signal, containing a
+		# proper arrow-shaped mesh (not a blob). Matches the real-world
+		# design where a green arrow = protected left turn, while the main
+		# red/yellow/green circles continue to control through traffic.
 		var arrow_housing := CSGBox3D.new()
-		arrow_housing.size = Vector3(0.45, 0.45, 0.30)
-		arrow_housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0)
+		arrow_housing.size = Vector3(0.38, 0.38, 0.28)
+		arrow_housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0)
 		arrow_housing.material = _mat_pole
 		arrow_housing.name = "ArrowHousing"
 		pole_root.add_child(arrow_housing)
 
-		var arrow_mesh := CSGBox3D.new()
-		arrow_mesh.size = Vector3(0.22, 0.22, 0.05)
-		arrow_mesh.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0.18)
+		# Small visor above the arrow housing (matches main signal style)
+		var arrow_visor := CSGBox3D.new()
+		arrow_visor.size = Vector3(0.46, 0.04, 0.34)
+		arrow_visor.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.50, 0.13)
+		arrow_visor.material = _mat_pole
+		arrow_visor.name = "ArrowVisor"
+		pole_root.add_child(arrow_visor)
+
+		# Arrow mesh — extruded polygon shaped like a left-pointing arrow.
+		# Polygon lives in local XY; tip points toward +X (driver's left in
+		# pole_root's per-approach local frame). Extrudes along +Z so the
+		# silhouette is visible both from the approaching vehicle's POV and
+		# from the isometric overhead camera.
+		var arrow_mesh := CSGPolygon3D.new()
+		arrow_mesh.polygon = PackedVector2Array([
+			Vector2(-0.11,  0.028),   # shaft tail — top
+			Vector2( 0.02,  0.028),   # shaft / head joint — top
+			Vector2( 0.02,  0.085),   # head outer-top
+			Vector2( 0.14,  0.000),   # arrow TIP (points to +X = driver's left)
+			Vector2( 0.02, -0.085),   # head outer-bottom
+			Vector2( 0.02, -0.028),   # shaft / head joint — bottom
+			Vector2(-0.11, -0.028),   # shaft tail — bottom
+		])
+		arrow_mesh.depth = 0.04
+		arrow_mesh.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0.14)
 		arrow_mesh.material = _mat_arrow_off
 		arrow_mesh.name = "Arrow"
 		pole_root.add_child(arrow_mesh)
 
+		# Glow positioned just behind the arrow plate so the green light
+		# appears to emanate from the arrow when lit.
 		var arrow_glow := OmniLight3D.new()
-		arrow_glow.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.65, 0.18)
+		arrow_glow.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0.16)
 		arrow_glow.light_energy = 0.0
 		arrow_glow.light_color = Color(0, 1, 0.3)
 		arrow_glow.omni_range = 3.5
@@ -548,7 +576,7 @@ func _set_arrow(approach: String, is_on: bool) -> void:
 	var bulbs: Dictionary = _lights[approach]
 	if not bulbs.has("arrow"):
 		return
-	var arrow_mesh: CSGBox3D = bulbs["arrow"]["mesh"]
+	var arrow_mesh: CSGPolygon3D = bulbs["arrow"]["mesh"]
 	var arrow_glow: OmniLight3D = bulbs["arrow"]["glow"]
 	if is_on:
 		arrow_mesh.material = _mat_arrow_on
@@ -706,7 +734,9 @@ func _build_street_lights() -> void:
 	var half_junc: float = JUNCTION_SIZE / 2.0
 	var spacing: float = 15.0          # Distance between lamp posts
 	var pole_height: float = 4.0       # Lamp post height
-	var curb: float = NS_ROAD_WIDTH / 2.0 + 0.6  # On the sidewalk edge
+	# Sidewalk-edge offset is computed per-arm below from arm["width"];
+	# declared-but-unused here.
+	# var _curb: float = NS_ROAD_WIDTH / 2.0 + 0.6
 
 	# Road arm configs: direction vector, road width
 	var arms: Array = [

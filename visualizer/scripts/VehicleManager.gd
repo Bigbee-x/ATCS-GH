@@ -249,23 +249,23 @@ func set_night_mode(enabled: bool) -> void:
 	_toggle_all_vehicle_lights(enabled)
 
 
-func _toggle_all_vehicle_lights(show: bool) -> void:
+func _toggle_all_vehicle_lights(lights_on: bool) -> void:
 	## Show/hide headlight and taillight CSG nodes on every vehicle.
 	# Active vehicles
 	for vid in _active:
-		var node: Node3D = _active[vid]["node"]
-		_set_lights_visible(node, show)
+		var veh_node: Node3D = _active[vid]["node"]
+		_set_lights_visible(veh_node, lights_on)
 	# Pooled cars (so they're correct when next acquired)
 	for car in _car_pool:
-		_set_lights_visible(car, show)
+		_set_lights_visible(car, lights_on)
 
 
-func _set_lights_visible(node: Node3D, show: bool) -> void:
+func _set_lights_visible(veh_node: Node3D, lights_on: bool) -> void:
 	## Toggle visibility of Headlight_* and Taillight_* children.
-	for child in node.get_children():
+	for child in veh_node.get_children():
 		var cname: String = child.name
 		if cname.begins_with("Headlight") or cname.begins_with("Taillight"):
-			child.visible = show
+			child.visible = lights_on
 
 func set_corridor_mode(enabled: bool) -> void:
 	## Switch between single-junction and corridor coordinate mapping.
@@ -394,8 +394,8 @@ func _map_corridor_z(dy: float) -> float:
 	# ── Zone 1: South boundary road (dy < J0 south edge) ────────────
 	var j0_south: float = C_J0_Y - C_J0_HALF_Y  # -10.4
 	if dy < j0_south:
-		var dist: float = j0_south - dy  # positive distance south
-		return (C_GD_J0_Z - C_GD_JUNC_HALF) - dist * (C_GD_BOUNDARY / C_SOUTH_ROAD)
+		var south_dist: float = j0_south - dy  # positive distance south
+		return (C_GD_J0_Z - C_GD_JUNC_HALF) - south_dist * (C_GD_BOUNDARY / C_SOUTH_ROAD)
 
 	# ── Zone 2: J0 junction ─────────────────────────────────────────
 	var j0_north: float = C_J0_Y + C_J0_HALF_Y  # 10.4
@@ -425,8 +425,8 @@ func _map_corridor_z(dy: float) -> float:
 		return C_GD_J2_Z + (dy - C_J2_Y) * (C_GD_JUNC_HALF / C_J2_HALF_Y)
 
 	# ── Zone 7: North boundary road ─────────────────────────────────
-	var dist: float = dy - j2_north  # positive distance north
-	return (C_GD_J2_Z + C_GD_JUNC_HALF) + dist * (C_GD_BOUNDARY / C_NORTH_ROAD)
+	var north_dist: float = dy - j2_north  # positive distance north
+	return (C_GD_J2_Z + C_GD_JUNC_HALF) + north_dist * (C_GD_BOUNDARY / C_NORTH_ROAD)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

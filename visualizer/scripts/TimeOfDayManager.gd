@@ -31,7 +31,6 @@ var _environment: Environment
 
 # ── Sun azimuth (preserved from scene, only pitch changes) ──────────────────
 var _sun_base_transform: Transform3D
-var _sun_yaw: float = 0.0
 
 
 # ── Keyframes ───────────────────────────────────────────────────────────────

@@ -77,7 +77,7 @@ func _ready() -> void:
 
 	# Build along each of the 4 road arms
 	# Direction vectors: which axis the road runs along, and the perpendicular offset axis
-	# format: [arm_name, road_axis (0=X, 1=Z), sign (+1/-1), road_width]
+	# format: [arm_name, road_axis (0=X, 1=Z), dir_sign (+1/-1), road_width]
 	var arms: Array = [
 		["north", 1,  1.0, NS_ROAD_WIDTH],
 		["south", 1, -1.0, NS_ROAD_WIDTH],
@@ -88,9 +88,9 @@ func _ready() -> void:
 	for arm in arms:
 		var arm_name: String = arm[0]
 		var axis: int = arm[1]
-		var sign: float = arm[2]
+		var dir_sign: float = arm[2]
 		var road_w: float = arm[3]
-		_build_arm_buildings(arm_name, axis, sign, road_w)
+		_build_arm_buildings(arm_name, axis, dir_sign, road_w)
 
 	# Build junction corner anchor buildings
 	_build_junction_corners()
@@ -102,7 +102,7 @@ func _ready() -> void:
 # ARM BUILDING GENERATION
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _build_arm_buildings(arm_name: String, axis: int, sign: float,
+func _build_arm_buildings(_arm_name: String, axis: int, dir_sign: float,
 						  road_width: float) -> void:
 	## Generate buildings along both sides of a road arm.
 	var sidewalk_edge: float = road_width / 2.0 + SIDEWALK_WIDTH
@@ -120,13 +120,13 @@ func _build_arm_buildings(arm_name: String, axis: int, sign: float,
 			var building_length: float
 
 			if roll < 0.45:
-				building_length = _place_block_building(axis, sign, cursor, perp_offset, side_sign)
+				building_length = _place_block_building(axis, dir_sign, cursor, perp_offset, side_sign)
 			elif roll < 0.75:
-				building_length = _place_shop_front(axis, sign, cursor, perp_offset, side_sign)
+				building_length = _place_shop_front(axis, dir_sign, cursor, perp_offset, side_sign)
 			elif roll < 0.85:
-				building_length = _place_compound_wall(axis, sign, cursor, perp_offset, side_sign)
+				building_length = _place_compound_wall(axis, dir_sign, cursor, perp_offset, side_sign)
 			else:
-				building_length = _place_market_stalls(axis, sign, cursor, perp_offset, side_sign)
+				building_length = _place_market_stalls(axis, dir_sign, cursor, perp_offset, side_sign)
 
 			cursor += building_length + _rng.randf_range(MIN_GAP, MAX_GAP)
 
@@ -135,7 +135,7 @@ func _build_arm_buildings(arm_name: String, axis: int, sign: float,
 # BUILDING TYPES
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _place_block_building(axis: int, sign: float, along: float,
+func _place_block_building(axis: int, dir_sign: float, along: float,
 						   perp: float, side_sign: float) -> float:
 	## Place a simple block building with roof parapet. Returns building length.
 	var width: float = _rng.randf_range(2.5, 5.0)
@@ -143,7 +143,7 @@ func _place_block_building(axis: int, sign: float, along: float,
 	var height: float = _rng.randf_range(1.8, 5.0)
 	var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
 
-	var pos := _compute_position(axis, sign, along + width / 2.0, perp, side_sign, depth)
+	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
 
 	# Body
 	var body := CSGBox3D.new()
@@ -164,7 +164,7 @@ func _place_block_building(axis: int, sign: float, along: float,
 	return width
 
 
-func _place_shop_front(axis: int, sign: float, along: float,
+func _place_shop_front(axis: int, dir_sign: float, along: float,
 					   perp: float, side_sign: float) -> float:
 	## Place a shop with awning. Returns building length.
 	var width: float = _rng.randf_range(2.0, 4.0)
@@ -173,7 +173,7 @@ func _place_shop_front(axis: int, sign: float, along: float,
 	var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
 	var awning_color: Color = AWNING_COLORS[_rng.randi() % AWNING_COLORS.size()]
 
-	var pos := _compute_position(axis, sign, along + width / 2.0, perp, side_sign, depth)
+	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
 
 	# Building body
 	var body := CSGBox3D.new()
@@ -215,7 +215,7 @@ func _place_shop_front(axis: int, sign: float, along: float,
 	return width
 
 
-func _place_compound_wall(axis: int, sign: float, along: float,
+func _place_compound_wall(axis: int, dir_sign: float, along: float,
 						  perp: float, side_sign: float) -> float:
 	## Place a low compound wall. Returns wall length.
 	var width: float = _rng.randf_range(4.0, 8.0)
@@ -223,7 +223,7 @@ func _place_compound_wall(axis: int, sign: float, along: float,
 	var depth: float = 0.2
 	var wall_color: Color = WALL_COLORS[_rng.randi() % WALL_COLORS.size()]
 
-	var pos := _compute_position(axis, sign, along + width / 2.0, perp, side_sign, depth)
+	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
 
 	var wall := CSGBox3D.new()
 	wall.size = _orient_size(axis, width, height, depth)
@@ -235,7 +235,7 @@ func _place_compound_wall(axis: int, sign: float, along: float,
 	return width
 
 
-func _place_market_stalls(axis: int, sign: float, along: float,
+func _place_market_stalls(axis: int, dir_sign: float, along: float,
 						  perp: float, side_sign: float) -> float:
 	## Place a cluster of 3-5 small market stalls. Returns cluster length.
 	var stall_count: int = _rng.randi_range(3, 5)
@@ -247,7 +247,7 @@ func _place_market_stalls(axis: int, sign: float, along: float,
 		var sh: float = _rng.randf_range(1.0, 1.6)
 		var canopy_color: Color = CANOPY_COLORS[_rng.randi() % CANOPY_COLORS.size()]
 
-		var pos := _compute_position(axis, sign, along + total_width + sw / 2.0, perp, side_sign, sd)
+		var pos := _compute_position(axis, dir_sign, along + total_width + sw / 2.0, perp, side_sign, sd)
 
 		# Canopy top
 		var canopy := CSGBox3D.new()
@@ -265,9 +265,9 @@ func _place_market_stalls(axis: int, sign: float, along: float,
 			var pole_along_offset: float = (sw / 2.0 - 0.1) * (1.0 if j == 0 else -1.0)
 			var pole_pos: Vector3
 			if axis == 1:  # N/S
-				pole_pos = pos + Vector3(0, sh / 2.0, sign * pole_along_offset)
+				pole_pos = pos + Vector3(0, sh / 2.0, dir_sign * pole_along_offset)
 			else:  # E/W
-				pole_pos = pos + Vector3(sign * pole_along_offset, sh / 2.0, 0)
+				pole_pos = pos + Vector3(dir_sign * pole_along_offset, sh / 2.0, 0)
 			pole.position = pole_pos
 			pole.material = _get_material(Color(0.3, 0.28, 0.25))
 			pole.name = "StallPole"
@@ -333,16 +333,16 @@ func _build_junction_corners() -> void:
 # HELPERS
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _compute_position(axis: int, sign: float, along: float,
+func _compute_position(axis: int, dir_sign: float, along: float,
 					   perp: float, side_sign: float, depth: float) -> Vector3:
 	## Compute world position for a building.
 	## axis=0: road runs along X, perp is Z
 	## axis=1: road runs along Z, perp is X
 	var perp_total: float = perp + side_sign * depth / 2.0
 	if axis == 1:  # N/S road
-		return Vector3(perp_total, 0, sign * along)
+		return Vector3(perp_total, 0, dir_sign * along)
 	else:  # E/W road
-		return Vector3(sign * along, 0, perp_total)
+		return Vector3(dir_sign * along, 0, perp_total)
 
 
 func _orient_size(axis: int, width: float, height: float, depth: float) -> Vector3:

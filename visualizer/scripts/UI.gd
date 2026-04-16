@@ -377,8 +377,9 @@ func _build_corridor_right_panel() -> void:
 	vbox.add_child(_corridor_chart_queue)
 
 
-func _build_junction_panel(jid: String, name_text: String, color: Color) -> Dictionary:
+func _build_junction_panel(_jid: String, name_text: String, color: Color) -> Dictionary:
 	## Build a compact per-junction status panel for corridor mode.
+	## (jid reserved for future per-junction customization; currently unused.)
 	var container := VBoxContainer.new()
 	container.add_theme_constant_override("separation", 2)
 

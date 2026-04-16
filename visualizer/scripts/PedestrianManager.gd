@@ -362,17 +362,17 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 			_crossing_peds[pid]["target_pos"] = target_pos
 		else:
 			# Acquire or create a pedestrian mesh
-			var node: Node3D = _acquire_crossing_mesh()
-			node.position = target_pos
+			var new_mesh: Node3D = _acquire_crossing_mesh()
+			new_mesh.position = target_pos
 			_crossing_peds[pid] = {
-				"node": node,
+				"node": new_mesh,
 				"target_pos": target_pos,
 			}
 
 		# Update facing direction from SUMO angle
 		var angle_deg: float = float(ped_data.get("angle", 0.0))
-		var node: Node3D = _crossing_peds[pid]["node"]
-		node.rotation.y = deg_to_rad(-(angle_deg - 90.0))
+		var ped_node: Node3D = _crossing_peds[pid]["node"]
+		ped_node.rotation.y = deg_to_rad(-(angle_deg - 90.0))
 
 	# Remove pedestrians no longer in the update (left the area or no longer on crossing)
 	var to_remove: Array = []
@@ -423,8 +423,8 @@ func _map_corridor_z(dy: float) -> float:
 	## Map SUMO Y (offset-subtracted) to Godot Z (same logic as VehicleManager).
 	var j0_south: float = C_SUMO_J0_Y - C_SUMO_J0_HALF_Y
 	if dy < j0_south:
-		var dist: float = j0_south - dy
-		return (C_J0_Z - C_GD_JUNC_HALF) - dist * (C_GD_BOUNDARY / C_SUMO_SOUTH_ROAD)
+		var south_dist: float = j0_south - dy
+		return (C_J0_Z - C_GD_JUNC_HALF) - south_dist * (C_GD_BOUNDARY / C_SUMO_SOUTH_ROAD)
 
 	var j0_north: float = C_SUMO_J0_Y + C_SUMO_J0_HALF_Y
 	if dy <= j0_north:
@@ -448,8 +448,8 @@ func _map_corridor_z(dy: float) -> float:
 	if dy <= j2_north:
 		return C_J2_Z + (dy - C_SUMO_J2_Y) * (C_GD_JUNC_HALF / C_SUMO_J2_HALF_Y)
 
-	var dist: float = dy - j2_north
-	return (C_J2_Z + C_GD_JUNC_HALF) + dist * (C_GD_BOUNDARY / C_SUMO_NORTH_ROAD)
+	var north_dist: float = dy - j2_north
+	return (C_J2_Z + C_GD_JUNC_HALF) + north_dist * (C_GD_BOUNDARY / C_SUMO_NORTH_ROAD)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

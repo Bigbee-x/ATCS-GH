@@ -112,6 +112,14 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 		# Brief wait for port release
 		await get_tree().create_timer(0.8).timeout
 
+	# Kill any ORPHAN processes on our ports (e.g. leftovers from a prior
+	# Godot session that exited without cleanup). Without this, the new
+	# server crashes immediately with EADDRINUSE and the UI loops on reconnect.
+	var orphaned: bool = _kill_orphans_on_ports([PORT, DASHBOARD_PORT])
+	if orphaned:
+		# Give the OS a moment to release the sockets
+		await get_tree().create_timer(0.5).timeout
+
 	current_server = type
 	_log_file_pos = 0
 
@@ -311,3 +319,44 @@ func _stop_dashboard() -> void:
 			print("[ServerManager] Killing dashboard — PID %d" % _dashboard_pid)
 			OS.kill(_dashboard_pid)
 		_dashboard_pid = -1
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ORPHAN PROCESS CLEANUP
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _kill_orphans_on_ports(ports: Array) -> bool:
+	## Find and kill any process listening on the given ports.
+	## Handles the common case where a previous Godot session left behind a
+	## zombie Python server, causing the next launch to fail with EADDRINUSE.
+	## Returns true if at least one orphan was killed.
+	var killed_any: bool = false
+	for p in ports:
+		var pids: Array = _find_pids_on_port(int(p))
+		for pid in pids:
+			# Don't kill processes we already track (server_pid, _dashboard_pid)
+			if int(pid) == server_pid or int(pid) == _dashboard_pid:
+				continue
+			print("[ServerManager] Killing orphan process PID %d on port %d" % [pid, p])
+			var output: Array = []
+			OS.execute("/bin/kill", ["-9", str(pid)], output, true)
+			killed_any = true
+	return killed_any
+
+
+func _find_pids_on_port(port: int) -> Array:
+	## Use `lsof -ti :<port>` to list PIDs owning a TCP port.
+	## Returns empty array if nothing is listening or lsof is unavailable.
+	var output: Array = []
+	var exit_code: int = OS.execute("/usr/sbin/lsof", ["-ti", ":%d" % port], output, true)
+	if exit_code != 0 or output.is_empty():
+		return []
+	var raw: String = str(output[0]).strip_edges()
+	if raw.is_empty():
+		return []
+	var pids: Array = []
+	for line in raw.split("\n"):
+		var s: String = line.strip_edges()
+		if s.is_valid_int():
+			pids.append(int(s))
+	return pids
