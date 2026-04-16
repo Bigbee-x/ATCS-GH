@@ -1,5 +1,7 @@
 # Phase 1 Design Notes
 
+> **Historical document.** These are the original design notes for the Phase 1 fixed-timer baseline. Phases 1-5 are now complete — the project has progressed to a full 3-junction N6 corridor with pedestrian modelling, multi-scenario generalisation, a Godot launcher, and a live Flask dashboard. For current project state see the main [README.md](../README.md).
+
 ## Goals
 
 Establish a reproducible baseline for a fixed-timer Accra junction so that
