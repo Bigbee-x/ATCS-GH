@@ -24,6 +24,11 @@ extends Node3D
 @onready var camera: Camera3D = $IsometricCamera
 @onready var tod_manager: Node = $TimeOfDayManager
 
+# ── Ground-level pedestrian mode ─────────────────────────────────────────────
+var _player: CharacterBody3D = null
+var _ground_mode_active: bool = false
+var _ground_hint_label: Label = null
+
 # ── Camera state ─────────────────────────────────────────────────────────────
 var _camera_default_position: Vector3
 var _camera_default_rotation: Vector3
@@ -94,7 +99,11 @@ func _ready() -> void:
 	ui.time_of_day_changed.connect(_on_ui_time_changed)
 	ui.tod_mode_changed.connect(_on_ui_tod_mode_changed)
 
+	# ── Spawn ground-level player controller (dormant until V pressed) ───
+	_setup_player()
+
 	print("[Main] All signals connected. Waiting for server data...")
+	print("[Main] Tip: press V to drop into ground-level pedestrian mode.")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -243,13 +252,36 @@ func _on_ui_tod_mode_changed(mode_idx: int) -> void:
 #   R / Home             — Reset camera
 
 func _process(delta: float) -> void:
+	if _ground_mode_active:
+		return  # Player controller owns WASD/mouse/keys while on the ground
 	_process_camera_keys(delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# ── Escape: return to launcher menu ──────────────────────────────────
+	# ── V: toggle ground-level pedestrian mode ──────────────────────────
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V:
+		_toggle_ground_mode()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── F: toggle FP/TP (only in ground mode) ───────────────────────────
+	if _ground_mode_active and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		if _player and _player.has_method("toggle_view_mode"):
+			_player.toggle_view_mode()
+			_update_ground_hint()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── Escape: exit ground mode first, else return to launcher ─────────
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
+		if _ground_mode_active:
+			_toggle_ground_mode()
+		else:
+			get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
+		return
+
+	# ── Skip top-down camera controls while player is on the ground ─────
+	if _ground_mode_active:
 		return
 
 	# ── R key: reset camera ─────────────────────────────────────────────
@@ -413,3 +445,74 @@ func _reset_camera() -> void:
 	camera.size = _camera_default_size
 	_apply_camera()
 	print("[Camera] Reset to default position")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GROUND-LEVEL PEDESTRIAN MODE
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _setup_player() -> void:
+	## Instantiate the PlayerController and a small HUD hint overlay.
+	var script: GDScript = load("res://scripts/PlayerController.gd")
+	_player = CharacterBody3D.new()
+	_player.set_script(script)
+	_player.name = "PlayerController"
+	add_child(_player)
+	# Spawn on a sidewalk of the south arm, 8 units south of the junction,
+	# facing north (yaw=π → camera looks down +Z). Sidewalk top is at
+	# y=0.15; spawn a tick higher so the capsule settles onto it.
+	_player.spawn_at(Vector3(3.95, 0.4, -8.0), PI)
+
+	# Build the HUD hint — a small label anchored bottom-center of the UI canvas.
+	_ground_hint_label = Label.new()
+	_ground_hint_label.name = "GroundModeHint"
+	_ground_hint_label.anchor_left = 0.5
+	_ground_hint_label.anchor_right = 0.5
+	_ground_hint_label.anchor_top = 1.0
+	_ground_hint_label.anchor_bottom = 1.0
+	_ground_hint_label.offset_left  = -260.0
+	_ground_hint_label.offset_right =  260.0
+	_ground_hint_label.offset_top   = -60.0
+	_ground_hint_label.offset_bottom = -20.0
+	_ground_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ground_hint_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	_ground_hint_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	_ground_hint_label.add_theme_constant_override("shadow_offset_x", 1)
+	_ground_hint_label.add_theme_constant_override("shadow_offset_y", 1)
+	_ground_hint_label.add_theme_font_size_override("font_size", 14)
+	_ground_hint_label.visible = false
+	_ground_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ui_root := ui as Control
+	if ui_root:
+		ui_root.add_child(_ground_hint_label)
+
+
+func _toggle_ground_mode() -> void:
+	_ground_mode_active = not _ground_mode_active
+	if _player == null:
+		return
+
+	if _ground_mode_active:
+		# Stop any in-progress top-down pan/orbit
+		_is_panning = false
+		_is_rotating = false
+		# Hand the viewport over to the player's camera
+		_player.set_active(true)
+		_update_ground_hint()
+		_ground_hint_label.visible = true
+		print("[Main] Ground mode: ON")
+	else:
+		_player.set_active(false)
+		camera.current = true   # restore the top-down camera
+		_ground_hint_label.visible = false
+		print("[Main] Ground mode: OFF")
+
+
+func _update_ground_hint() -> void:
+	if _ground_hint_label == null or _player == null:
+		return
+	var fp: bool = true
+	if _player.has_method("is_first_person"):
+		fp = bool(_player.call("is_first_person"))
+	var view_name: String = "First-person" if fp else "Third-person"
+	_ground_hint_label.text = "GROUND MODE — %s  |  WASD move  •  Shift sprint  •  Space jump  •  F switch view  •  V / Esc exit" % view_name

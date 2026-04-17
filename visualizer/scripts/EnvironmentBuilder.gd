@@ -174,7 +174,27 @@ func _ready() -> void:
 	# Hook into day/night cycle so emissive materials + OmniLights toggle correctly
 	_wire_day_night()
 
+	# Enable collision on all CSG geometry so the ground-level player can't walk
+	# through buildings, tanks, goal posts, etc. Small decorative CSGs above
+	# head-height are harmless — the player can't reach them anyway.
+	_enable_collision_on_all_csg(self)
+
 	print("[EnvironmentBuilder] Built Accra streetscape + 4 quadrant districts + lights")
+
+
+func _enable_collision_on_all_csg(node: Node) -> void:
+	## Recursively turn on use_collision for every CSG primitive under `node`.
+	## Building bodies, walls, tanks, lamp posts, poles, and goal frames all
+	## become solid — the player's CharacterBody3D capsule will stop against them.
+	for child in node.get_children():
+		if child is CSGBox3D:
+			(child as CSGBox3D).use_collision = true
+		elif child is CSGCylinder3D:
+			(child as CSGCylinder3D).use_collision = true
+		elif child is CSGSphere3D:
+			(child as CSGSphere3D).use_collision = true
+		if child.get_child_count() > 0:
+			_enable_collision_on_all_csg(child)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

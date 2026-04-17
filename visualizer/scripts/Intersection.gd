@@ -265,6 +265,7 @@ func _build_ground() -> void:
 	ground.position = Vector3(0, -0.06, 0)
 	ground.material = _mat_grass
 	ground.name = "Ground"
+	ground.use_collision = true   # Walkable floor for ground-mode player
 	add_child(ground)
 
 
@@ -275,6 +276,7 @@ func _build_junction() -> void:
 	junction.position = Vector3(0, 0, 0)
 	junction.material = _mat_road
 	junction.name = "Junction"
+	junction.use_collision = true
 	add_child(junction)
 
 
@@ -295,6 +297,7 @@ func _build_road_arm(approach: String, direction: Vector3, road_width: float) ->
 	road.position = center
 	road.material = _mat_road
 	road.name = "Road_%s" % approach
+	road.use_collision = true
 	add_child(road)
 
 	# Center line (dashed marking)
@@ -349,6 +352,7 @@ func _build_sidewalks(center: Vector3, direction: Vector3, length: float, road_w
 
 		sw.position = sw_pos
 		sw.material = _mat_sidewalk
+		sw.use_collision = true   # Raised curbs the player can step up onto
 		add_child(sw)
 
 
