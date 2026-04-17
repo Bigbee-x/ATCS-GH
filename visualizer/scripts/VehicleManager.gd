@@ -79,17 +79,8 @@ const C_GD_BOUNDARY: float = 30.0   # Boundary road length in Godot
 const C_GD_CROSS_ARM: float = 30.0  # Cross-street arm length in Godot
 
 # ── Animation ────────────────────────────────────────────────────────────────
-## Constant-velocity interpolation between server packets.
-## Each vehicle tracks its own segment (prev → target) and advances linearly
-## over the measured inter-packet time. This replaces the old exponential
-## lerp that caused vehicles to "boop boop" — decelerate into the target,
-## sit still, jerk into motion when a new packet arrived.
-const DEFAULT_SEG_DURATION : float = 0.5    ## First-segment assumption (s)
-const SEG_EMA_ALPHA        : float = 0.4    ## Weight of latest measurement
-const SEG_MIN              : float = 0.10   ## Clamp against packet bursts
-const SEG_MAX              : float = 1.50   ## Clamp against dropped packets
-const EXTRAPOLATE_MAX_T    : float = 1.05   ## Tiny over-run hides jitter without reversing on hard stops
-const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed (opacity only)
+const LERP_SPEED: float = 5.0     ## Position/rotation interpolation speed
+const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed
 
 # ── Boundary fade-out zones ──────────────────────────────────────────────────
 ## Vehicles approaching the edge of the visible Godot road gradually fade out
@@ -207,15 +198,11 @@ func _process(delta: float) -> void:
 				to_remove.append(vid)
 			continue
 
-		# --- Constant-velocity interp across current packet segment ---
-		# t = 0 at packet arrival, 1 when the segment's expected duration
-		# elapses. Tiny overshoot allowed to smooth out late packets.
-		info["interp_t"] += delta
-		var seg: float = maxf(info.get("seg_duration", DEFAULT_SEG_DURATION), 0.05)
-		var t: float = clampf(info["interp_t"] / seg, 0.0, EXTRAPOLATE_MAX_T)
+		# --- Lerp position ---
+		node.position = node.position.lerp(info["target_pos"], LERP_SPEED * delta)
 
-		node.position     = (info["prev_pos"] as Vector3).lerp(info["target_pos"] as Vector3, t)
-		node.rotation.y   = lerp_angle(info["prev_rot"], info["target_rot"], t)
+		# --- Lerp rotation ---
+		node.rotation.y = lerp_angle(node.rotation.y, info["target_rot"], LERP_SPEED * delta)
 
 		# --- Boundary fade: vehicles near road edges fade out smoothly ---
 		var bfade: float = _get_boundary_fade(node.position)
@@ -313,7 +300,8 @@ func update_vehicles(data: Dictionary) -> void:
 				if not _active[vid].get("despawning", false):
 					_active[vid]["despawning"] = true
 			else:
-				_begin_segment(_active[vid], pos, rot)
+				_active[vid]["target_pos"] = pos
+				_active[vid]["target_rot"] = rot
 		else:
 			# Spawn new vehicle
 			if _active.size() >= MAX_VEHICLES:
@@ -465,37 +453,13 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 
 	_active[vid] = {
 		"node": node,
-		"prev_pos": pos,
 		"target_pos": pos,
-		"prev_rot": rot,
 		"target_rot": rot,
-		"interp_t": 0.0,
-		"seg_duration": DEFAULT_SEG_DURATION,
-		"last_update_ms": Time.get_ticks_msec(),
 		"type": vtype,
 		"is_ambulance": is_ambulance,
 		"opacity": 0.0,       # Fade in from 0
 		"despawning": false,
 	}
-
-
-func _begin_segment(info: Dictionary, new_pos: Vector3, new_rot: float) -> void:
-	## Start a new constant-velocity segment from wherever the vehicle is
-	## currently drawn. EMA-smooth the segment duration so a burst of fast
-	## or slow packets doesn't cause speed whiplash.
-	var node: Node3D = info["node"]
-	var now_ms: int = Time.get_ticks_msec()
-	var dt: float = float(now_ms - int(info.get("last_update_ms", now_ms))) / 1000.0
-	var measured: float = clampf(dt, SEG_MIN, SEG_MAX)
-	var prev_seg: float = info.get("seg_duration", DEFAULT_SEG_DURATION)
-
-	info["prev_pos"] = node.position
-	info["prev_rot"] = node.rotation.y
-	info["target_pos"] = new_pos
-	info["target_rot"] = new_rot
-	info["seg_duration"] = prev_seg * (1.0 - SEG_EMA_ALPHA) + measured * SEG_EMA_ALPHA
-	info["interp_t"] = 0.0
-	info["last_update_ms"] = now_ms
 
 
 func _release_vehicle(vid: String) -> void:

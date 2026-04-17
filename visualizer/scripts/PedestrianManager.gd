@@ -14,13 +14,6 @@ extends Node3D
 const NUM_AMBIENT       := 28      # Ambient sidewalk pedestrians
 const MIN_SPEED         := 0.4     # Slowest walk speed (Godot units/sec)
 const MAX_SPEED         := 1.2     # Fastest walk speed
-
-## Crossing-ped constant-velocity interpolation (same scheme as VehicleManager).
-const CPED_DEFAULT_SEG  := 0.5
-const CPED_SEG_ALPHA    := 0.4
-const CPED_SEG_MIN      := 0.10
-const CPED_SEG_MAX      := 1.50
-const CPED_EXTRAP_MAX_T := 1.05
 const BODY_WIDTH        := 0.10    # Torso width (X)
 const BODY_DEPTH        := 0.08    # Torso depth (Z)
 const BODY_HEIGHT       := 0.25    # Torso height (Y)
@@ -173,15 +166,11 @@ func _process(delta: float) -> void:
 	for ped in _ambient_peds:
 		_move_ambient(ped, delta)
 
-	# Constant-velocity interp for each crossing ped between server packets.
+	# Smoothly interpolate crossing pedestrians toward target positions
 	for pid in _crossing_peds:
 		var data: Dictionary = _crossing_peds[pid]
 		var node: Node3D = data["node"]
-		data["interp_t"] = float(data.get("interp_t", 0.0)) + delta
-		var seg: float = maxf(float(data.get("seg_duration", CPED_DEFAULT_SEG)), 0.05)
-		var t: float = clampf(data["interp_t"] / seg, 0.0, CPED_EXTRAP_MAX_T)
-		var prev_pos: Vector3 = data.get("prev_pos", data["target_pos"])
-		node.position = prev_pos.lerp(data["target_pos"], t)
+		node.position = node.position.lerp(data["target_pos"], minf(delta * 8.0, 1.0))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -369,29 +358,15 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 		var target_pos := Vector3(godot_x, target_y, godot_z)
 
 		if _crossing_peds.has(pid):
-			# Update existing crossing pedestrian — start a new
-			# constant-velocity segment from wherever it's currently drawn.
-			var data: Dictionary = _crossing_peds[pid]
-			var now_ms: int = Time.get_ticks_msec()
-			var dt: float = float(now_ms - int(data.get("last_update_ms", now_ms))) / 1000.0
-			var measured: float = clampf(dt, CPED_SEG_MIN, CPED_SEG_MAX)
-			var prev_seg: float = float(data.get("seg_duration", CPED_DEFAULT_SEG))
-			data["prev_pos"] = (data["node"] as Node3D).position
-			data["target_pos"] = target_pos
-			data["seg_duration"] = prev_seg * (1.0 - CPED_SEG_ALPHA) + measured * CPED_SEG_ALPHA
-			data["interp_t"] = 0.0
-			data["last_update_ms"] = now_ms
+			# Update existing crossing pedestrian
+			_crossing_peds[pid]["target_pos"] = target_pos
 		else:
 			# Acquire or create a pedestrian mesh
 			var new_mesh: Node3D = _acquire_crossing_mesh()
 			new_mesh.position = target_pos
 			_crossing_peds[pid] = {
 				"node": new_mesh,
-				"prev_pos": target_pos,
 				"target_pos": target_pos,
-				"interp_t": 0.0,
-				"seg_duration": CPED_DEFAULT_SEG,
-				"last_update_ms": Time.get_ticks_msec(),
 			}
 
 		# Update facing direction from SUMO angle
