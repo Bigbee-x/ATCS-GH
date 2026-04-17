@@ -68,6 +68,11 @@ var _lane_overlays: Dictionary = {}
 var _street_lights: Array = []   # Array of OmniLight3D nodes
 var _mat_lamp_housing: StandardMaterial3D
 
+# ── Utility pole / overhead power line materials ────────────────────────────
+var _mat_util_pole: StandardMaterial3D
+var _mat_insulator: StandardMaterial3D
+var _mat_wire: StandardMaterial3D
+
 # ── Emergency state ──────────────────────────────────────────────────────────
 var _emergency_active: bool = false
 var _emergency_pulse_time: float = 0.0
@@ -89,6 +94,7 @@ func _ready() -> void:
 	_build_traffic_lights()
 	#_build_lane_overlays()  # Disabled — visual clutter on dark roads
 	_build_street_lights()
+	_build_utility_poles()
 	_build_watermark()
 	_build_emergency_overlay()
 	_build_stop_lines()
@@ -223,10 +229,29 @@ func _create_materials() -> void:
 	_mat_arrow_off.albedo_color = Color(0.08, 0.08, 0.08)
 
 	# Street lamp housing — dark metal with warm emissive face
+	# (emission energy is 0 during day, bumped at night by set_street_lights_night)
 	_mat_lamp_housing = StandardMaterial3D.new()
-	_mat_lamp_housing.albedo_color = Color(0.2, 0.2, 0.22)
-	_mat_lamp_housing.metallic = 0.5
+	_mat_lamp_housing.albedo_color = Color(0.95, 0.82, 0.50)
+	_mat_lamp_housing.metallic = 0.2
 	_mat_lamp_housing.roughness = 0.4
+	_mat_lamp_housing.emission_enabled = true
+	_mat_lamp_housing.emission = Color(1.00, 0.85, 0.45)
+	_mat_lamp_housing.emission_energy_multiplier = 0.0
+
+	# Utility / power pole — weathered wood
+	_mat_util_pole = StandardMaterial3D.new()
+	_mat_util_pole.albedo_color = Color(0.38, 0.28, 0.18)
+	_mat_util_pole.roughness = 0.9
+
+	# Cross-arm insulators — white ceramic
+	_mat_insulator = StandardMaterial3D.new()
+	_mat_insulator.albedo_color = Color(0.88, 0.86, 0.82)
+	_mat_insulator.roughness = 0.4
+
+	# Overhead power lines — dark, matte
+	_mat_wire = StandardMaterial3D.new()
+	_mat_wire.albedo_color = Color(0.08, 0.08, 0.08)
+	_mat_wire.roughness = 0.9
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -796,8 +821,8 @@ func _build_street_lights() -> void:
 				light.position = pos + Vector3(0, pole_height - 0.1, 0) + arm_dir
 				light.light_color = Color(1.0, 0.85, 0.5)  # Warm sodium yellow
 				light.light_energy = 0.0                     # Off by default (daytime)
-				light.omni_range = 12.0
-				light.omni_attenuation = 1.5
+				light.omni_range = 20.0
+				light.omni_attenuation = 1.2
 				light.shadow_enabled = false
 				light.name = "StreetLight"
 				add_child(light)
@@ -807,7 +832,124 @@ func _build_street_lights() -> void:
 
 
 func set_street_lights_night(enabled: bool) -> void:
-	## Turn street lights on (night) or off (day).
-	var energy: float = 1.2 if enabled else 0.0
+	## Turn street lights on (night) or off (day). Also toggles the lamp housing
+	## emission so each lamp reads as a glowing bulb, not just a floating OmniLight.
+	var energy: float = 2.8 if enabled else 0.0
 	for light in _street_lights:
 		light.light_energy = energy
+	if _mat_lamp_housing:
+		_mat_lamp_housing.emission_energy_multiplier = 2.5 if enabled else 0.0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UTILITY POLES & OVERHEAD POWER LINES
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _build_utility_poles() -> void:
+	## Place wooden utility poles (taller than street lamps, further back) along
+	## ONE side of each road arm, with a cross-arm + 3 ceramic insulators near
+	## the top and 3 horizontal power lines strung between consecutive poles.
+	var half_junc: float = JUNCTION_SIZE / 2.0
+	var spacing: float = 22.0          # Longer span than street lights
+	var pole_height: float = 7.0       # Taller than street lights (4m)
+	var crossbar_len: float = 1.8
+	var insulator_spacing: float = crossbar_len * 0.38  # insulator offsets: -x, 0, +x
+
+	var arms: Array = [
+		{"dir": Vector3(0, 0, 1),  "width": NS_ROAD_WIDTH, "side": 1.0},
+		{"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH, "side": 1.0},
+		{"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH,  "side": 1.0},
+		{"dir": Vector3(1, 0, 0),  "width": W_ROAD_WIDTH,  "side": 1.0},
+	]
+
+	for arm_info in arms:
+		var direction: Vector3 = arm_info["dir"]
+		var road_w: float = arm_info["width"]
+		var side: float = arm_info["side"]
+		# Sit further back than street lights (0.6) to avoid clashing
+		var side_offset: float = road_w / 2.0 + 1.9
+		var is_ns: bool = abs(direction.z) > 0.0
+
+		var lateral: Vector3
+		if is_ns:
+			lateral = Vector3(side * side_offset, 0, 0)
+		else:
+			lateral = Vector3(0, 0, side * side_offset)
+
+		# Insulator positions from the previous pole on this arm (for wire spans)
+		var prev_insulators: Array = []
+		var dist: float = half_junc + 8.0
+		while dist < ROAD_LENGTH - 3.0:
+			var pos: Vector3 = direction * dist + lateral
+
+			# Pole (wooden)
+			var pole := CSGCylinder3D.new()
+			pole.radius = 0.12
+			pole.height = pole_height
+			pole.position = pos + Vector3(0, pole_height / 2.0, 0)
+			pole.material = _mat_util_pole
+			pole.name = "UtilityPole"
+			add_child(pole)
+
+			# Cross-arm (horizontal bar perpendicular to road)
+			var crossbar := CSGBox3D.new()
+			if is_ns:
+				crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
+			else:
+				crossbar.size = Vector3(0.14, 0.14, crossbar_len)
+			crossbar.position = pos + Vector3(0, pole_height - 0.25, 0)
+			crossbar.material = _mat_util_pole
+			crossbar.name = "UtilityCrossbar"
+			add_child(crossbar)
+
+			# Diagonal support brace (short 45° strut from pole to cross-arm)
+			var brace := CSGBox3D.new()
+			if is_ns:
+				brace.size = Vector3(0.55, 0.08, 0.08)
+			else:
+				brace.size = Vector3(0.08, 0.08, 0.55)
+			brace.position = pos + Vector3(0, pole_height - 0.55, 0)
+			brace.rotation_degrees = Vector3(0, 0, 35) if is_ns else Vector3(35, 0, 0)
+			brace.material = _mat_util_pole
+			brace.name = "UtilityBrace"
+			add_child(brace)
+
+			# 3 ceramic insulators on the cross-arm (little white cylinders)
+			var insulator_positions: Array = []
+			for k in range(3):
+				var slot: float = (k - 1) * insulator_spacing  # -1, 0, +1 slots
+				var ins_offset: Vector3
+				if is_ns:
+					ins_offset = Vector3(slot, 0.0, 0.0)
+				else:
+					ins_offset = Vector3(0.0, 0.0, slot)
+				var ins := CSGCylinder3D.new()
+				ins.radius = 0.07
+				ins.height = 0.20
+				ins.position = pos + Vector3(0, pole_height - 0.05, 0) + ins_offset
+				ins.material = _mat_insulator
+				ins.name = "UtilityInsulator"
+				add_child(ins)
+				# Wire-attach point sits just above the insulator top
+				insulator_positions.append(ins.position + Vector3(0, 0.12, 0))
+
+			# String 3 wires between this pole and the previous one on this arm
+			if prev_insulators.size() == 3:
+				for k in range(3):
+					var w_start: Vector3 = prev_insulators[k]
+					var w_end: Vector3 = insulator_positions[k]
+					var mid: Vector3 = (w_start + w_end) * 0.5
+					var span: float = (w_end - w_start).length()
+					var wire := CSGBox3D.new()
+					if is_ns:
+						wire.size = Vector3(0.035, 0.035, span)
+					else:
+						wire.size = Vector3(span, 0.035, 0.035)
+					# Slight sag so wires don't look perfectly stiff
+					wire.position = mid + Vector3(0, -0.15, 0)
+					wire.material = _mat_wire
+					wire.name = "PowerLine"
+					add_child(wire)
+
+			prev_insulators = insulator_positions
+			dist += spacing
