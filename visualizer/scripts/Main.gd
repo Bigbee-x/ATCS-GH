@@ -23,6 +23,14 @@ extends Node3D
 @onready var ui: Control = $UI/UIRoot
 @onready var camera: Camera3D = $IsometricCamera
 @onready var tod_manager: Node = $TimeOfDayManager
+@onready var weather_manager: Node = $WeatherManager
+@onready var cloud_manager: Node3D = $CloudManager
+@onready var drone: Node3D = $DroneController
+@onready var sensor_builder: Node3D = $SensorBuilder
+
+# ── Drone/chopper flight mode ────────────────────────────────────────────────
+var _drone_mode_active: bool = false
+var _drone_hint_label: Label = null
 
 # ── Ground-level pedestrian mode ─────────────────────────────────────────────
 var _player: CharacterBody3D = null
@@ -92,18 +100,52 @@ func _ready() -> void:
 	ui.pedestrian_toggled.connect(_on_pedestrian_toggled)
 
 	# ── Wire up TimeOfDayManager ─────────────────────────────────────────
+	# Children's _ready() runs before the parent's, so tod_manager._ready()
+	# already fired once with sun/world_env still null and returned early —
+	# leaving the scene at whatever the .tscn defaults are. Assign the refs
+	# and then force_reapply so the first rendered frame has correct sun
+	# angle / sky / ambient / fog for the current time_of_day (12.0 = noon).
 	tod_manager.sun = $DirectionalLight3D
 	tod_manager.world_env = $WorldEnvironment
 	tod_manager.time_changed.connect(_on_time_changed)
 	tod_manager.night_mode_changed.connect(_on_night_mode_changed)
 	ui.time_of_day_changed.connect(_on_ui_time_changed)
 	ui.tod_mode_changed.connect(_on_ui_tod_mode_changed)
+	if tod_manager.has_method("force_reapply"):
+		tod_manager.force_reapply()
+
+	# ── Wire up WeatherManager (layers on top of TimeOfDayManager) ───────
+	weather_manager.tod = tod_manager
+	weather_manager.sun = $DirectionalLight3D
+	weather_manager.world_env = $WorldEnvironment
+	weather_manager.camera_follow = camera
+	ui.weather_changed.connect(_on_ui_weather_changed)
+
+	# ── Wire up CloudManager (listens to TOD + weather signals) ──────────
+	# Children's _ready() runs before the parent's, so we assign refs here
+	# and then call initialize() which hooks up the signals and applies
+	# the first-frame color.
+	cloud_manager.tod = tod_manager
+	cloud_manager.weather_manager = weather_manager
+	if cloud_manager.has_method("initialize"):
+		cloud_manager.initialize()
+
+	# ── Attach CCTV / radar / cabinet props to each signal pole ──────────
+	# Intersection's _ready() has already run (children before parent), so
+	# the TrafficLight_<approach> nodes exist and we can walk them.
+	if sensor_builder and sensor_builder.has_method("attach_to_intersection"):
+		sensor_builder.attach_to_intersection(intersection)
 
 	# ── Spawn ground-level player controller (dormant until V pressed) ───
 	_setup_player()
 
+	# ── Drone/chopper mode (dormant until H pressed) ─────────────────────
+	_setup_drone_hint()
+	if drone.has_signal("mode_changed"):
+		drone.mode_changed.connect(_on_drone_mode_changed)
+
 	print("[Main] All signals connected. Waiting for server data...")
-	print("[Main] Tip: press V to drop into ground-level pedestrian mode.")
+	print("[Main] Tip: V = ground mode | H = chopper | K = sensor sightlines")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -237,6 +279,24 @@ func _on_ui_tod_mode_changed(mode_idx: int) -> void:
 	tod_manager.set_mode(mode_idx)
 
 
+func _on_ui_weather_changed(weather_idx: int) -> void:
+	## User picked a new weather mode (0=Clear, 1=Overcast, 2=Harmattan, 3=Rain).
+	weather_manager.set_weather(weather_idx)
+
+	# Drive vehicle headlights from the weather. Night mode still wins over
+	# this — VehicleManager composes the two in _lights_on_for().
+	#   Clear     → no weather demand
+	#   Overcast  → ~40 % of cars flip their lights on
+	#   Harmattan → dusty but bright; no lights
+	#   Rain      → every car runs lights
+	var lights_mode: int = 0   # WeatherLights.OFF
+	match weather_idx:
+		1: lights_mode = 1     # WeatherLights.PARTIAL
+		3: lights_mode = 2     # WeatherLights.ALL
+	if vehicle_manager.has_method("set_weather_lights_mode"):
+		vehicle_manager.set_weather_lights_mode(lights_mode)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # CAMERA CONTROLS
 # ═════════════════════════════════════════════════════════════════════════════
@@ -254,13 +314,35 @@ func _on_ui_tod_mode_changed(mode_idx: int) -> void:
 func _process(delta: float) -> void:
 	if _ground_mode_active:
 		return  # Player controller owns WASD/mouse/keys while on the ground
+	if _drone_mode_active:
+		return  # Drone controller owns WASD/mouse/keys while flying
 	_process_camera_keys(delta)
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# ── K: toggle sensor sightline cones ────────────────────────────────
+	# Works in every mode (top-down, ground, drone) — it's a scene-wide
+	# overlay, not a camera mode. Checked before the mode gates below so
+	# the pilot can still toggle it while flying.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K:
+		if sensor_builder and sensor_builder.has_method("toggle_sightlines"):
+			sensor_builder.toggle_sightlines()
+		get_viewport().set_input_as_handled()
+		return
+
 	# ── V: toggle ground-level pedestrian mode ──────────────────────────
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_V:
+		if _drone_mode_active:
+			_toggle_drone_mode()   # exit drone first — only one mode at a time
 		_toggle_ground_mode()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── H: toggle drone/chopper flight mode ─────────────────────────────
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_H:
+		if _ground_mode_active:
+			_toggle_ground_mode()  # exit pedestrian first
+		_toggle_drone_mode()
 		get_viewport().set_input_as_handled()
 		return
 
@@ -272,16 +354,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	# ── Escape: exit ground mode first, else return to launcher ─────────
+	# ── Escape: exit special modes first, else return to launcher ───────
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		if _ground_mode_active:
+		if _drone_mode_active:
+			_toggle_drone_mode()
+		elif _ground_mode_active:
 			_toggle_ground_mode()
 		else:
 			get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
 		return
 
-	# ── Skip top-down camera controls while player is on the ground ─────
-	if _ground_mode_active:
+	# ── Skip top-down camera controls while in a special mode ───────────
+	if _ground_mode_active or _drone_mode_active:
 		return
 
 	# ── R key: reset camera ─────────────────────────────────────────────
@@ -290,31 +374,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
-	# ── Trackpad pinch-to-zoom ───────────────────────────────────────────
+	# ── Trackpad pinch-to-zoom (anchored at mouse cursor) ────────────────
 	if event is InputEventMagnifyGesture:
 		var zoom_delta: float = (1.0 - event.factor) * 0.5
-		_zoom_level = clampf(_zoom_level + zoom_delta, ZOOM_MIN, ZOOM_MAX)
-		_apply_camera()
+		_zoom_at_cursor(zoom_delta)
 		get_viewport().set_input_as_handled()
 		return
 
-	# ── Trackpad pan gesture (two-finger scroll) ────────────────────────
+	# ── Trackpad pan gesture (two-finger scroll — used as zoom here) ────
 	if event is InputEventPanGesture:
-		_zoom_level = clampf(_zoom_level + event.delta.y * 0.02, ZOOM_MIN, ZOOM_MAX)
-		_apply_camera()
+		_zoom_at_cursor(event.delta.y * 0.02)
 		get_viewport().set_input_as_handled()
 		return
 
 	# ── Mouse buttons ────────────────────────────────────────────────────
 	if event is InputEventMouseButton:
-		# Scroll wheel zoom
+		# Scroll wheel zoom — anchored at mouse cursor so you stay on what you're looking at
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-			_zoom_level = clampf(_zoom_level - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-			_apply_camera()
+			_zoom_at_cursor(-ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-			_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
-			_apply_camera()
+			_zoom_at_cursor(ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 
 		# Left-click: Cmd+click = orbit, plain click = pan
@@ -436,6 +516,35 @@ func _apply_camera() -> void:
 	camera.size = _camera_default_size * _zoom_level
 
 
+func _zoom_at_cursor(zoom_delta: float) -> void:
+	## Zoom anchored at the mouse cursor instead of the pivot. Without this,
+	## every zoom visually yanks the view toward whatever is at screen center
+	## (the orbit pivot) — moving the pivot by the cursor's world-offset delta
+	## keeps the point under the mouse stuck to the mouse through the zoom.
+	var new_zoom: float = clampf(_zoom_level + zoom_delta, ZOOM_MIN, ZOOM_MAX)
+	if is_equal_approx(new_zoom, _zoom_level):
+		return  # at a zoom limit — no motion, no pivot shift
+	var world_before: Vector3 = _mouse_ground_point()
+	_zoom_level = new_zoom
+	_apply_camera()
+	var world_after: Vector3 = _mouse_ground_point()
+	_camera_pivot += world_before - world_after
+	_apply_camera()
+
+
+func _mouse_ground_point() -> Vector3:
+	## Project the current mouse cursor onto the ground plane (y=0).
+	## Used for cursor-anchored zoom. Falls back to the pivot if the
+	## camera is looking horizontal (ray parallel to ground).
+	var mouse_pos: Vector2 = get_viewport().get_mouse_position()
+	var origin: Vector3 = camera.project_ray_origin(mouse_pos)
+	var dir: Vector3 = camera.project_ray_normal(mouse_pos)
+	if absf(dir.y) < 0.001:
+		return _camera_pivot
+	var t: float = -origin.y / dir.y
+	return origin + dir * t
+
+
 func _reset_camera() -> void:
 	## Reset camera to default position, rotation, and zoom.
 	_camera_pivot = Vector3.ZERO
@@ -515,4 +624,65 @@ func _update_ground_hint() -> void:
 	if _player.has_method("is_first_person"):
 		fp = bool(_player.call("is_first_person"))
 	var view_name: String = "First-person" if fp else "Third-person"
-	_ground_hint_label.text = "GROUND MODE — %s  |  WASD move  •  Shift sprint  •  Space jump  •  F switch view  •  V / Esc exit" % view_name
+	_ground_hint_label.text = "GROUND MODE — %s  |  WASD move  •  Shift sprint  •  Space jump  •  F switch view  •  K sensor FOV  •  V / Esc exit" % view_name
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DRONE / CHOPPER FLIGHT MODE
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _setup_drone_hint() -> void:
+	## Bottom-centered text overlay shown while drone mode is active.
+	## Mirrors the ground-mode hint so muscle memory carries over.
+	_drone_hint_label = Label.new()
+	_drone_hint_label.name = "DroneModeHint"
+	_drone_hint_label.anchor_left = 0.5
+	_drone_hint_label.anchor_right = 0.5
+	_drone_hint_label.anchor_top = 1.0
+	_drone_hint_label.anchor_bottom = 1.0
+	_drone_hint_label.offset_left  = -320.0
+	_drone_hint_label.offset_right =  320.0
+	_drone_hint_label.offset_top   = -60.0
+	_drone_hint_label.offset_bottom = -20.0
+	_drone_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drone_hint_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	_drone_hint_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	_drone_hint_label.add_theme_constant_override("shadow_offset_x", 1)
+	_drone_hint_label.add_theme_constant_override("shadow_offset_y", 1)
+	_drone_hint_label.add_theme_font_size_override("font_size", 14)
+	_drone_hint_label.text = "CHOPPER MODE — Mouse look  •  WASD fly  •  Space/Ctrl up/down  •  Shift boost  •  K sensor FOV  •  H / Esc exit"
+	_drone_hint_label.visible = false
+	_drone_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ui_root := ui as Control
+	if ui_root:
+		ui_root.add_child(_drone_hint_label)
+
+
+func _toggle_drone_mode() -> void:
+	_drone_mode_active = not _drone_mode_active
+	if _drone_mode_active:
+		# Stop any in-progress top-down pan/orbit
+		_is_panning = false
+		_is_rotating = false
+		if drone and drone.has_method("activate"):
+			drone.activate()
+		if _drone_hint_label:
+			_drone_hint_label.visible = true
+		print("[Main] Chopper mode: ON")
+	else:
+		if drone and drone.has_method("deactivate"):
+			drone.deactivate()
+		camera.current = true   # restore the top-down isometric camera
+		if _drone_hint_label:
+			_drone_hint_label.visible = false
+		print("[Main] Chopper mode: OFF")
+
+
+func _on_drone_mode_changed(active: bool) -> void:
+	## Fired by DroneController when it activates/deactivates. Keeps our
+	## local flag honest even if some future path toggles the drone directly.
+	_drone_mode_active = active
+	if _drone_hint_label:
+		_drone_hint_label.visible = active
+	if not active:
+		camera.current = true

@@ -668,6 +668,16 @@ func _build_commercial_quadrant(xs: float, zs: float) -> void:
 	_place_midrise_office(Vector3(xs * 42, 0, zs * 55), 4, 4.8, 4.8)
 	_place_midrise_office(Vector3(xs * 72, 0, zs * 50), 3, 4.5, 5.0)
 
+	# Extra area lights so the commercial quadrant reads at night.
+	_place_stadium_light(Vector3(xs * 16, 0, zs * 18))   # corner by junction
+	_place_stadium_light(Vector3(xs * 40, 0, zs * 48))   # between towers
+	_place_stadium_light(Vector3(xs * 80, 0, zs * 58))   # behind mid-rise
+	_place_stadium_light(Vector3(xs * 18, 0, zs * 72))   # near tower 3
+
+	# Extra parking lots — office block + mid-rise strip.
+	_place_parking_lot(Vector3(xs * 18, 0, zs * 40), 10.0, 6.0, 6)
+	_place_parking_lot(Vector3(xs * 60, 0, zs * 15), 12.0, 5.5, 8)
+
 
 # ─── NW: Institutional district ─────────────────────────────────────────────
 
@@ -680,7 +690,7 @@ func _build_institutional_quadrant(xs: float, zs: float) -> void:
 	_place_school_building(Vector3(xs * 30, 0, zs * 72), 2, 10.0, 5.5)
 	_place_school_building(Vector3(xs * 66, 0, zs * 72), 2, 10.0, 5.5)
 
-	# Football pitch (prominent green rectangle)
+	# Football pitch (prominent green rectangle — has its own 4 stadium lights)
 	_place_football_pitch(Vector3(xs * 48, 0, zs * 38), 22.0, 13.0)
 
 	# Church — distinctive cross tower
@@ -688,6 +698,15 @@ func _build_institutional_quadrant(xs: float, zs: float) -> void:
 
 	# Clinic — smaller civic building
 	_place_clinic(Vector3(xs * 25, 0, zs * 28))
+
+	# Extra area lights for the school yard + church/clinic frontage.
+	_place_stadium_light(Vector3(xs * 48, 0, zs * 22))   # frontage near junction
+	_place_stadium_light(Vector3(xs * 20, 0, zs * 55))   # between clinic and school
+	_place_stadium_light(Vector3(xs * 48, 0, zs * 80))   # behind school wings
+
+	# School staff parking + church visitor parking.
+	_place_parking_lot(Vector3(xs * 58, 0, zs * 53), 10.0, 5.5, 6)
+	_place_parking_lot(Vector3(xs * 15, 0, zs * 62), 9.0, 5.5, 5)
 
 
 # ─── SW: Industrial yard district ───────────────────────────────────────────
@@ -737,13 +756,60 @@ func _build_residential_quadrant(xs: float, zs: float) -> void:
 		Vector3(xs * 24, 0, zs * 50),
 		Vector3(xs * 46, 0, zs * 50),
 		Vector3(xs * 68, 0, zs * 50),
-		Vector3(xs * 28, 0, zs * 74),
-		Vector3(xs * 52, 0, zs * 74),
-		Vector3(xs * 74, 0, zs * 74),
+		# Row 3 aligned with the other rows so compounds don't clip the N-S
+		# streets at x=35 and x=57 (14-wide compounds extend ±7 from center).
+		Vector3(xs * 24, 0, zs * 74),
+		Vector3(xs * 46, 0, zs * 74),
+		Vector3(xs * 68, 0, zs * 74),
 	]
 	for pos in grid_positions:
 		var stories: int = 1 if _rng.randf() < 0.4 else 2
 		_place_house_compound(pos, 14.0, stories)
+
+	# ─── Internal residential street grid ─────────────────────────────
+	# Two N-S + two E-W streets thread between the compound rows. They
+	# extend from the quadrant interior out to ~5 units from the main-
+	# road sidewalk so the neighborhood visually connects to the arterial.
+	# Center at 45 with length 80 → spans [5, 85] in local coords.
+	var street_len: float = 80.0
+	var street_center: float = 45.0
+	for street_x in [35.0, 57.0]:
+		_place_residential_street(
+			Vector3(xs * street_x, 0, zs * street_center),
+			street_len, true
+		)
+	for street_z in [38.0, 62.0]:
+		_place_residential_street(
+			Vector3(xs * street_center, 0, zs * street_z),
+			street_len, false
+		)
+
+	# Prevent trees from spawning on the new asphalt.
+	var z_lo: float = min(zs * 5.0, zs * 85.0)
+	var z_hi: float = max(zs * 5.0, zs * 85.0)
+	for street_x in [35.0, 57.0]:
+		_add_exclusion_zone(xs * street_x - 1.6, z_lo, xs * street_x + 1.6, z_hi)
+	var x_lo: float = min(xs * 5.0, xs * 85.0)
+	var x_hi: float = max(xs * 5.0, xs * 85.0)
+	for street_z in [38.0, 62.0]:
+		_add_exclusion_zone(x_lo, zs * street_z - 1.6, x_hi, zs * street_z + 1.6)
+
+	# Street lamps at intersections + near the main-road approaches + far end.
+	# N-S streets run at x=35 and x=57 (width 3 → edges at ±1.5 from center).
+	# E-W streets run at z=38 and z=62. Lamps are offset +2 on both axes so
+	# poles sit on the curb (~0.5 past the asphalt edge), not in the road.
+	for lp in [
+		Vector2(37, 40), Vector2(59, 40),    # SE corner of the two near intersections
+		Vector2(37, 64), Vector2(59, 64),    # SE corner of the two far intersections
+		Vector2(37, 15), Vector2(59, 15),    # east-side curbs near main-road approach
+		Vector2(37, 82), Vector2(59, 82),    # east-side curbs at far dead-end
+	]:
+		_place_residential_lamp(Vector3(xs * lp.x, 0, zs * lp.y))
+
+	# Three small residential parking lots tucked against the quadrant edges.
+	_place_parking_lot(Vector3(xs * 15, 0, zs * 42), 5.0, 3.0, 3)
+	_place_parking_lot(Vector3(xs * 82, 0, zs * 42), 5.0, 3.0, 3)
+	_place_parking_lot(Vector3(xs * 40, 0, zs * 88), 6.0, 3.0, 4)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1484,6 +1550,53 @@ func _place_container_yard(center: Vector3) -> void:
 				stacked.material = _get_material(top_col)
 				stacked.name = "ContainerStacked"
 				add_child(stacked)
+
+
+func _place_residential_street(center: Vector3, length: float, is_ns: bool,
+							   width: float = 3.0) -> void:
+	## Flat asphalt slab for an internal neighborhood street. Sits just above
+	## the ground plane; buildings and lamps placed on top render correctly.
+	var slab := CSGBox3D.new()
+	if is_ns:
+		slab.size = Vector3(width, 0.08, length)
+	else:
+		slab.size = Vector3(length, 0.08, width)
+	slab.position = center + Vector3(0, 0.04, 0)
+	slab.material = _get_material(ASPHALT)
+	slab.name = "ResidentialStreet"
+	add_child(slab)
+
+
+func _place_residential_lamp(base: Vector3) -> void:
+	## Small residential street lamp — 4m pole with a warm sodium head.
+	## OmniLight is appended to _yard_lights so it toggles with the night cycle.
+	var pole_h := 4.0
+	var pole := CSGCylinder3D.new()
+	pole.radius = 0.07
+	pole.height = pole_h
+	pole.position = base + Vector3(0, pole_h / 2.0, 0)
+	pole.material = _get_material(Color(0.30, 0.30, 0.32))
+	pole.name = "ResLampPole"
+	add_child(pole)
+
+	# Small lamp head — shares the sodium glow material (emissive at night).
+	var head := CSGBox3D.new()
+	head.size = Vector3(0.28, 0.12, 0.28)
+	head.position = base + Vector3(0, pole_h + 0.06, 0)
+	head.material = _mat_sodium_glow
+	head.name = "ResLampHead"
+	add_child(head)
+
+	# Real scene light — bright enough to actually illuminate nearby houses.
+	var light := OmniLight3D.new()
+	light.position = base + Vector3(0, pole_h + 0.15, 0)
+	light.omni_range = 22.0
+	light.light_energy = 3.5
+	light.light_color = Color(1.0, 0.85, 0.55)
+	light.shadow_enabled = false
+	light.visible = false
+	add_child(light)
+	_yard_lights.append(light)
 
 
 func _place_yard_light(base: Vector3) -> void:

@@ -33,6 +33,8 @@ signal pedestrian_toggled(enabled: bool)
 signal time_of_day_changed(hour: float)
 ## Emitted when the user changes the TOD mode (0=Manual, 1=Auto, 2=SimLinked)
 signal tod_mode_changed(mode_idx: int)
+## Emitted when the user picks a weather mode (0=Clear, 1=Overcast, 2=Harmattan, 3=Rain)
+signal weather_changed(weather_idx: int)
 
 # ── Corridor mode ──────────────────────────────────────────────────────────
 var corridor_mode: bool = false
@@ -77,8 +79,16 @@ var _tod_panel: PanelContainer
 var _lbl_tod_time: Label
 var _slider_tod: HSlider
 var _btn_tod_mode: Button
-var _tod_mode_idx: int = 1                  # 0=Manual, 1=Auto, 2=SimLinked
+var _tod_mode_idx: int = 0                  # 0=Manual, 1=Auto, 2=SimLinked
+											 # Default Manual so time doesn't drift into
+                                             # dusk within a couple of minutes of launch.
 const TOD_MODE_NAMES: Array = ["Manual", "Auto", "Sim"]
+
+# Weather controls (sits inside the TOD panel)
+var _btn_weather: Button
+var _weather_idx: int = 0                    # 0=Clear, 1=Overcast, 2=Harmattan, 3=Rain
+const WEATHER_NAMES: Array = ["Clear", "Overcast", "Harmattan", "Rain"]
+const WEATHER_ICONS: Array = ["☀", "☁", "🌤", "🌧"]
 
 # Emergency banner
 var _emergency_banner: PanelContainer
@@ -653,13 +663,13 @@ func _build_tod_panel() -> void:
 	lbl_icon.name = "TODIcon"
 	hbox_top.add_child(lbl_icon)
 
-	_lbl_tod_time = _make_label("10:00 AM", 13)
+	_lbl_tod_time = _make_label("12:00 PM", 13)
 	_lbl_tod_time.add_theme_color_override("font_color", ACCENT_ORANGE)
 	_lbl_tod_time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hbox_top.add_child(_lbl_tod_time)
 
 	_btn_tod_mode = Button.new()
-	_btn_tod_mode.text = "Auto"
+	_btn_tod_mode.text = "Manual"
 	_btn_tod_mode.custom_minimum_size = Vector2(55, 24)
 	_btn_tod_mode.add_theme_font_size_override("font_size", 11)
 	_btn_tod_mode.add_theme_color_override("font_color", Color.WHITE)
@@ -677,6 +687,7 @@ func _build_tod_panel() -> void:
 	var mode_hover := mode_style.duplicate()
 	mode_hover.bg_color = Color(0.35, 0.35, 0.50, 0.95)
 	_btn_tod_mode.add_theme_stylebox_override("hover", mode_hover)
+	_btn_tod_mode.focus_mode = Control.FOCUS_NONE
 	_btn_tod_mode.pressed.connect(_on_tod_mode_pressed)
 	hbox_top.add_child(_btn_tod_mode)
 
@@ -685,10 +696,47 @@ func _build_tod_panel() -> void:
 	_slider_tod.min_value = 0.0
 	_slider_tod.max_value = 24.0
 	_slider_tod.step = 0.1
-	_slider_tod.value = 10.0
+	_slider_tod.value = 12.0        # Noon — matches TimeOfDayManager default
+	_slider_tod.editable = true     # Manual mode is the default, so the user can scrub
 	_slider_tod.custom_minimum_size = Vector2(200, 20)
+	# Block keyboard focus so arrow keys don't double as a time scrub while
+	# the user is panning the camera (camera reads ui_up/down/left/right).
+	_slider_tod.focus_mode = Control.FOCUS_NONE
 	_slider_tod.value_changed.connect(_on_tod_slider_changed)
 	vbox.add_child(_slider_tod)
+
+	# ── Weather row (below the slider) ────────────────────────────────
+	var hbox_weather := HBoxContainer.new()
+	hbox_weather.add_theme_constant_override("separation", 6)
+	vbox.add_child(hbox_weather)
+
+	var lbl_weather_caption := _make_label("Weather", 11)
+	lbl_weather_caption.add_theme_color_override("font_color", TEXT_DIM)
+	lbl_weather_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox_weather.add_child(lbl_weather_caption)
+
+	_btn_weather = Button.new()
+	_btn_weather.text = "%s  %s" % [WEATHER_ICONS[0], WEATHER_NAMES[0]]
+	_btn_weather.custom_minimum_size = Vector2(118, 24)
+	_btn_weather.add_theme_font_size_override("font_size", 11)
+	_btn_weather.add_theme_color_override("font_color", Color.WHITE)
+	var w_style := StyleBoxFlat.new()
+	w_style.bg_color = Color(0.22, 0.28, 0.38, 0.9)
+	w_style.corner_radius_top_left = 4
+	w_style.corner_radius_top_right = 4
+	w_style.corner_radius_bottom_left = 4
+	w_style.corner_radius_bottom_right = 4
+	w_style.content_margin_left = 6
+	w_style.content_margin_right = 6
+	w_style.content_margin_top = 2
+	w_style.content_margin_bottom = 2
+	_btn_weather.add_theme_stylebox_override("normal", w_style)
+	var w_hover := w_style.duplicate()
+	w_hover.bg_color = Color(0.32, 0.40, 0.55, 0.95)
+	_btn_weather.add_theme_stylebox_override("hover", w_hover)
+	_btn_weather.focus_mode = Control.FOCUS_NONE
+	_btn_weather.pressed.connect(_on_weather_pressed)
+	hbox_weather.add_child(_btn_weather)
 
 
 func _on_tod_mode_pressed() -> void:
@@ -703,6 +751,13 @@ func _on_tod_slider_changed(value: float) -> void:
 	## User dragged the time slider.
 	if _tod_mode_idx == 0:  # Only emit in manual mode
 		time_of_day_changed.emit(value)
+
+
+func _on_weather_pressed() -> void:
+	## Cycle through weather modes: Clear → Overcast → Harmattan → Rain → Clear.
+	_weather_idx = (_weather_idx + 1) % WEATHER_NAMES.size()
+	_btn_weather.text = "%s  %s" % [WEATHER_ICONS[_weather_idx], WEATHER_NAMES[_weather_idx]]
+	weather_changed.emit(_weather_idx)
 
 
 func update_time_display(hour: float) -> void:

@@ -16,9 +16,11 @@ signal night_mode_changed(is_night: bool)
 # ── Mode ────────────────────────────────────────────────────────────────────
 enum Mode { MANUAL, AUTO_CYCLE, SIM_LINKED }
 
-var mode: Mode = Mode.AUTO_CYCLE
-var time_of_day: float = 10.0   # 0.0–24.0 (hours)
-var cycle_speed: float = 30.0   # Real seconds per sim-hour (full day in 12 min)
+var mode: Mode = Mode.MANUAL    # Start stable — user must opt in to auto-cycle
+var time_of_day: float = 12.0   # 0.0–24.0 (hours) — start at true noon for max brightness
+var cycle_speed: float = 120.0  # Real seconds per sim-hour (full day in ~48 min)
+                                # Slower than before so CLEAR noon is visible for a while
+                                # before the sun drops, even if the user switches to AUTO.
 
 # ── Night state ─────────────────────────────────────────────────────────────
 var _is_night: bool = false
@@ -46,17 +48,32 @@ const KEYFRAMES: Array = [
 	 Color(0.25, 0.25, 0.50), Color(0.85, 0.55, 0.30),
 	 Color(0.15, 0.15, 0.12), Color(0.50, 0.40, 0.30),
 	 0.002],
-	# Morning (default — matches original scene)
-	[10.0, 1.3, Color(1.0, 0.96, 0.9),   45.0,
+	# Bright morning — clear daylight already in by 9:30
+	[9.5,  1.30, Color(1.0, 0.96, 0.9),   50.0,
 	 0.6,  Color(0.35, 0.35, 0.40),
 	 Color(0.35, 0.55, 0.85), Color(0.65, 0.75, 0.88),
 	 Color(0.18, 0.22, 0.15), Color(0.55, 0.62, 0.55),
 	 0.0],
-	# Noon
-	[14.0, 1.5, Color(1.0, 1.0, 0.98),   70.0,
+	# Peak hot daylight — START of the flat plateau (11:00)
+	[11.0, 1.55, Color(1.0, 1.0, 0.98),   70.0,
 	 0.7,  Color(0.40, 0.40, 0.45),
 	 Color(0.30, 0.50, 0.90), Color(0.60, 0.72, 0.92),
 	 Color(0.20, 0.25, 0.16), Color(0.55, 0.62, 0.55),
+	 0.0],
+	# Peak hot daylight — END of the flat plateau (3:50 PM)
+	# Values intentionally identical to the 11:00 keyframe except for the sun
+	# pitch (which legitimately drops as the sun moves across the sky). The
+	# interpolator produces a flat peak between these two times.
+	[15.833, 1.55, Color(1.0, 1.0, 0.98),   65.0,
+	 0.7,  Color(0.40, 0.40, 0.45),
+	 Color(0.30, 0.50, 0.90), Color(0.60, 0.72, 0.92),
+	 Color(0.20, 0.25, 0.16), Color(0.55, 0.62, 0.55),
+	 0.0],
+	# Golden hour begins — slight dimming starts at 4:00 PM
+	[16.0, 1.30, Color(1.0, 0.92, 0.80),   55.0,
+	 0.55, Color(0.42, 0.38, 0.35),
+	 Color(0.38, 0.58, 0.88), Color(0.75, 0.70, 0.65),
+	 Color(0.20, 0.22, 0.14), Color(0.55, 0.55, 0.45),
 	 0.0],
 	# Dusk
 	[17.0, 0.8, Color(1.0, 0.55, 0.25),  25.0,
@@ -129,6 +146,14 @@ func is_night() -> bool:
 	return _is_night
 
 
+func force_reapply() -> void:
+	## Re-apply the current time-of-day values to sun/sky/ambient/fog.
+	## Used by WeatherManager each frame so it can layer its modifiers on
+	## top of a freshly-written base (otherwise weather tints would drift
+	## in manual mode where _apply_time() isn't called every frame).
+	_apply_time(time_of_day)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # INTERPOLATION ENGINE
 # ═════════════════════════════════════════════════════════════════════════════
@@ -179,11 +204,17 @@ func _apply_time(hour: float) -> void:
 	sun.light_color = sun_color
 	sun.visible = sun_energy > 0.01
 
-	# Rotate sun pitch while keeping yaw constant
+	# Rotate sun pitch while keeping yaw/roll constant.
+	# "pitch" in the keyframes = elevation above horizon (90 = zenith, 0 = horizon,
+	# negative = below horizon). DirectionalLight3D shines along its local -Z axis;
+	# rotating by R_x(θ) sends (0,0,-1) → (0, sin θ, -cos θ), so to get light rays
+	# pointing θ° below horizontal (sun at elevation θ) we set rotation.x = -θ.
+	# Previous formula `-(90 - pitch)` was inverted: at noon (pitch=70) it rendered
+	# the sun at 20° elevation (long shadows, dim scene) and at midnight (pitch=-10)
+	# it rendered the sun still above the horizon.
 	if _sun_base_transform == Transform3D():
 		_sun_base_transform = sun.transform
-	# Reconstruct rotation: keep original yaw/roll, change pitch (X rotation)
-	sun.rotation_degrees.x = -(90.0 - sun_pitch)  # Map pitch angle to Godot rotation
+	sun.rotation_degrees.x = -sun_pitch
 
 	# ── Apply ambient ──────────────────────────────────────────────────
 	if _environment:

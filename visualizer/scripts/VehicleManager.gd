@@ -232,32 +232,62 @@ func _process(delta: float) -> void:
 # PUBLIC API
 # ═════════════════════════════════════════════════════════════════════════════
 
+## Weather-driven headlight modes, stacked on top of night mode.
+##   OFF     — no weather demand (night mode alone still applies)
+##   PARTIAL — only ~40 % of vehicles run lights (used for overcast)
+##   ALL     — every vehicle runs lights (used for rain)
+enum WeatherLights { OFF, PARTIAL, ALL }
+
+const PARTIAL_LIGHTS_THRESHOLD: int = 40   # % of vehicles that run lights in partial mode
+
+var _weather_lights: WeatherLights = WeatherLights.OFF
+
+
 func set_night_mode(enabled: bool) -> void:
 	## Toggle headlights, taillights, and windshield glow for night mode.
 	## Uses VISIBILITY toggle (not material changes) so shared materials
 	## aren't disrupted by the per-vehicle opacity system.
 	_is_night = enabled
+	_refresh_all_vehicle_lights()
 
-	# Windshield glow (shared material — safe since it's subtle)
+
+func set_weather_lights_mode(mode: int) -> void:
+	## Drive headlights from weather (0=OFF, 1=PARTIAL overcast, 2=ALL rain).
+	## Composes with night mode — whichever calls for lights wins.
+	_weather_lights = mode as WeatherLights
+	_refresh_all_vehicle_lights()
+
+
+func _refresh_all_vehicle_lights() -> void:
+	## Recompute the windshield glow material + every vehicle's headlight
+	## visibility from the current (night, weather) state.
+	var force_all: bool = _is_night or _weather_lights == WeatherLights.ALL
+
+	# Windshield is a shared material → on only when ALL cars should have lights
+	# (can't do per-vehicle with a shared material). Partial overcast skips it.
 	if _mat_windshield:
-		_mat_windshield.emission_enabled = enabled
-		if enabled:
+		_mat_windshield.emission_enabled = force_all
+		if force_all:
 			_mat_windshield.emission = Color(0.9, 0.85, 0.6)
 			_mat_windshield.emission_energy_multiplier = 1.5
 
-	# Toggle visibility of headlight/taillight nodes on ALL vehicles
-	_toggle_all_vehicle_lights(enabled)
-
-
-func _toggle_all_vehicle_lights(lights_on: bool) -> void:
-	## Show/hide headlight and taillight CSG nodes on every vehicle.
-	# Active vehicles
+	# Per-vehicle: active cars (we know their vid) → exact decision
 	for vid in _active:
 		var veh_node: Node3D = _active[vid]["node"]
-		_set_lights_visible(veh_node, lights_on)
-	# Pooled cars (so they're correct when next acquired)
+		_set_lights_visible(veh_node, _lights_on_for(vid))
+	# Pool cars are dark until acquired — _spawn_vehicle handles that path.
 	for car in _car_pool:
-		_set_lights_visible(car, lights_on)
+		_set_lights_visible(car, false)
+
+
+func _lights_on_for(vid: String) -> bool:
+	## Per-vehicle lights decision, stable across frames for a given vid.
+	if _is_night or _weather_lights == WeatherLights.ALL:
+		return true
+	if _weather_lights == WeatherLights.PARTIAL:
+		# Deterministic hash bucket so the same car keeps the same behaviour
+		return absi(vid.hash()) % 100 < PARTIAL_LIGHTS_THRESHOLD
+	return false
 
 
 func _set_lights_visible(veh_node: Node3D, lights_on: bool) -> void:
@@ -450,6 +480,11 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 	node.position = pos
 	node.rotation.y = rot
 	node.visible = true
+
+	# Apply the current night/weather lights decision to this specific vehicle.
+	# Pool nodes come back with lights hidden (see _refresh_all_vehicle_lights),
+	# so without this step a car acquired during rain would spawn dark.
+	_set_lights_visible(node, _lights_on_for(vid))
 
 	_active[vid] = {
 		"node": node,

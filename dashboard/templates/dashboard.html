@@ -7,156 +7,187 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         :root {
-            --bg-primary: #0f1117;
-            --bg-card: #1a1d28;
-            --bg-card-hover: #222636;
-            --accent: #4f8cff;
-            --accent-green: #22c55e;
-            --accent-red: #ef4444;
-            --accent-yellow: #eab308;
-            --accent-purple: #a855f7;
-            --accent-orange: #f97316;
-            --text-primary: #e8eaed;
-            --text-secondary: #9ca3af;
-            --text-muted: #6b7280;
-            --border: #2d3348;
-            --radius: 12px;
+            /* Surfaces — tight grayscale ramp, no blue tint. */
+            --bg:           #0b0d12;
+            --surface:      #12151c;
+            --surface-hi:   #171a24;
+            --surface-hi-2: #1c2030;
+
+            /* Strokes */
+            --border:        #1f2432;
+            --border-strong: #2a3043;
+
+            /* Text — three-step hierarchy */
+            --text:       #e6e8ee;
+            --text-dim:   #8a92a3;
+            --text-faint: #5a6274;
+
+            /* Single accent. Used sparingly for interaction + primary-only emphasis. */
+            --accent:      #6a8cff;
+            --accent-soft: rgba(106, 140, 255, 0.12);
+
+            /* Status colors — ONLY for data meaning (better/worse), never decoration. */
+            --pos:      #4ade80;
+            --pos-soft: rgba(74, 222, 128, 0.12);
+            --neg:      #f87171;
+            --neg-soft: rgba(248, 113, 113, 0.12);
+
+            --radius: 10px;
+            --radius-sm: 6px;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            line-height: 1.45;
             min-height: 100vh;
         }
 
         /* ── Header ─────────────────────────────────────────── */
         .header {
-            background: linear-gradient(135deg, #1a1d28 0%, #0f1117 100%);
             border-bottom: 1px solid var(--border);
-            padding: 20px 32px;
+            padding: 18px 32px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
         .header h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 1.05rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--text);
         }
         .header .subtitle {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
+            color: var(--text-dim);
+            font-size: 0.8rem;
             margin-top: 2px;
         }
         .header .status-badge {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid var(--border-strong);
+            color: var(--text-dim);
+            background: var(--surface);
         }
-        .status-badge.training {
-            background: rgba(34, 197, 94, 0.15);
-            color: var(--accent-green);
-            border: 1px solid rgba(34, 197, 94, 0.3);
-        }
+        .status-badge.training { color: var(--text); }
         .status-badge.complete {
-            background: rgba(79, 140, 255, 0.15);
             color: var(--accent);
-            border: 1px solid rgba(79, 140, 255, 0.3);
+            border-color: rgba(106, 140, 255, 0.45);
+            background: var(--accent-soft);
         }
         .pulse {
-            width: 8px; height: 8px;
+            width: 6px; height: 6px;
             border-radius: 50%;
-            background: var(--accent-green);
+            background: var(--pos);
             animation: pulse 2s infinite;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+            50% { opacity: 0.35; }
         }
 
         /* ── Layout ─────────────────────────────────────────── */
-        .container { padding: 24px 32px; max-width: 1440px; margin: 0 auto; }
+        .container { padding: 24px 32px 48px; max-width: 1440px; margin: 0 auto; }
 
         .grid-4 {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
         }
-
         .grid-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 24px;
+            gap: 16px;
+            margin-bottom: 16px;
         }
-
         .grid-3 {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 24px;
+            gap: 16px;
+            margin-bottom: 16px;
         }
-
         .full-width { grid-column: 1 / -1; }
 
         /* ── Cards ──────────────────────────────────────────── */
         .card {
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 20px;
+            padding: 16px 18px;
+            transition: border-color 0.15s ease;
         }
-        .card:hover { background: var(--bg-card-hover); }
+        .card:hover { border-color: var(--border-strong); }
+
         .card h3 {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
+            letter-spacing: 0.08em;
+            color: var(--text-faint);
+            font-weight: 500;
+            margin-bottom: 10px;
         }
         .card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1.2;
+            font-size: 1.75rem;
+            font-weight: 600;
+            line-height: 1.1;
+            color: var(--text);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.015em;
         }
+        /* Data-meaningful colors only. Everything else stays on --text. */
+        .card .value.positive { color: var(--pos); }
+        .card .value.negative { color: var(--neg); }
+        .card .value.muted    { color: var(--text-dim); font-weight: 500; }
+
         .card .detail {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            margin-top: 4px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 6px;
         }
 
-        .value.green { color: var(--accent-green); }
-        .value.red { color: var(--accent-red); }
-        .value.blue { color: var(--accent); }
-        .value.yellow { color: var(--accent-yellow); }
-        .value.purple { color: var(--accent-purple); }
+        /* Scenario card — tiny color dot acts as the visual legend hint. */
+        .scenario-card h3 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .scenario-card .dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
 
         /* ── Chart Cards ────────────────────────────────────── */
         .chart-card {
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 20px;
+            padding: 16px 18px;
         }
         .chart-card h3 {
-            font-size: 0.9rem;
-            font-weight: 600;
-            margin-bottom: 16px;
-            color: var(--text-primary);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+            margin-bottom: 14px;
+            color: var(--text-dim);
         }
         .chart-wrap {
             position: relative;
-            height: 280px;
+            height: 260px;
         }
 
         /* ── Scenario Table ─────────────────────────────────── */
@@ -165,84 +196,95 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 0.85rem;
+            font-variant-numeric: tabular-nums;
         }
         th {
             text-align: left;
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text-muted);
-            font-weight: 600;
-            font-size: 0.75rem;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-strong);
+            color: var(--text-faint);
+            font-weight: 500;
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.08em;
         }
         td {
-            padding: 12px;
-            border-bottom: 1px solid rgba(45, 51, 72, 0.5);
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
         }
-        tr:hover td { background: var(--bg-card-hover); }
+        tr:hover td { background: var(--surface-hi); }
         .badge {
             display: inline-block;
             padding: 2px 10px;
-            border-radius: 10px;
-            font-size: 0.75rem;
+            border-radius: 999px;
+            font-size: 0.7rem;
             font-weight: 600;
+            letter-spacing: 0.03em;
+            border: 1px solid transparent;
         }
-        .badge.better { background: rgba(34, 197, 94, 0.15); color: var(--accent-green); }
-        .badge.worse { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+        .badge.better {
+            background: var(--pos-soft);
+            color: var(--pos);
+            border-color: rgba(74, 222, 128, 0.25);
+        }
+        .badge.worse {
+            background: var(--neg-soft);
+            color: var(--neg);
+            border-color: rgba(248, 113, 113, 0.25);
+        }
 
-        /* ── Progress Bar ───────────────────────────────────── */
+        /* ── Progress Bar — flat, single-color. No gradient. ─ */
         .progress-bar {
             width: 100%;
-            height: 6px;
-            background: var(--border);
-            border-radius: 3px;
-            margin-top: 12px;
+            height: 4px;
+            background: var(--surface-hi-2);
+            border-radius: 2px;
+            margin-top: 14px;
             overflow: hidden;
         }
         .progress-bar .fill {
             height: 100%;
-            border-radius: 3px;
-            background: linear-gradient(90deg, var(--accent), var(--accent-purple));
+            border-radius: 2px;
+            background: var(--accent);
             transition: width 0.5s ease;
         }
 
-        /* ── Section Headers ────────────────────────────────── */
+        /* ── Section Headers — quiet, label-style ──────────── */
         .section-header {
-            font-size: 1.1rem;
-            font-weight: 600;
+            font-size: 0.72rem;
+            font-weight: 500;
             margin-bottom: 16px;
-            margin-top: 8px;
-            padding-bottom: 8px;
+            padding-bottom: 10px;
             border-bottom: 1px solid var(--border);
+            color: var(--text-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
         }
 
-        /* ── Tabs ───────────────────────────────────────────── */
+        /* ── Tabs — underline, not pill ─────────────────────── */
         .tabs {
             display: flex;
-            gap: 4px;
-            margin-bottom: 20px;
-            background: var(--bg-card);
-            border-radius: 8px;
-            padding: 4px;
-            border: 1px solid var(--border);
-            width: fit-content;
+            gap: 2px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid var(--border);
         }
         .tab {
-            padding: 8px 20px;
-            border-radius: 6px;
+            padding: 10px 16px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             font-weight: 500;
-            color: var(--text-secondary);
-            transition: all 0.2s;
-            border: none;
+            color: var(--text-dim);
             background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s ease, border-color 0.15s ease;
         }
-        .tab:hover { color: var(--text-primary); }
+        .tab:hover { color: var(--text); }
         .tab.active {
-            background: var(--accent);
-            color: white;
+            color: var(--text);
+            border-bottom-color: var(--accent);
         }
 
         /* ── Responsive ─────────────────────────────────────── */
@@ -257,7 +299,8 @@
             align-items: center;
             justify-content: center;
             height: 200px;
-            color: var(--text-muted);
+            color: var(--text-faint);
+            font-size: 0.85rem;
         }
 
         /* ── Live Tab ───────────────────────────────────────── */
@@ -265,45 +308,49 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 16px;
-            border-radius: 8px;
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
             margin-bottom: 20px;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             font-weight: 500;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-dim);
         }
         .live-status.connected {
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid rgba(34, 197, 94, 0.3);
-            color: var(--accent-green);
+            color: var(--pos);
+            border-color: rgba(74, 222, 128, 0.25);
+            background: var(--pos-soft);
         }
         .live-status.disconnected {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: var(--accent-red);
+            color: var(--neg);
+            border-color: rgba(248, 113, 113, 0.25);
+            background: var(--neg-soft);
         }
         .live-dot {
-            width: 10px; height: 10px;
+            width: 8px; height: 8px;
             border-radius: 50%;
             flex-shrink: 0;
         }
-        .live-status.connected .live-dot { background: var(--accent-green); animation: pulse 2s infinite; }
-        .live-status.disconnected .live-dot { background: var(--accent-red); }
+        .live-status.connected .live-dot { background: var(--pos); animation: pulse 2s infinite; }
+        .live-status.disconnected .live-dot { background: var(--neg); }
 
         .live-kpi {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
             margin-bottom: 20px;
         }
-        .live-kpi .card { padding: 14px; }
-        .live-kpi .card .value { font-size: 1.5rem; }
+        .live-kpi .card { padding: 12px 14px; }
+        .live-kpi .card h3 { margin-bottom: 6px; font-size: 0.65rem; }
+        .live-kpi .card .value { font-size: 1.25rem; }
 
         .phase-timeline {
             display: flex;
-            height: 28px;
-            border-radius: 6px;
+            height: 24px;
+            border-radius: var(--radius-sm);
             overflow: hidden;
-            background: var(--bg-card);
+            background: var(--surface);
             border: 1px solid var(--border);
             margin-bottom: 20px;
         }
@@ -313,16 +360,17 @@
             align-items: center;
             justify-content: center;
             font-size: 0.6rem;
-            font-weight: 600;
-            color: rgba(255,255,255,0.8);
+            font-weight: 500;
+            color: rgba(255,255,255,0.85);
+            letter-spacing: 0.04em;
             min-width: 2px;
             overflow: hidden;
             white-space: nowrap;
         }
 
         .corridor-section {
-            margin-top: 24px;
-            padding-top: 16px;
+            margin-top: 28px;
+            padding-top: 20px;
             border-top: 1px solid var(--border);
         }
         .junction-tabs {
@@ -331,18 +379,18 @@
             margin-bottom: 16px;
         }
         .junction-tab {
-            padding: 6px 16px;
-            border-radius: 6px;
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            font-size: 0.8rem;
-            font-weight: 600;
+            font-size: 0.78rem;
+            font-weight: 500;
             border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text-secondary);
-            transition: all 0.2s;
+            background: var(--surface);
+            color: var(--text-dim);
+            transition: all 0.15s;
         }
-        .junction-tab:hover { color: var(--text-primary); }
-        .junction-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+        .junction-tab:hover { color: var(--text); border-color: var(--border-strong); }
+        .junction-tab.active { color: var(--text); border-color: var(--accent); }
     </style>
 </head>
 <body>
@@ -363,26 +411,27 @@
 <div class="container">
 
     <!-- ── KPI Cards ──────────────────────────────────────────────────── -->
+    <!-- Only the Improvement value is semantically colored (pos/neg) in JS. -->
     <div class="grid-4">
         <div class="card">
             <h3>Training Progress</h3>
-            <div class="value blue" id="kpiProgress">--</div>
+            <div class="value" id="kpiProgress">--</div>
             <div class="detail" id="kpiProgressDetail">episodes completed</div>
             <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
         </div>
         <div class="card">
             <h3>Best Avg Wait</h3>
-            <div class="value green" id="kpiBestWait">--</div>
+            <div class="value" id="kpiBestWait">--</div>
             <div class="detail" id="kpiBestDetail">--</div>
         </div>
         <div class="card">
             <h3>Improvement</h3>
-            <div class="value green" id="kpiImprovement">--</div>
-            <div class="detail">over training duration</div>
+            <div class="value" id="kpiImprovement">--</div>
+            <div class="detail" id="kpiImprovementDetail">over training duration</div>
         </div>
         <div class="card">
             <h3>Exploration (Epsilon)</h3>
-            <div class="value purple" id="kpiEpsilon">--</div>
+            <div class="value muted" id="kpiEpsilon">--</div>
             <div class="detail" id="kpiEpsilonDetail">--</div>
         </div>
     </div>
@@ -481,31 +530,31 @@
             <span id="liveStatusText">Disconnected — start a simulation to see live data</span>
         </div>
 
-        <!-- Live KPI Cards -->
+        <!-- Live KPI Cards — all values neutral. Color belongs to charts, not numbers. -->
         <div class="live-kpi">
             <div class="card">
                 <h3>Sim Time</h3>
-                <div class="value blue" id="liveSimTime">--</div>
+                <div class="value" id="liveSimTime">--</div>
             </div>
             <div class="card">
                 <h3>Vehicles Completed</h3>
-                <div class="value green" id="liveVehicles">--</div>
+                <div class="value" id="liveVehicles">--</div>
             </div>
             <div class="card">
                 <h3>Avg Wait</h3>
-                <div class="value yellow" id="liveAvgWait">--</div>
+                <div class="value" id="liveAvgWait">--</div>
             </div>
             <div class="card">
                 <h3>Current Phase</h3>
-                <div class="value purple" id="livePhase">--</div>
+                <div class="value" id="livePhase">--</div>
             </div>
             <div class="card">
                 <h3>AI Decision</h3>
-                <div class="value blue" id="liveAction">--</div>
+                <div class="value" id="liveAction">--</div>
             </div>
             <div class="card">
                 <h3>Total Reward</h3>
-                <div class="value green" id="liveTotalReward">--</div>
+                <div class="value" id="liveTotalReward">--</div>
             </div>
         </div>
 
@@ -544,19 +593,19 @@
             <div class="live-kpi">
                 <div class="card">
                     <h3>Corridor Avg Wait</h3>
-                    <div class="value yellow" id="liveCorridorWait">--</div>
+                    <div class="value" id="liveCorridorWait">--</div>
                 </div>
                 <div class="card">
                     <h3>J0 Avg Wait</h3>
-                    <div class="value blue" id="liveJ0Wait">--</div>
+                    <div class="value" id="liveJ0Wait">--</div>
                 </div>
                 <div class="card">
                     <h3>J1 Avg Wait</h3>
-                    <div class="value purple" id="liveJ1Wait">--</div>
+                    <div class="value" id="liveJ1Wait">--</div>
                 </div>
                 <div class="card">
                     <h3>J2 Avg Wait</h3>
-                    <div class="value green" id="liveJ2Wait">--</div>
+                    <div class="value" id="liveJ2Wait">--</div>
                 </div>
             </div>
 
@@ -577,10 +626,11 @@
 
 <!-- ── JavaScript ──────────────────────────────────────────────────────── -->
 <script>
-    // Chart.js global config
-    Chart.defaults.color = '#9ca3af';
-    Chart.defaults.borderColor = '#2d3348';
-    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // Chart.js global config — muted palette that matches the new dashboard theme
+    Chart.defaults.color = '#8a92a3';
+    Chart.defaults.borderColor = '#1f2432';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif';
+    Chart.defaults.font.size = 11;
 
     const SCENARIO_COLORS = {
         'morning_rush.rou':     '#f97316',
@@ -657,8 +707,23 @@
         document.getElementById('kpiBestWait').textContent = s.best_wait + 's';
         document.getElementById('kpiBestDetail').textContent = `episode ${s.best_episode}`;
 
-        document.getElementById('kpiImprovement').textContent = s.improvement_pct + '%';
-        document.getElementById('kpiImprovement').className = 'value ' + (s.improvement_pct > 0 ? 'green' : 'red');
+        // Improvement — guard the display. The backend computes
+        //   (first_5_avg - last_5_avg) / first_5_avg * 100
+        // which is noisy when early scenarios are easy and late scenarios are
+        // hard (can blow up to -5000%+). Show the number only when it's in a
+        // readable range; otherwise mark it as insufficient-signal.
+        const imp = s.improvement_pct;
+        const impEl = document.getElementById('kpiImprovement');
+        const impDetail = document.getElementById('kpiImprovementDetail');
+        if (!isFinite(imp) || Math.abs(imp) > 200 || s.total_episodes < 10) {
+            impEl.textContent = '—';
+            impEl.className = 'value muted';
+            impDetail.textContent = 'mixed scenarios — see AI vs Baseline tab';
+        } else {
+            impEl.textContent = (imp > 0 ? '+' : '') + imp.toFixed(1) + '%';
+            impEl.className = 'value ' + (imp > 0 ? 'positive' : 'negative');
+            impDetail.textContent = 'first-5 vs last-5 episodes';
+        }
 
         document.getElementById('kpiEpsilon').textContent = s.epsilon.toFixed(3);
         document.getElementById('kpiEpsilonDetail').textContent = s.epsilon <= 0.02 ? 'exploitation mode' : 'exploring';
@@ -695,12 +760,13 @@
                 datasets: [{
                     label: 'Avg Wait (s)',
                     data: waits,
-                    borderColor: '#4f8cff',
-                    backgroundColor: 'rgba(79, 140, 255, 0.1)',
-                    fill: true,
+                    borderColor: '#6a8cff',
+                    backgroundColor: 'transparent',
+                    fill: false,
                     tension: 0.3,
                     pointRadius: 2,
                     pointBackgroundColor: bgColors,
+                    pointBorderWidth: 0,
                     borderWidth: 1.5,
                 }]
             },
@@ -715,12 +781,13 @@
                 datasets: [{
                     label: 'Total Reward',
                     data: rewards,
-                    borderColor: '#22c55e',
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                    fill: true,
+                    borderColor: '#6a8cff',
+                    backgroundColor: 'transparent',
+                    fill: false,
                     tension: 0.3,
                     pointRadius: 2,
                     pointBackgroundColor: bgColors,
+                    pointBorderWidth: 0,
                     borderWidth: 1.5,
                 }]
             },
@@ -743,7 +810,7 @@
             options: chartOptions('Vehicles')
         });
 
-        // Epsilon Chart
+        // Epsilon Chart — solid line, no fill (epsilon decay is itself the story)
         createOrUpdate('chartEpsilon', {
             type: 'line',
             data: {
@@ -751,12 +818,12 @@
                 datasets: [{
                     label: 'Epsilon',
                     data: epsilons,
-                    borderColor: '#a855f7',
-                    backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                    fill: true,
+                    borderColor: '#6a8cff',
+                    backgroundColor: 'transparent',
+                    fill: false,
                     tension: 0.3,
                     pointRadius: 0,
-                    borderWidth: 2,
+                    borderWidth: 1.8,
                 }]
             },
             options: chartOptions('Epsilon (exploration)')
@@ -803,13 +870,13 @@
 
         if (summary.scenarios) {
             for (const [s, stats] of Object.entries(summary.scenarios)) {
-                const color = SCENARIO_COLORS[s] || '#4f8cff';
+                const color = SCENARIO_COLORS[s] || '#6a8cff';
                 const label = SCENARIO_LABELS[s] || s;
                 container.innerHTML += `
-                    <div class="card">
-                        <h3 style="color:${color}">${label}</h3>
-                        <div class="value" style="color:${color}">${stats.last_avg}s</div>
-                        <div class="detail">last 5 avg | best: ${stats.best_wait}s</div>
+                    <div class="card scenario-card">
+                        <h3><span class="dot" style="background:${color}"></span>${label}</h3>
+                        <div class="value">${stats.last_avg}s</div>
+                        <div class="detail">last 5 avg · best ${stats.best_wait}s</div>
                         <div class="detail">${stats.episodes} episodes trained</div>
                     </div>
                 `;
@@ -861,15 +928,15 @@
                     {
                         label: 'Baseline (Fixed Timer)',
                         data: baselineVals,
-                        backgroundColor: 'rgba(239, 68, 68, 0.6)',
-                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(248, 113, 113, 0.55)',
+                        borderColor: '#f87171',
                         borderWidth: 1,
                     },
                     {
                         label: 'AI (DQN)',
                         data: aiVals,
-                        backgroundColor: 'rgba(34, 197, 94, 0.6)',
-                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(74, 222, 128, 0.55)',
+                        borderColor: '#4ade80',
                         borderWidth: 1,
                     }
                 ]
@@ -888,10 +955,10 @@
             const changeTxt = (r.change_pct > 0 ? '+' : '') + r.change_pct.toFixed(1) + '%';
             tbody.innerHTML += `
                 <tr>
-                    <td style="font-weight:600">${r.scenario.replace(/_/g, ' ')}</td>
-                    <td>${r.baseline_mean.toFixed(1)}s <span style="color:var(--text-muted)">&plusmn;${r.baseline_std.toFixed(1)}</span></td>
-                    <td>${r.ai_mean.toFixed(1)}s <span style="color:var(--text-muted)">&plusmn;${r.ai_std.toFixed(1)}</span></td>
-                    <td style="color:${better ? 'var(--accent-green)' : 'var(--accent-red)'}">${changeTxt}</td>
+                    <td style="font-weight:500">${r.scenario.replace(/_/g, ' ')}</td>
+                    <td>${r.baseline_mean.toFixed(1)}s <span style="color:var(--text-faint)">&plusmn;${r.baseline_std.toFixed(1)}</span></td>
+                    <td>${r.ai_mean.toFixed(1)}s <span style="color:var(--text-faint)">&plusmn;${r.ai_std.toFixed(1)}</span></td>
+                    <td style="color:${better ? 'var(--pos)' : 'var(--neg)'}">${changeTxt}</td>
                     <td><span class="badge ${better ? 'better' : 'worse'}">${better ? 'BETTER' : 'WORSE'}</span></td>
                 </tr>
             `;
@@ -906,11 +973,29 @@
             animation: { duration: 300 },
             plugins: {
                 legend: { display: false },
-                tooltip: { mode: 'index', intersect: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: '#12151c',
+                    borderColor: '#2a3043',
+                    borderWidth: 1,
+                    titleColor: '#e6e8ee',
+                    bodyColor: '#8a92a3',
+                    padding: 10,
+                },
             },
             scales: {
-                x: { grid: { color: '#2d3348' }, ticks: { maxTicksLimit: 20 } },
-                y: { grid: { color: '#2d3348' }, title: { display: true, text: yLabel } },
+                x: {
+                    grid: { color: '#1f2432', drawTicks: false },
+                    ticks: { maxTicksLimit: 10, color: '#5a6274' },
+                    border: { display: false },
+                },
+                y: {
+                    grid: { color: '#1f2432', drawTicks: false },
+                    ticks: { color: '#5a6274' },
+                    title: { display: true, text: yLabel, color: '#8a92a3' },
+                    border: { display: false },
+                },
             },
         };
     }
@@ -1122,18 +1207,18 @@
             }))
         );
 
-        // Reward chart
+        // Reward chart — clean line, no area fill
         updateLiveChart('liveChartReward', 'Cumulative Reward', labels, [{
             label: 'Total Reward', data: liveData.rewards,
-            borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)',
-            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+            borderColor: '#6a8cff', backgroundColor: 'transparent',
+            fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.8,
         }]);
 
-        // Throughput chart
+        // Throughput chart — clean line, no area fill
         updateLiveChart('liveChartThroughput', 'Vehicles', labels, [{
             label: 'Completed', data: liveData.throughput,
-            borderColor: '#4f8cff', backgroundColor: 'rgba(79,140,255,0.1)',
-            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+            borderColor: '#6a8cff', backgroundColor: 'transparent',
+            fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.8,
         }]);
 
         // Corridor charts
