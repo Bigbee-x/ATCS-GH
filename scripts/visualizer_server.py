@@ -698,12 +698,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     # Pedestrian data
                     "pedestrians": _collect_pedestrian_data(),
 
-                    # Crossing signal states (for visualizer crosswalk lights)
+                    # Crossing signal states (for visualizer crosswalk lights).
+                    # After the lane-restricted rebuild, the TL signal string is
+                    # 20 chars (16 vehicle links + 4 crossings). Crossings occupy
+                    # positions 16-19 in order: c0=N, c1=E, c2=S, c3=W.
                     "crossing_green": {
-                        "north": PHASE_SIGNALS.get(env._phase, "r" * 23)[19] in "Gg",
-                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 23)[20] in "Gg",
-                        "south": PHASE_SIGNALS.get(env._phase, "r" * 23)[21] in "Gg",
-                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 23)[22] in "Gg",
+                        "north": PHASE_SIGNALS.get(env._phase, "r" * 20)[16] in "Gg",
+                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 20)[17] in "Gg",
+                        "south": PHASE_SIGNALS.get(env._phase, "r" * 20)[18] in "Gg",
+                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 20)[19] in "Gg",
                     },
 
                     # Meta

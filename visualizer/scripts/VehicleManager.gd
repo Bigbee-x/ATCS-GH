@@ -131,6 +131,10 @@ var _mat_roof_rack: StandardMaterial3D
 var _mat_headlight: StandardMaterial3D   # Warm white, emissive at night
 var _mat_taillight: StandardMaterial3D   # Red, emissive at night
 var _is_night: bool = false
+## True from ~16:30 onwards. When set WITHOUT _is_night, roughly
+## DUSK_LIGHTS_THRESHOLD % of vehicles run their lights — mimics real-world
+## behaviour where some drivers flip headlights on before full dark.
+var _is_dusk: bool = false
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -239,6 +243,7 @@ func _process(delta: float) -> void:
 enum WeatherLights { OFF, PARTIAL, ALL }
 
 const PARTIAL_LIGHTS_THRESHOLD: int = 40   # % of vehicles that run lights in partial mode
+const DUSK_LIGHTS_THRESHOLD: int   = 60   # % of vehicles that run lights at dusk (before full night)
 
 var _weather_lights: WeatherLights = WeatherLights.OFF
 
@@ -248,6 +253,14 @@ func set_night_mode(enabled: bool) -> void:
 	## Uses VISIBILITY toggle (not material changes) so shared materials
 	## aren't disrupted by the per-vehicle opacity system.
 	_is_night = enabled
+	_refresh_all_vehicle_lights()
+
+
+func set_dusk_mode(enabled: bool) -> void:
+	## Turn on headlights for a deterministic ~60 % of vehicles from
+	## ~16:30 onwards. Composes with night mode (night still forces ALL on)
+	## and with weather lights.
+	_is_dusk = enabled
 	_refresh_all_vehicle_lights()
 
 
@@ -284,6 +297,11 @@ func _lights_on_for(vid: String) -> bool:
 	## Per-vehicle lights decision, stable across frames for a given vid.
 	if _is_night or _weather_lights == WeatherLights.ALL:
 		return true
+	# Dusk: ~60 % of drivers are "early adopters" — hash bucket keeps each
+	# vehicle's choice consistent across frames. Checked before weather
+	# partial so dusk's larger share wins if both apply.
+	if _is_dusk:
+		return absi(vid.hash()) % 100 < DUSK_LIGHTS_THRESHOLD
 	if _weather_lights == WeatherLights.PARTIAL:
 		# Deterministic hash bucket so the same car keeps the same behaviour
 		return absi(vid.hash()) % 100 < PARTIAL_LIGHTS_THRESHOLD

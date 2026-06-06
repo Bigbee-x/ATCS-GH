@@ -113,12 +113,15 @@ CROSSING_EDGES = [":J0_c0", ":J0_c1", ":J0_c2", ":J0_c3"]
 WALKING_AREAS  = [":J0_w0", ":J0_w1", ":J0_w2", ":J0_w3"]
 
 # Phase indices -- 8 phases for through + left-turn separation
-# Connection mapping (23 link indices from intersection.net.xml):
-#   pos 0-4:   ACH_N2J -> right(0), straight(1,2), left(3), uturn(4)
-#   pos 5-8:   AGG_E2J -> right(5), straight(6), left(7), uturn(8)
-#   pos 9-13:  ACH_S2J -> right(9), straight(10,11), left(12), uturn(13)
-#   pos 14-18: GUG_W2J -> right(14), straight(15,16), left(17), uturn(18)
-#   pos 19-22: crossings -> c0_N(19), c1_E(20), c2_S(21), c3_W(22)
+# Connection mapping (16 vehicle + 4 crossing = 20 link indices).
+# As of the lane-restricted rebuild, each approach has ONE through connection
+# (from lane 1 only — the lane-2-straight connection was removed so that
+# lane 2 is exclusively for left-turners / u-turners). Layout:
+#   pos 0-3:   ACH_N2J  -> right(0), straight(1), left(2), uturn(3)
+#   pos 4-7:   AGG_E2J  -> right(4), straight(5), left(6), uturn(7)
+#   pos 8-11:  ACH_S2J  -> right(8), straight(9), left(10), uturn(11)
+#   pos 12-15: GUG_W2J  -> right(12), straight(13), left(14), uturn(15)
+#   pos 16-19: crossings -> c0_N(16), c1_E(17), c2_S(18), c3_W(19)
 #
 # Pedestrian crossings piggyback on vehicle phases:
 #   NS phases: E/W crossings (c1,c3) green, N/S crossings (c0,c2) red
@@ -141,23 +144,23 @@ PHASE_NAMES = {
     6: "NS_ALL",     7: "EW_ALL",
 }
 
-# 24-character signal state strings for setRedYellowGreenState()
-# Connection layout (20 vehicle + 4 crossings = 24):
-#   N(0-4):  right, straight, straight, left, uturn   — ACH_N2J
-#   E(5-9):  right, straight, straight, left, uturn   — AGG_E2J
-#   S(10-14): right, straight, straight, left, uturn  — ACH_S2J
-#   W(15-19): right, straight, straight, left, uturn  — GUG_W2J
-#   Crossings(20-23): c0(N), c1(E), c2(S), c3(W)
+# 20-character signal state strings for setRedYellowGreenState().
+# Link layout (16 vehicle + 4 crossings = 20):
+#   N(0-3):   right, straight, left, uturn   — ACH_N2J
+#   E(4-7):   right, straight, left, uturn   — AGG_E2J
+#   S(8-11):  right, straight, left, uturn   — ACH_S2J
+#   W(12-15): right, straight, left, uturn   — GUG_W2J
+#   Crossings(16-19): c0(N), c1(E), c2(S), c3(W)
 PHASE_SIGNALS = {
-    #                N----E----S----W----XWLK
-    NS_THROUGH: "GGGrrrrrrrGGGrrrrrrrrGrG",  # N/S straight+right; left/EW red; EW crossings green
-    NS_LEFT:    "grrGrrrrrrgrrGrrrrrrrGrG",  # N/S protected left; straight red
-    NS_YELLOW:  "yyyyyrrrrryyyyyrrrrrrrrr",   # N/S yellow; all crossings red
-    EW_THROUGH: "rrrrrGGGrrrrrrrGGGrrGrGr",  # E/W straight+right; left/NS red; NS crossings green
-    EW_LEFT:    "rrrrrgrrGrrrrrrgrrGrGrGr",  # E/W protected left; straight red
-    EW_YELLOW:  "rrrrryyyyyrrrrryyyyyrrrr",   # E/W yellow; all crossings red
-    NS_ALL:     "GGGgrrrrrrGGGgrrrrrrrGrG",  # N/S through+right, left permissive (yield)
-    EW_ALL:     "rrrrrGGGgrrrrrrGGGgrGrGr",  # E/W through+right, left permissive (yield)
+    #                N---E---S---W---XWLK
+    NS_THROUGH: "GGrrrrrrGGrrrrrrrGrG",  # N/S straight+right protected; left/uturn red; EW crossings green
+    NS_LEFT:    "grGGrrrrgrGGrrrrrGrG",  # N/S protected left+uturn; right permissive; straight red
+    NS_YELLOW:  "yyyyrrrryyyyrrrrrrrr",   # N/S yellow; all crossings red
+    EW_THROUGH: "rrrrGGrrrrrrGGrrGrGr",  # E/W straight+right protected; left/uturn red; NS crossings green
+    EW_LEFT:    "rrrrgrGGrrrrgrGGGrGr",  # E/W protected left+uturn; right permissive; straight red
+    EW_YELLOW:  "rrrryyyyrrrryyyyrrrr",   # E/W yellow; all crossings red
+    NS_ALL:     "GGggrrrrGGggrrrrrGrG",  # N/S through+right protected, left+uturn permissive
+    EW_ALL:     "rrrrGGggrrrrGGggGrGr",  # E/W through+right protected, left+uturn permissive
 }
 
 # Green phases (non-yellow)
@@ -245,20 +248,47 @@ class ActionSanitizer:
         return action
 
 
-# Module-level default instance — backwards-compatible shim so callers that
-# import `sanitize_action` keep working without wiring up an instance.
+# Module-level default instance — kept for any external code that still
+# imports it directly, but no longer used by the default sanitize_action().
 _default_sanitizer = ActionSanitizer()
 
 
 def sanitize_action(action: int) -> int:
-    """Back-compat wrapper around the module-level ActionSanitizer."""
-    return _default_sanitizer(action)
+    """**PASS-THROUGH** — no longer remaps actions.
+
+    AUDIT FIX (2026-04-24): The original ActionSanitizer remapped
+    NS_ALL/EW_ALL into alternating LEFT/THROUGH phases POST-training.
+    Because the existing checkpoint was trained without the sanitizer in
+    the loop, the trained policy expected NS_ALL/EW_ALL to fire as the
+    permissive-left phases defined in PHASE_SIGNALS. Silently remapping
+    those actions broke the policy's value estimates and caused the agent
+    to lock onto NS-biased policies that visibly starve E/W in live runs.
+
+    For now this function passes the action through unchanged so the env
+    honours the policy's intent. The ActionSanitizer class above is
+    retained for reference and future retrains where the sanitizer is
+    included in the training loop from the start (then this wrapper can
+    be re-pointed at `_default_sanitizer` again).
+    """
+    return action
 
 # ── State normalisation ───────────────────────────────────────────────────────
-MAX_QUEUE      = 50.0    # vehicles per approach (per edge, all lanes summed)
-MAX_QUEUE_LANE = 25.0    # vehicles per lane
+# AUDIT NOTE (2026-04-24, revised):
+# Originally bumped MAX_QUEUE 50→100 and MAX_WAIT 600→1800 to give the
+# agent visibility into catastrophic starvation. Then realized _build_state()
+# does NOT clip values, so the originals already let overflow signal reach
+# the network as out-of-range gradient (e.g. 80-car queue → 1.6, "panic").
+# Bumping the caps weakened that signal for the EXISTING trained checkpoint
+# (it now reads 80 cars as a tame 0.8 instead of an alarming 1.6) and made
+# the model under-react.
+#
+# Reverted to original training values so the existing checkpoint sees the
+# state space it learned on. When retraining from scratch, either value
+# works — but match training and inference normalizers either way.
+MAX_QUEUE      = 50.0    # vehicles per approach — matches training; overflow passes through
+MAX_QUEUE_LANE = 25.0    # vehicles per lane — same rationale
 MAX_SPEED      = 13.89   # 50 km/h in m/s (lane speed normalisation)
-MAX_WAIT       = 600.0   # seconds — higher than baseline (399s) to allow headroom
+MAX_WAIT       = 600.0   # seconds — matches training; overflow passes through
 MAX_PHASE_T    = 96.0    # one full 96-second TL cycle
 MAX_PED_QUEUE  = 15.0    # max pedestrians waiting at one walking area
 
@@ -305,6 +335,11 @@ class TrafficEnv:
         Training loops should call env.close() at the end of each episode
         (or rely on reset() to do it automatically).
     """
+
+    # Class-level flag so the link-layout diagnostic prints once per process
+    # (avoids spamming during 250-episode training runs while still surfacing
+    # a verifiable record of how SUMO ordered the controlled links).
+    _layout_diagnostic_printed: bool = False
 
     def __init__(self, gui: bool = False, verbose: bool = False,
                  route_file: str | None = None):
@@ -704,7 +739,8 @@ class TrafficEnv:
 
         The long-duration program prevents SUMO from auto-advancing.
         All actual signal changes go through setRedYellowGreenState()
-        with our custom 15-character PHASE_SIGNALS strings.
+        with our custom 20-character PHASE_SIGNALS strings
+        (16 vehicle links + 4 pedestrian crossings).
         """
         logics = traci.trafficlight.getAllProgramLogics(TL_ID)
         if not logics:
@@ -726,6 +762,28 @@ class TrafficEnv:
         )
         traci.trafficlight.setProgramLogic(TL_ID, ai_logic)
         traci.trafficlight.setProgram(TL_ID, "ai_control")
+
+        # AUDIT FIX (2026-04-24): Print the actual TraCI controlled-link
+        # layout once per process (or every reset when verbose=True) so we
+        # can verify our PHASE_SIGNALS assumptions against what netconvert
+        # actually produced after the lane-restricted rebuild. The comment
+        # block at the top of this file claims connections are ordered
+        # N → E → S → W; this print confirms or refutes it from runtime.
+        if self.verbose or not TrafficEnv._layout_diagnostic_printed:
+            TrafficEnv._layout_diagnostic_printed = True
+            try:
+                links = traci.trafficlight.getControlledLinks(TL_ID)
+                print(f"[ENV] TL '{TL_ID}' controlled-link layout "
+                      f"({len(links)} links — verify against PHASE_SIGNALS):")
+                for i, link_set in enumerate(links):
+                    if link_set:
+                        from_lane, to_lane, _via = link_set[0]
+                        print(f"        link[{i:2d}]: {from_lane:14s} -> {to_lane}")
+                    else:
+                        print(f"        link[{i:2d}]: (empty)")
+            except traci.exceptions.TraCIException as exc:
+                print(f"[ENV] WARNING: Could not fetch link layout: {exc}")
+
         # Set initial phase using direct signal state string
         traci.trafficlight.setRedYellowGreenState(TL_ID, PHASE_SIGNALS[NS_THROUGH])
         self._phase = NS_THROUGH

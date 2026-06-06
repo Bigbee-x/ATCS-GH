@@ -129,23 +129,27 @@ TIMER_PRESETS = {
 # Human-readable phase names indexed by SUMO phase index (0–3)
 PHASE_NAMES = {0: "NS_GREEN", 1: "NS_YELLOW", 2: "EW_GREEN", 3: "EW_YELLOW"}
 
-# Explicit signal strings for the baseline fixed timer (24 connections).
-# Connection order from net.xml (20 vehicle movements + 4 crossings):
-#   0-4:   ACH_N2J (right, str1, str2, left, uturn)  — North
-#   5-9:   AGG_E2J (right, str1, str2, left, uturn)  — East
-#   10-14: ACH_S2J (right, str1, str2, left, uturn)  — South
-#   15-19: GUG_W2J (right, str1, str2, left, uturn)  — West
-#   20: crossing c0 (N arm)  21: crossing c1 (E arm)
-#   22: crossing c2 (S arm)  23: crossing c3 (W arm)
+# Explicit signal strings for the baseline fixed timer (20 connections).
+# After the lane-restricted rebuild (connections.con.xml), each approach has
+# exactly 4 movements: right, straight, left, uturn — no more str1/str2 split,
+# because lane 2 is now reserved for left + uturn only.
+# Connection order from net.xml (16 vehicle movements + 4 crossings):
+#   0-3:   ACH_N2J (right, straight, left, uturn)  — North
+#   4-7:   AGG_E2J (right, straight, left, uturn)  — East
+#   8-11:  ACH_S2J (right, straight, left, uturn)  — South
+#   12-15: GUG_W2J (right, straight, left, uturn)  — West
+#   16: crossing c0 (N arm)  17: crossing c1 (E arm)
+#   18: crossing c2 (S arm)  19: crossing c3 (W arm)
 #
-# Baseline gives ALL movements green in their direction simultaneously
-# (no separate protected left-turn phases — that's the AI's advantage).
+# Baseline gives right + straight + left green in their direction simultaneously
+# (no separate protected left-turn phases — that's the AI's advantage). U-turn
+# stays red since allowing it concurrent with oncoming straight would deadlock.
 # Pedestrian crossings piggyback: N/S green → E/W crossings green, and vice versa.
 BASELINE_SIGNALS = {
-    "NS_GREEN":  "GGGGrrrrrrGGGGrrrrrrrGrG",   # N/S all green + E/W crossings
-    "NS_YELLOW": "yyyyyrrrrryyyyyrrrrrrrrr",     # N/S yellow, all crossings red
-    "EW_GREEN":  "rrrrrGGGGrrrrrrGGGGrGrGr",    # E/W all green + N/S crossings
-    "EW_YELLOW": "rrrrryyyyyrrrrryyyyyrrrr",     # E/W yellow, all crossings red
+    "NS_GREEN":  "GGGrrrrrGGGrrrrrrGrG",   # N/S right+str+left green (uturn red) + E/W crossings
+    "NS_YELLOW": "yyyyrrrryyyyrrrrrrrr",   # N/S yellow, all crossings red
+    "EW_GREEN":  "rrrrGGGrrrrrGGGrGrGr",   # E/W right+str+left green (uturn red) + N/S crossings
+    "EW_YELLOW": "rrrryyyyrrrryyyyrrrr",   # E/W yellow, all crossings red
 }
 
 

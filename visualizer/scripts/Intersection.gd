@@ -821,12 +821,16 @@ func _build_street_lights() -> void:
 				add_child(housing)
 
 				# Light source (warm sodium yellow — off during day)
+				# Energy is high so the road reads bright near each lamp, but
+				# range + attenuation are tighter than a default lamp so the
+				# falloff reaches the far facade of roadside buildings without
+				# fully washing them out (their own windows stay dominant).
 				var light := OmniLight3D.new()
 				light.position = pos + Vector3(0, pole_height - 0.1, 0) + arm_dir
 				light.light_color = Color(1.0, 0.85, 0.5)  # Warm sodium yellow
 				light.light_energy = 0.0                     # Off by default (daytime)
-				light.omni_range = 20.0
-				light.omni_attenuation = 1.2
+				light.omni_range = 15.0                      # Was 20 — pulled in some
+				light.omni_attenuation = 1.6                 # Steeper falloff (was 1.2)
 				light.shadow_enabled = false
 				light.name = "StreetLight"
 				add_child(light)
@@ -838,11 +842,14 @@ func _build_street_lights() -> void:
 func set_street_lights_night(enabled: bool) -> void:
 	## Turn street lights on (night) or off (day). Also toggles the lamp housing
 	## emission so each lamp reads as a glowing bulb, not just a floating OmniLight.
-	var energy: float = 2.8 if enabled else 0.0
+	## Energy is bumped up to 3.2 so the road pool reads bright near each lamp;
+	## the tighter range + attenuation above keep the light from drowning the
+	## warm glow of roadside shop/house windows.
+	var energy: float = 3.2 if enabled else 0.0
 	for light in _street_lights:
 		light.light_energy = energy
 	if _mat_lamp_housing:
-		_mat_lamp_housing.emission_energy_multiplier = 2.5 if enabled else 0.0
+		_mat_lamp_housing.emission_energy_multiplier = 3.0 if enabled else 0.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════
