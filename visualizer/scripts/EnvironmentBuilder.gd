@@ -241,21 +241,28 @@ func _create_glow_materials() -> void:
 	## Build all shared emissive materials. Emission energy starts at 0.0 so the
 	## materials look normal during the day; _on_night_mode_changed() bumps them.
 
-	# Warm window (residential houses) — yellow-orange domestic glow
+	# Warm window (residential houses) — yellow-orange domestic glow.
+	# VISUAL FIX (2026-06-07): albedo is now DARK GLASS, not warm cream. The old
+	# cream albedo looked like a flat beige panel pasted on the wall in daylight
+	# (emission is off during the day). A dark, slightly-reflective glass tone
+	# reads as a real window pane when unlit; the warm emission still drives the
+	# night glow (emission is additive and dominates once the multiplier ramps).
 	_mat_window_warm = StandardMaterial3D.new()
-	_mat_window_warm.albedo_color = Color(0.95, 0.85, 0.55)
-	_mat_window_warm.roughness = 0.4
+	_mat_window_warm.albedo_color = Color(0.14, 0.17, 0.22)   # dark glass (day look)
+	_mat_window_warm.roughness = 0.15                          # low = reflective glass
+	_mat_window_warm.metallic = 0.35
 	_mat_window_warm.emission_enabled = true
-	_mat_window_warm.emission = Color(1.00, 0.82, 0.45)
+	_mat_window_warm.emission = Color(1.00, 0.82, 0.45)        # warm glow (night look)
 	_mat_window_warm.emission_energy_multiplier = 0.0
 
-	# Cool window (offices / towers / schools) — blue-white fluorescent
+	# Cool window (offices / towers / schools) — blue-white fluorescent.
+	# Same day/night split: dark blue glass when unlit, cool glow at night.
 	_mat_window_cool = StandardMaterial3D.new()
-	_mat_window_cool.albedo_color = Color(0.75, 0.85, 0.95)
-	_mat_window_cool.roughness = 0.3
-	_mat_window_cool.metallic = 0.2
+	_mat_window_cool.albedo_color = Color(0.13, 0.18, 0.26)   # dark blue glass (day look)
+	_mat_window_cool.roughness = 0.12
+	_mat_window_cool.metallic = 0.40
 	_mat_window_cool.emission_enabled = true
-	_mat_window_cool.emission = Color(0.82, 0.92, 1.00)
+	_mat_window_cool.emission = Color(0.82, 0.92, 1.00)       # cool glow (night look)
 	_mat_window_cool.emission_energy_multiplier = 0.0
 
 	# "_early" dusk-lit variants — same look as the full-night materials, but
@@ -265,6 +272,7 @@ func _create_glow_materials() -> void:
 	_mat_window_warm_early = StandardMaterial3D.new()
 	_mat_window_warm_early.albedo_color = _mat_window_warm.albedo_color
 	_mat_window_warm_early.roughness = _mat_window_warm.roughness
+	_mat_window_warm_early.metallic = _mat_window_warm.metallic
 	_mat_window_warm_early.emission_enabled = true
 	_mat_window_warm_early.emission = _mat_window_warm.emission
 	_mat_window_warm_early.emission_energy_multiplier = 0.0

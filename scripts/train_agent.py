@@ -109,7 +109,16 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     n_scenarios = len(SCENARIOS)
 
     log_rows:       list[dict] = []
-    best_avg_wait:  float      = float("inf")
+    # "Best model" selection — ROLLING multi-scenario mean, not single-episode.
+    # FIX (2026-06-07): the old code saved best_model.pth whenever ANY single
+    # episode beat the running best avg_wait. With a 5-scenario rotation that
+    # meant the "best" model was just a snapshot taken right after a lucky
+    # off-peak episode (3s wait) — not a model that's good across rush hour too.
+    # Now we track the mean avg_wait over the last full rotation pair (10 eps)
+    # so "best" means consistently good across ALL demand patterns.
+    BEST_WINDOW:    int        = 2 * n_scenarios     # 10 eps = 2 full rotations
+    recent_waits:   list[float] = []
+    best_rolling:   float      = float("inf")
     training_start: float      = time.time()
     _csv_header_written: bool  = False      # track incremental CSV state
 
@@ -166,12 +175,19 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
         emerg_max    = max(env.emergency_log.values(), default=0.0)
 
-        # ── Save best model ───────────────────────────────────────────────────
+        # ── Save best model (rolling multi-scenario mean) ─────────────────────
         note = ""
-        if avg_wait < best_avg_wait:
-            best_avg_wait = avg_wait
-            agent.save(BEST_MODEL_PATH)
-            note = "★ best"
+        recent_waits.append(avg_wait)
+        if len(recent_waits) > BEST_WINDOW:
+            recent_waits.pop(0)
+        # Only judge "best" once we have a full window spanning every scenario,
+        # so a single easy episode can't trigger a save.
+        if len(recent_waits) >= BEST_WINDOW:
+            rolling_mean = sum(recent_waits) / len(recent_waits)
+            if rolling_mean < best_rolling:
+                best_rolling = rolling_mean
+                agent.save(BEST_MODEL_PATH)
+                note = "★ best"
 
         # ── Periodic checkpoint ───────────────────────────────────────────────
         if episode % CHECKPOINT_FREQ == 0:
@@ -223,7 +239,7 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     _save_log(log_rows)
 
     total_wall = time.time() - training_start
-    _print_summary(log_rows, best_avg_wait, total_wall)
+    _print_summary(log_rows, best_rolling, total_wall)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -238,7 +254,7 @@ def _save_log(rows: list[dict]) -> None:
 
 
 def _print_summary(rows: list[dict],
-                   best_avg_wait: float,
+                   best_rolling: float,
                    wall_seconds: float) -> None:
     """Print a formatted summary after all episodes complete."""
     n = len(rows)
@@ -250,7 +266,7 @@ def _print_summary(rows: list[dict],
     first_avg = sum(r["avg_wait_s"] for r in rows[:n_first]) / n_first
     last_avg  = sum(r["avg_wait_s"] for r in rows[-n_last:])  / n_last
     improvement = (first_avg - last_avg) / first_avg * 100 if first_avg > 0 else 0.0
-    vs_baseline = (best_avg_wait - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
+    vs_baseline = (best_rolling - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
 
     print("\n" + "═" * 62)
     print("  ATCS-GH — TRAINING COMPLETE")
@@ -266,7 +282,7 @@ def _print_summary(rows: list[dict],
           f"(learned policy)")
     print(f"  Improvement over training   : {improvement:.1f}%")
     print()
-    print(f"  Best avg wait     : {best_avg_wait:.1f}s")
+    print(f"  Best rolling avg  : {best_rolling:.1f}s  (mean over best 10-ep window, all scenarios)")
     print(f"  Baseline avg wait : {BASELINE_AVG_WAIT:.1f}s")
     print(f"  vs Baseline       : {vs_baseline:+.1f}%  "
           f"({'BETTER ✓' if vs_baseline < 0 else 'needs more training'})")

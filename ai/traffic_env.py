@@ -273,22 +273,29 @@ def sanitize_action(action: int) -> int:
     return action
 
 # ── State normalisation ───────────────────────────────────────────────────────
-# AUDIT NOTE (2026-04-24, revised):
-# Originally bumped MAX_QUEUE 50→100 and MAX_WAIT 600→1800 to give the
-# agent visibility into catastrophic starvation. Then realized _build_state()
-# does NOT clip values, so the originals already let overflow signal reach
-# the network as out-of-range gradient (e.g. 80-car queue → 1.6, "panic").
-# Bumping the caps weakened that signal for the EXISTING trained checkpoint
-# (it now reads 80 cars as a tame 0.8 instead of an alarming 1.6) and made
-# the model under-react.
+# AUDIT FIX (2026-06-07): Raised after the first full retrain (250 eps, mixed
+# scenarios) produced a SPLIT policy — excellent on light traffic (off_peak /
+# weekend, peak queues 14-44, avg wait 3-4s) but CATASTROPHIC on heavy traffic
+# (morning/evening rush + heavy_emergency at 2640 veh/hr, peak queues 600-760,
+# avg wait 700-880s vs an 81.8s fixed-timer baseline on the SAME demand).
 #
-# Reverted to original training values so the existing checkpoint sees the
-# state space it learned on. When retraining from scratch, either value
-# works — but match training and inference normalizers either way.
-MAX_QUEUE      = 50.0    # vehicles per approach — matches training; overflow passes through
-MAX_QUEUE_LANE = 25.0    # vehicles per lane — same rationale
+# Root cause: with MAX_QUEUE=50, heavy-traffic queues normalise to 12-15× over
+# 1.0 on EVERY approach at once. The "no clip so overflow still informs the net"
+# theory failed in practice — when all dims saturate together the relative
+# signal (which approach is worst) is destroyed, activations blow up, and the
+# policy degenerates into gridlock. The agent did well *exactly* when queues
+# stayed under 50 and failed *exactly* when they exceeded it — a perfect
+# correlation pinning the cause to normaliser scale.
+#
+# Fix: size the caps to the actionable danger zone so the agent can perceive
+# queues climbing (50→100→150) and intervene BEFORE runaway gridlock. A good
+# policy keeps heavy-traffic queues well under 150 (baseline does), so this
+# range stays mostly unsaturated under competent control.
+# NOTE: train + inference MUST use the same normalisers — retrain after changing.
+MAX_QUEUE      = 150.0   # vehicles per approach (was 50 — heavy traffic needs headroom)
+MAX_QUEUE_LANE = 75.0    # vehicles per lane (was 25)
 MAX_SPEED      = 13.89   # 50 km/h in m/s (lane speed normalisation)
-MAX_WAIT       = 600.0   # seconds — matches training; overflow passes through
+MAX_WAIT       = 1200.0  # seconds (was 600 — heavy-traffic waits exceed 600 pre-convergence)
 MAX_PHASE_T    = 96.0    # one full 96-second TL cycle
 MAX_PED_QUEUE  = 15.0    # max pedestrians waiting at one walking area
 
