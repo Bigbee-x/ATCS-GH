@@ -183,7 +183,9 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
         # Rotate through scenarios so agent sees all demand patterns
         scenario_path = SCENARIOS[(episode - 1) % n_scenarios]
-        scenario_name = scenario_path.stem
+        # .stem of "morning_rush.rou.xml" is "morning_rush.rou" (only the last
+        # suffix drops); strip ".rou" so it matches scenario_baselines.csv keys.
+        scenario_name = scenario_path.stem.replace(".rou", "")
 
         # Create environment with this episode's scenario route file
         env = TrafficEnv(gui=gui, verbose=False, route_file=str(scenario_path))
