@@ -43,7 +43,22 @@ data/training_log.csv
 # Godot editor cache (regenerated on open)
 visualizer/.godot/editor/
 visualizer/.godot/uid_cache.bin
+visualizer/.godot/imported/
+visualizer/.godot/shader_cache/
 *.gd.uid
+
+# Recalibration backups & temp scenario files (originals live in git history)
+simulation/scenarios/_pre_recal/
+simulation/scenarios/_recal_tmp/
+simulation/*.bak
+
+# Temp diagnostic / validation artefacts (throwaway)
+ai/_validation/
+ai/_confirm/
+ai/_pre_retrain_backup/
+data/baseline_c*.csv
+data/confirm_reward_log.csv
+data/validation_log.csv
 
 # Logs
 logs/

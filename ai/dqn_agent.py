@@ -200,7 +200,15 @@ class DQNAgent:
         """
         if random.random() < self.epsilon:
             return random.randint(0, self.action_size - 1)
+        return self.greedy_action(state)
 
+    def greedy_action(self, state: np.ndarray) -> int:
+        """Pure exploitation: argmax Q(s,·) with no exploration noise.
+
+        Exposed separately so callers can drive guided exploration (e.g. mixing
+        in an expert/warm-start policy) while still using the network's greedy
+        action for the exploit branch.
+        """
         with torch.no_grad():
             t = torch.FloatTensor(state).unsqueeze(0).to(self.device)
             q = self.policy_net(t)

@@ -159,8 +159,11 @@ PHASE_SIGNALS = {
     EW_THROUGH: "rrrrGGrrrrrrGGrrGrGr",  # E/W straight+right protected; left/uturn red; NS crossings green
     EW_LEFT:    "rrrrgrGGrrrrgrGGGrGr",  # E/W protected left+uturn; right permissive; straight red
     EW_YELLOW:  "rrrryyyyrrrryyyyrrrr",   # E/W yellow; all crossings red
-    NS_ALL:     "GGggrrrrGGggrrrrrGrG",  # N/S through+right protected, left+uturn permissive
-    EW_ALL:     "rrrrGGggrrrrGGggGrGr",  # E/W through+right protected, left+uturn permissive
+    NS_ALL:     "GGGrrrrrGGGrrrrrrGrG",  # N/S right+straight+left protected, uturn RED (matches baseline)
+    EW_ALL:     "rrrrGGGrrrrrGGGrGrGr",  # E/W right+straight+left protected, uturn RED (matches baseline)
+    # NOTE: was permissive ('g') left+uturn — turners yielded to oncoming straight,
+    #   stalled in the junction box and deadlocked under load. Baseline keeps uturn
+    #   red and left protected for exactly this reason; aligned 2026-06-09.
 }
 
 # Green phases (non-yellow)
@@ -306,22 +309,48 @@ MIN_GREEN_LEFT     = 8     # left-turn phases serve fewer vehicles — shorter h
 YELLOW_DURATION    = 3     # seconds of yellow clearance
 SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 
+# Warm-start expert (guided exploration). The KEY lesson from the 2026-06-09
+# diagnosis: heavy demand is cleared by SUSTAINED greens, not fast switching.
+# A 60/30 timer gridlocks 1901 veh/hr at 811s; a 90/45 (longer green) clears the
+# same demand at 22s. So the expert holds the current green until it drains
+# (gap-out) or hits a max, instead of flipping on the instantaneous bigger queue.
+EXPERT_GAP_QUEUE    = 3     # a direction is "empty" at/below this (gap-out)
+EXPERT_NS_GREEN     = 90    # N/S green (s) — the heavy group, ~66% of demand
+EXPERT_EW_GREEN     = 45    # E/W green (s). 90/45 is the plan proven to clear 1901
+                            # veh/hr at ~21s; demand-matched split, not 50/50.
+
 # Exported constants for use by train_agent.py / run_ai.py
 STATE_SIZE  = 45   # 8*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
 ACTION_SIZE = 7
 
-# ── Reward weights ────────────────────────────────────────────────────────────
-# These are tuned so the baseline fixed-timer scores ≈ -2000 per episode
-# and a near-optimal policy scores ≈ +8000 per episode, giving a clear signal.
-W_QUEUE_ABS   = 0.2    # continuous penalty per vehicle in queue per decision block
-W_QUEUE_DELTA = 0.5    # signed penalty/reward for queue growing/shrinking
-W_ARRIVED     = 3.0    # reward per vehicle completing its journey
-W_EMERGENCY   = 50.0   # penalty per decision block any emergency vehicle waits
-W_FLICKER     = 10.0   # penalty for switching before MIN_GREEN_DURATION
-W_BALANCE     = 4.0    # bonus for balanced queue distribution (was 1.0 — increased
-                        # to prevent N/S bias due to 2-lane vs 1-lane asymmetry)
-W_MAX_WAIT    = 0.4    # penalty per second any approach waits beyond the threshold
-W_PED_WAIT    = 0.3    # penalty per waiting pedestrian per decision block
+# ── Reward weights (redesigned 2026-06-09 — gridlock-trap fix) ────────────────
+# Diagnosis: the previous reward used ABSOLUTE queue (-0.2·queue) and ABSOLUTE
+# max-wait (-0.4·excess) penalties. Both diverge without bound once the junction
+# saturates, so a heavy episode scored ≈ -1.5M while a light one scored ≈ +5k.
+# Two failures resulted:
+#   1. A single Q-net cannot regress targets spanning a ~300× range across
+#      scenarios → destructive cross-scenario interference.
+#   2. In gridlock every action's reward saturated at "hugely negative", so the
+#      agent got no gradient telling it which action was *less* bad → it could
+#      never learn its way out. Light traffic never saturated, so it learned
+#      instantly. Hence the permanent light-genius / heavy-gridlock split.
+# Redesign: every penalty is NORMALISED to a reference scale and the per-block
+# reward is CLIPPED to ±REWARD_CLIP. Heavy traffic now yields a finite,
+# discriminative gradient (queue 100 scores better than queue 400) and the
+# cross-scenario reward spread collapses from ~300× to ~10×.
+QUEUE_REF     = 40.0   # reference queue (≈ baseline peak) — congestion normaliser
+WAIT_REF      = 90.0   # reference excess-wait (s) — max-wait normaliser
+PED_REF       = 10.0   # reference pedestrian backlog
+REWARD_CLIP   = 40.0   # per-decision-block reward saturates at ±this
+
+W_QUEUE_ABS   = 4.0    # congestion penalty     × (total_queue / QUEUE_REF)
+W_QUEUE_DELTA = 2.0    # queue-growth penalty    × (growth / QUEUE_REF)
+W_ARRIVED     = 1.0    # throughput reward       × n_arrived (~0-15 per block)
+W_EMERGENCY   = 8.0    # emergency-wait penalty  × n_emerg_waiting (bounded, strong)
+W_FLICKER     = 2.0    # anti-flicker penalty
+W_BALANCE     = 2.0    # fairness bonus          × balance∈[0,1]
+W_MAX_WAIT    = 4.0    # worst-approach penalty  × min(excess / WAIT_REF, 3)
+W_PED_WAIT    = 1.0    # pedestrian-wait penalty × min(n_ped / PED_REF, 2)
 FAIR_WAIT_THRESH = 30.0  # seconds — acceptable wait; penalty kicks in above this
 
 
@@ -622,21 +651,22 @@ class TrafficEnv:
                                      (prevents E/W starvation from N/S throughput bias)
         8. Pedestrian wait penalty — penalises waiting pedestrians at crossings
         """
-        # 1. Absolute congestion penalty (per decision block)
-        r_abs   = -W_QUEUE_ABS * total_queue
+        # All penalties are NORMALISED to a reference scale so heavy traffic
+        # produces a finite, discriminative gradient (see weight-block note).
 
-        # 2. Delta: penalise net queue GROWTH only (no reward for shrinkage).
-        #    Throughput bonus (r_thru) already rewards vehicles leaving.
-        #    Rewarding shrinkage created a reward-hacking vulnerability where
-        #    the agent could oscillate phases to harvest delta rewards without
-        #    improving net throughput.
+        # 1. Congestion penalty — normalised by QUEUE_REF (was absolute → diverged)
+        r_abs   = -W_QUEUE_ABS * (total_queue / QUEUE_REF)
+
+        # 2. Delta: penalise net queue GROWTH only (no reward for shrinkage —
+        #    rewarding shrinkage let the agent oscillate phases to farm reward
+        #    without improving net throughput).
         delta   = total_queue - prev_total_queue
-        r_delta = -W_QUEUE_DELTA * max(0.0, delta)   # only penalise growth
+        r_delta = -W_QUEUE_DELTA * (max(0.0, delta) / QUEUE_REF)
 
         # 3. Throughput (accumulated over the DECISION_INTERVAL steps)
         r_thru  = W_ARRIVED * n_arrived
 
-        # 4. Emergency vehicle waiting (strong signal)
+        # 4. Emergency vehicle waiting (strong, bounded signal)
         r_emerg = -W_EMERGENCY * n_emerg_waiting
 
         # 5. Flicker penalty
@@ -652,18 +682,65 @@ class TrafficEnv:
             r_balance = W_BALANCE  # zero traffic = maximum balance
 
         # 7. Max-wait penalty: prevent any single approach from being starved.
-        #    Only kicks in above FAIR_WAIT_THRESH to allow normal cycling.
+        #    Normalised by WAIT_REF and CAPPED so one gridlocked approach cannot
+        #    dominate the whole reward (the old unbounded form did exactly that).
         r_max_wait = 0.0
         if wait_distribution:
             worst_wait = max(wait_distribution)
             excess     = max(0.0, worst_wait - FAIR_WAIT_THRESH)
-            r_max_wait = -W_MAX_WAIT * excess
+            r_max_wait = -W_MAX_WAIT * min(excess / WAIT_REF, 3.0)
 
-        # 8. Pedestrian waiting penalty
-        r_ped = -W_PED_WAIT * n_ped_waiting
+        # 8. Pedestrian waiting penalty — normalised + capped
+        r_ped = -W_PED_WAIT * min(n_ped_waiting / PED_REF, 2.0)
 
-        return (r_abs + r_delta + r_thru + r_emerg
-                + r_flick + r_balance + r_max_wait + r_ped)
+        total = (r_abs + r_delta + r_thru + r_emerg
+                 + r_flick + r_balance + r_max_wait + r_ped)
+
+        # Clip so cross-scenario Q-targets stay well-conditioned and no single
+        # block can blow up the return: bounds per-block reward to ±REWARD_CLIP.
+        return float(max(-REWARD_CLIP, min(REWARD_CLIP, total)))
+
+    # ── Expert / warm-start policy ────────────────────────────────────────────
+
+    def expert_action(self) -> int:
+        """
+        Sustained-green expert used to guide exploration (warm-start).
+
+        Heavy demand is cleared by holding a green long enough to DRAIN the
+        queue, not by switching fast. So this expert keeps the current green
+        until that direction gaps out (queue ≤ EXPERT_GAP_QUEUE) or hits
+        EXPERT_MAX_GREEN, then hands green to the side that now needs it. It
+        approximates the actuated 90/45-style plan that clears 1901 veh/hr at
+        ~22s where the fast-switching 60/30 timer gridlocks at 811s.
+
+        This guides the DQN toward sustained greens — the skill every prior
+        controller (fast timer, thrashing max-pressure, untrained net) lacked.
+        Emergency preemption is handled by the env's safety layer, not here.
+        """
+        edge_m = self._collect_edge_metrics()
+        ns_q = edge_m["ACH_N2J"]["queue"] + edge_m["ACH_S2J"]["queue"]
+        ew_q = edge_m["AGG_E2J"]["queue"] + edge_m["GUG_W2J"]["queue"]
+
+        serving_ns = self._phase in (NS_THROUGH, NS_LEFT, NS_ALL)
+        serving_ew = self._phase in (EW_THROUGH, EW_LEFT, EW_ALL)
+
+        # Demand-matched long greens: N/S (the heavy group, ~66% of demand) gets
+        # EXPERT_NS_GREEN, E/W gets EXPERT_EW_GREEN — the 90/45 plan proven to
+        # clear 1901 veh/hr at ~21s. Gap-out switches early if the served
+        # direction is empty, so light traffic isn't held on a dead green.
+        if serving_ns:
+            if self._phase_timer >= EXPERT_NS_GREEN or (
+                    ns_q <= EXPERT_GAP_QUEUE and ew_q > EXPERT_GAP_QUEUE):
+                return ACTION_EW_ALL
+            return ACTION_HOLD
+        if serving_ew:
+            if self._phase_timer >= EXPERT_EW_GREEN or (
+                    ew_q <= EXPERT_GAP_QUEUE and ns_q > EXPERT_GAP_QUEUE):
+                return ACTION_NS_ALL
+            return ACTION_HOLD
+
+        # No green active (startup / yellow) → serve the bigger queue.
+        return ACTION_NS_ALL if ns_q >= ew_q else ACTION_EW_ALL
 
     # ── Phase Control ─────────────────────────────────────────────────────────
 

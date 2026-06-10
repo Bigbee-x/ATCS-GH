@@ -27,6 +27,7 @@ Outputs:
 import sys
 import csv
 import time
+import random
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -78,6 +79,38 @@ def _load_baseline_avg_wait() -> float:
 
 
 BASELINE_AVG_WAIT = _load_baseline_avg_wait()
+
+# ── Per-scenario fair grading ─────────────────────────────────────────────────
+# The single global baseline above was measured on ONE demand profile, so it
+# made rush-hour episodes look like failures (graded against off-peak traffic).
+# Instead, grade each episode against ITS OWN scenario's fixed-timer baseline —
+# the naive 60/30 timer the AI is meant to beat. Produced by
+# scripts/_per_scenario_baselines.py → data/scenario_baselines.csv.
+SCENARIO_BASELINE_CSV = PROJECT_ROOT / "data" / "scenario_baselines.csv"
+
+
+def _load_scenario_baselines() -> dict[str, float]:
+    """{scenario_stem: fixed-timer avg wait}. Empty dict falls back to global."""
+    out: dict[str, float] = {}
+    if SCENARIO_BASELINE_CSV.exists():
+        try:
+            with open(SCENARIO_BASELINE_CSV) as f:
+                for r in csv.DictReader(f):
+                    try:
+                        out[r["scenario"]] = float(r["baseline_avg_wait_s"])
+                    except (ValueError, KeyError):
+                        pass
+        except Exception as e:                                   # noqa: BLE001
+            print(f"[WARN] Could not parse scenario baselines: {e}")
+    return out
+
+
+SCENARIO_BASELINES = _load_scenario_baselines()
+
+# Warm-start: during exploration, this fraction follows the sustained-green
+# expert (env.expert_action) instead of a uniform-random action, so heavy
+# episodes keep flowing and the agent learns to HOLD greens rather than thrash.
+EXPERT_FRAC = 0.70
 
 
 # ── Training loop ─────────────────────────────────────────────────────────────
@@ -133,7 +166,12 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     print(f"  State size   : {STATE_SIZE}  |  Action size: {ACTION_SIZE}")
     print(f"  Batch size   : {DQNAgent.BATCH_SIZE}  |  Buffer: {DQNAgent.BUFFER_SIZE:,}")
     print(f"  ε start/min  : {DQNAgent.EPSILON_START} → {DQNAgent.EPSILON_MIN}")
-    print(f"  Baseline     : avg wait = {BASELINE_AVG_WAIT}s  (Phase 1 fixed timer)")
+    if SCENARIO_BASELINES:
+        print(f"  Grading      : per-scenario fixed-timer baselines "
+              f"({len(SCENARIO_BASELINES)} loaded — naive timer to beat)")
+    else:
+        print(f"  Baseline     : avg wait = {BASELINE_AVG_WAIT}s  (global fallback)")
+    print(f"  Warm-start   : sustained-green expert at {EXPERT_FRAC:.0%} of exploration")
     print(f"  Checkpoints  : every {CHECKPOINT_FREQ} episodes → {CHECKPOINT_DIR.name}/")
     print("═" * 72)
     print(f"\n  {'Ep':>5}  {'Scenario':>16}  {'Reward':>10}  {'Avg Wait':>9}  {'Peak Q':>7}  "
@@ -157,7 +195,15 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
         # ── Episode rollout ───────────────────────────────────────────────────
         while not done:
-            action                         = agent.select_action(state)
+            # Guided ε-exploration: explore mostly via the sustained-green expert
+            # (warm-start) so heavy episodes keep flowing and the agent learns to
+            # HOLD greens; otherwise exploit the learned policy.
+            if random.random() < agent.epsilon:
+                action = (env.expert_action()
+                          if random.random() < EXPERT_FRAC
+                          else random.randrange(ACTION_SIZE))
+            else:
+                action = agent.greedy_action(state)
             next_state, reward, done, info = env.step(action)
             agent.remember(state, action, reward, next_state, done)
             agent.learn()
@@ -171,7 +217,8 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         total_reward = env.episode_total_reward
         peak_queue   = env.episode_peak_queue
         ep_time      = time.time() - ep_start
-        delta_pct    = (avg_wait - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
+        scenario_baseline = SCENARIO_BASELINES.get(scenario_name, BASELINE_AVG_WAIT)
+        delta_pct    = (avg_wait - scenario_baseline) / scenario_baseline * 100
 
         emerg_max    = max(env.emergency_log.values(), default=0.0)
 
@@ -266,8 +313,6 @@ def _print_summary(rows: list[dict],
     first_avg = sum(r["avg_wait_s"] for r in rows[:n_first]) / n_first
     last_avg  = sum(r["avg_wait_s"] for r in rows[-n_last:])  / n_last
     improvement = (first_avg - last_avg) / first_avg * 100 if first_avg > 0 else 0.0
-    vs_baseline = (best_rolling - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
-
     print("\n" + "═" * 62)
     print("  ATCS-GH — TRAINING COMPLETE")
     print("═" * 62)
@@ -282,10 +327,23 @@ def _print_summary(rows: list[dict],
           f"(learned policy)")
     print(f"  Improvement over training   : {improvement:.1f}%")
     print()
-    print(f"  Best rolling avg  : {best_rolling:.1f}s  (mean over best 10-ep window, all scenarios)")
-    print(f"  Baseline avg wait : {BASELINE_AVG_WAIT:.1f}s")
-    print(f"  vs Baseline       : {vs_baseline:+.1f}%  "
-          f"({'BETTER ✓' if vs_baseline < 0 else 'needs more training'})")
+    print(f"  Best rolling avg  : {best_rolling:.1f}s  (mean over best 10-ep window)")
+    print()
+    print(f"  Per-scenario — mean of last 3 episodes vs each scenario's naive timer:")
+    by_scen: dict[str, list[float]] = {}
+    for r in rows:
+        by_scen.setdefault(r["scenario"], []).append(r["avg_wait_s"])
+    wins = 0
+    for scen, waits in by_scen.items():
+        last = waits[-3:] if len(waits) >= 3 else waits
+        ai   = sum(last) / len(last)
+        base = SCENARIO_BASELINES.get(scen, BASELINE_AVG_WAIT)
+        d    = (ai - base) / base * 100
+        beat = d < 0
+        wins += int(beat)
+        print(f"    {scen:>17}: AI {ai:>7.1f}s  vs timer {base:>7.1f}s  "
+              f"{d:>+6.1f}%  {'✓ beats' if beat else '✗'}")
+    print(f"\n  AI beats the naive fixed timer on {wins}/{len(by_scen)} scenarios")
     print()
     print(f"  Saved models:")
     print(f"    Best  → {BEST_MODEL_PATH.relative_to(PROJECT_ROOT)}")

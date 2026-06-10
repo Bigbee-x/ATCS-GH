@@ -1,0 +1,6 @@
+scenario,baseline_avg_wait_s,peak_queue,completed,saturated
+off_peak,4.9,14,2226,no
+weekend_market,282.2,234,3132,no
+evening_rush,912.5,771,3462,YES
+morning_rush,811.2,805,2618,YES
+heavy_emergency,811.2,805,2618,YES
