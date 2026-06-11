@@ -187,13 +187,19 @@ EDGE_TO_GREENS = {
 }
 
 # Action constants
+# REALISM FIX (2026-06-11): ACTION_NS_ALL / ACTION_EW_ALL removed. The all-green
+# phases greened the protected-left arrow AND oncoming through simultaneously —
+# left-turners entered the junction box against oncoming traffic and blocked it.
+# The real Achimota junction (and the visualizer's fixed timer) runs protected
+# lefts: through and left arrows NEVER green together. The agent now works with
+# the same phase vocabulary as the real junction. (NS_ALL/EW_ALL phase strings
+# remain defined below only for state-encoding compatibility; they are
+# unreachable through the action space.)
 ACTION_HOLD       = 0
 ACTION_NS_THROUGH = 1
 ACTION_NS_LEFT    = 2
 ACTION_EW_THROUGH = 3
 ACTION_EW_LEFT    = 4
-ACTION_NS_ALL     = 5
-ACTION_EW_ALL     = 6
 
 # Map action index → target green phase
 ACTION_TO_PHASE = {
@@ -201,79 +207,13 @@ ACTION_TO_PHASE = {
     ACTION_NS_LEFT:    NS_LEFT,
     ACTION_EW_THROUGH: EW_THROUGH,
     ACTION_EW_LEFT:    EW_LEFT,
-    ACTION_NS_ALL:     NS_ALL,
-    ACTION_EW_ALL:     EW_ALL,
 }
 
-ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
-                "NS_ALL", "EW_ALL"]
+ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT"]
 
-
-class ActionSanitizer:
-    """Remap permissive-left phases to protected phases, alternating lefts and throughs.
-
-    NS_ALL/EW_ALL would normally light the through-green and the left-arrow
-    simultaneously — a "permissive left" that forces left-turners to yield
-    to oncoming through traffic. That doesn't match the fixed-timer
-    baseline (which serves lefts with a dedicated protected-left phase).
-
-    A naive fix is to collapse NS_ALL → NS_THROUGH, but that starves lefts
-    because the trained policy relied on NS_ALL to serve both movements in
-    one green. Instead, we **alternate** each time an ALL-phase is picked:
-
-        1st NS_ALL in a row → NS_LEFT    (serve the starved lefts first)
-        2nd NS_ALL in a row → NS_THROUGH
-        3rd NS_ALL in a row → NS_LEFT
-        ...
-
-    Same for EW_ALL ↔ {EW_THROUGH, EW_LEFT}. This preserves the agent's
-    directional intent (N/S or E/W priority) while splitting the combined
-    movement across two decision ticks, so both through AND protected-left
-    eventually get a turn. Training is intentionally untouched so existing
-    checkpoints (7-action output head) still load.
-    """
-
-    def __init__(self) -> None:
-        # Start by serving lefts first when the AI picks an ALL-phase — they
-        # were the starved movement under the naive collapse fix.
-        self._ns_serve_left_next = True
-        self._ew_serve_left_next = True
-
-    def __call__(self, action: int) -> int:
-        if action == ACTION_NS_ALL:
-            remapped = ACTION_NS_LEFT if self._ns_serve_left_next else ACTION_NS_THROUGH
-            self._ns_serve_left_next = not self._ns_serve_left_next
-            return remapped
-        if action == ACTION_EW_ALL:
-            remapped = ACTION_EW_LEFT if self._ew_serve_left_next else ACTION_EW_THROUGH
-            self._ew_serve_left_next = not self._ew_serve_left_next
-            return remapped
-        return action
-
-
-# Module-level default instance — kept for any external code that still
-# imports it directly, but no longer used by the default sanitize_action().
-_default_sanitizer = ActionSanitizer()
-
-
-def sanitize_action(action: int) -> int:
-    """**PASS-THROUGH** — no longer remaps actions.
-
-    AUDIT FIX (2026-04-24): The original ActionSanitizer remapped
-    NS_ALL/EW_ALL into alternating LEFT/THROUGH phases POST-training.
-    Because the existing checkpoint was trained without the sanitizer in
-    the loop, the trained policy expected NS_ALL/EW_ALL to fire as the
-    permissive-left phases defined in PHASE_SIGNALS. Silently remapping
-    those actions broke the policy's value estimates and caused the agent
-    to lock onto NS-biased policies that visibly starve E/W in live runs.
-
-    For now this function passes the action through unchanged so the env
-    honours the policy's intent. The ActionSanitizer class above is
-    retained for reference and future retrains where the sanitizer is
-    included in the training loop from the start (then this wrapper can
-    be re-pointed at `_default_sanitizer` again).
-    """
-    return action
+# NOTE: the old ActionSanitizer / sanitize_action machinery was deleted
+# (2026-06-11) along with the ALL-phase actions it existed to clean up.
+# With a protected-left-only action space there is nothing to sanitize.
 
 # ── State normalisation ───────────────────────────────────────────────────────
 # AUDIT FIX (2026-06-07): Raised after the first full retrain (250 eps, mixed
@@ -315,13 +255,20 @@ SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 # same demand at 22s. So the expert holds the current green until it drains
 # (gap-out) or hits a max, instead of flipping on the instantaneous bigger queue.
 EXPERT_GAP_QUEUE    = 3     # a direction is "empty" at/below this (gap-out)
-EXPERT_NS_GREEN     = 90    # N/S green (s) — the heavy group, ~66% of demand
-EXPERT_EW_GREEN     = 45    # E/W green (s). 90/45 is the plan proven to clear 1901
+EXPERT_NS_GREEN     = 90    # N/S through green (s) — the heavy group, ~66% of demand
+EXPERT_EW_GREEN     = 45    # E/W through green (s). 90/45 is the plan proven to clear 1901
+EXPERT_NS_LEFT_GREEN = 15   # protected left-arrow greens (match the viz fixed timer)
+EXPERT_EW_LEFT_GREEN = 10
+# Left-turn lanes (lane _2 on each edge is reserved for left + uturn)
+_LEFT_LANES_NS  = ("ACH_N2J_2", "ACH_S2J_2")
+_LEFT_LANES_EW  = ("AGG_E2J_2", "GUG_W2J_2")
+_THRU_LANES_NS  = ("ACH_N2J_1", "ACH_S2J_1")
+_THRU_LANES_EW  = ("AGG_E2J_1", "GUG_W2J_1")
                             # veh/hr at ~21s; demand-matched split, not 50/50.
 
 # Exported constants for use by train_agent.py / run_ai.py
 STATE_SIZE  = 45   # 8*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
-ACTION_SIZE = 7
+ACTION_SIZE = 5   # was 7 — NS_ALL/EW_ALL removed (protected-left realism fix)
 
 # ── Reward weights (redesigned 2026-06-09 — gridlock-trap fix) ────────────────
 # Diagnosis: the previous reward used ABSOLUTE queue (-0.2·queue) and ABSOLUTE
@@ -702,45 +649,71 @@ class TrafficEnv:
 
     # ── Expert / warm-start policy ────────────────────────────────────────────
 
+    def _lane_halts(self, lanes: tuple) -> int:
+        """Sum of halted vehicles on the given lanes (0 on any TraCI hiccup)."""
+        total = 0
+        for lane in lanes:
+            try:
+                total += traci.lane.getLastStepHaltingNumber(lane)
+            except traci.TraCIException:
+                pass
+        return total
+
     def expert_action(self) -> int:
         """
-        Sustained-green expert used to guide exploration (warm-start).
+        Protected-left actuated expert used to guide exploration (warm-start).
 
-        Heavy demand is cleared by holding a green long enough to DRAIN the
-        queue, not by switching fast. So this expert keeps the current green
-        until that direction gaps out (queue ≤ EXPERT_GAP_QUEUE) or hits
-        EXPERT_MAX_GREEN, then hands green to the side that now needs it. It
-        approximates the actuated 90/45-style plan that clears 1901 veh/hr at
-        ~22s where the fast-switching 60/30 timer gridlocks at 811s.
-
-        This guides the DQN toward sustained greens — the skill every prior
-        controller (fast timer, thrashing max-pressure, untrained net) lacked.
+        Mirrors how the real Achimota junction (and the visualizer's fixed
+        timer) phases traffic: through movements and the left arrow NEVER green
+        together. The cycle is THROUGH (long, gap-out or max-green) → protected
+        LEFT (short, skipped when no lefts wait) → other axis, with N/S getting
+        the longer greens (~66% of demand). Two prior expert designs failed:
+        max-pressure thrashing (gridlock from short greens) and all-green
+        phases (left-turners blocking the junction box against oncoming
+        through). This one holds long greens AND keeps conflicts protected.
         Emergency preemption is handled by the env's safety layer, not here.
         """
-        edge_m = self._collect_edge_metrics()
-        ns_q = edge_m["ACH_N2J"]["queue"] + edge_m["ACH_S2J"]["queue"]
-        ew_q = edge_m["AGG_E2J"]["queue"] + edge_m["GUG_W2J"]["queue"]
+        ns_thru = self._lane_halts(_THRU_LANES_NS)
+        ew_thru = self._lane_halts(_THRU_LANES_EW)
+        ns_left = self._lane_halts(_LEFT_LANES_NS)
+        ew_left = self._lane_halts(_LEFT_LANES_EW)
+        ns_q = ns_thru + ns_left
+        ew_q = ew_thru + ew_left
 
-        serving_ns = self._phase in (NS_THROUGH, NS_LEFT, NS_ALL)
-        serving_ew = self._phase in (EW_THROUGH, EW_LEFT, EW_ALL)
+        if self._phase == NS_THROUGH:
+            done = (self._phase_timer >= EXPERT_NS_GREEN
+                    or (ns_thru <= EXPERT_GAP_QUEUE
+                        and ns_left + ew_q > EXPERT_GAP_QUEUE))
+            if not done:
+                return ACTION_HOLD
+            if ns_left > 0:
+                return ACTION_NS_LEFT          # serve the waiting left arrow
+            return ACTION_EW_THROUGH if ew_q > 0 else ACTION_HOLD
 
-        # Demand-matched long greens: N/S (the heavy group, ~66% of demand) gets
-        # EXPERT_NS_GREEN, E/W gets EXPERT_EW_GREEN — the 90/45 plan proven to
-        # clear 1901 veh/hr at ~21s. Gap-out switches early if the served
-        # direction is empty, so light traffic isn't held on a dead green.
-        if serving_ns:
-            if self._phase_timer >= EXPERT_NS_GREEN or (
-                    ns_q <= EXPERT_GAP_QUEUE and ew_q > EXPERT_GAP_QUEUE):
-                return ACTION_EW_ALL
-            return ACTION_HOLD
-        if serving_ew:
-            if self._phase_timer >= EXPERT_EW_GREEN or (
-                    ew_q <= EXPERT_GAP_QUEUE and ns_q > EXPERT_GAP_QUEUE):
-                return ACTION_NS_ALL
-            return ACTION_HOLD
+        if self._phase == NS_LEFT:
+            done = (self._phase_timer >= EXPERT_NS_LEFT_GREEN or ns_left == 0)
+            if not done:
+                return ACTION_HOLD
+            return ACTION_EW_THROUGH if ew_q > 0 else ACTION_NS_THROUGH
 
-        # No green active (startup / yellow) → serve the bigger queue.
-        return ACTION_NS_ALL if ns_q >= ew_q else ACTION_EW_ALL
+        if self._phase == EW_THROUGH:
+            done = (self._phase_timer >= EXPERT_EW_GREEN
+                    or (ew_thru <= EXPERT_GAP_QUEUE
+                        and ew_left + ns_q > EXPERT_GAP_QUEUE))
+            if not done:
+                return ACTION_HOLD
+            if ew_left > 0:
+                return ACTION_EW_LEFT
+            return ACTION_NS_THROUGH if ns_q > 0 else ACTION_HOLD
+
+        if self._phase == EW_LEFT:
+            done = (self._phase_timer >= EXPERT_EW_LEFT_GREEN or ew_left == 0)
+            if not done:
+                return ACTION_HOLD
+            return ACTION_NS_THROUGH if ns_q > 0 else ACTION_EW_THROUGH
+
+        # Startup / yellow / legacy ALL phase → serve the bigger axis, through first.
+        return ACTION_NS_THROUGH if ns_q >= ew_q else ACTION_EW_THROUGH
 
     # ── Phase Control ─────────────────────────────────────────────────────────
 

@@ -2,11 +2,15 @@
 """
 Foundation for fair grading (2026-06-09).
 
-Runs the fixed-timer baseline (tuned 60/30) on EVERY scenario at full 7200s and
-records each one's own avg wait + peak queue + completion. Writes
-data/scenario_baselines.csv so training can grade the AI against "beat the timer
-on the SAME demand" instead of a single global number (which was measured on a
-benign distribution and made the heavy scenarios look like AI failures).
+Runs the fixed-timer baseline on EVERY scenario at full 7200s and records each
+one's own avg wait + peak queue + completion. Writes data/scenario_baselines.csv
+so training can grade the AI against "beat the timer on the SAME demand".
+
+UPDATED 2026-06-11: uses the "protected" preset (protected-left 4-phase cycle,
+NS 40/15 + EW 25/10) — the REALISTIC status-quo controller matching the real
+Achimota junction and the visualizer's fixed-timer mode. The old all-movement
+60/30 preset greened left arrows with oncoming through traffic, which neither
+the real junction nor the AI (post realism-fix) is allowed to do.
 
 Also flags which scenarios are over the junction's saturation capacity (the
 fixed timer itself gridlocks) — those are the recalibration candidates.
@@ -28,7 +32,7 @@ for name in SCENARIOS:
     route = str(ROOT / "simulation" / "scenarios" / f"{name}.rou.xml")
     print(f"\n{'#'*70}\n#  BASELINE: {name}\n{'#'*70}", flush=True)
     try:
-        records, _ = rb.run_simulation(gui=False, preset="tuned", route_file=route)
+        records, _ = rb.run_simulation(gui=False, preset="protected", route_file=route)
         aw   = [r["avg_wait_time_s"] for r in records]
         q    = [r["total_queue_vehicles"] for r in records]
         comp = records[-1]["completed_vehicles"]
@@ -50,7 +54,7 @@ with open(OUT, "w", newline="") as f:
     w.writerows(rows)
 
 print("\n" + "=" * 78)
-print("  PER-SCENARIO FIXED-TIMER BASELINES (tuned 60/30, full 7200s)")
+print("  PER-SCENARIO FIXED-TIMER BASELINES (protected-left 4-phase, full 7200s)")
 print("=" * 78)
 print(f"  {'scenario':>17} {'baseline_wait':>14} {'peak_q':>7} {'completed':>10} {'saturated':>10}")
 print("  " + "-" * 64)
