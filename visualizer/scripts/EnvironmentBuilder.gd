@@ -19,11 +19,23 @@ const SIDEWALK_WIDTH  := 1.5
 const ROAD_THICKNESS  := 0.1
 
 # ── Building generation parameters ──────────────────────────────────────────
-const BUILDING_OFFSET := 0.5     # Gap between sidewalk edge and first building
+const BUILDING_OFFSET := 2.6     # Setback: sidewalk edge → building face
+                                 # (was 0.5 — buildings loomed over the road;
+                                 # now gutter 0.6 + verge ~2.0 sit between)
 const MIN_GAP         := 0.3     # Minimum gap between buildings
 const MAX_GAP         := 1.5     # Maximum gap between buildings
-const JUNCTION_MARGIN := 3.0     # Don't place buildings too close to junction
+const JUNCTION_MARGIN := 5.5     # Don't place buildings too close to junction
+                                 # (was 3.0 — crowded the TL poles/cabinets)
 const ROAD_END_MARGIN := 5.0     # Don't place buildings at road edge
+
+# ── Open roadside drainage (classic Accra concrete U-gutters) ───────────────
+const GUTTER_WIDTH        := 0.6    # channel width, runs beside the sidewalk
+const GUTTER_RIM_W        := 0.10   # concrete rim thickness each side
+const GUTTER_RIM_H        := 0.15   # rim height (matches sidewalk curb)
+const GUTTER_BRIDGE_EVERY := 7.0    # avg spacing of access slab bridges
+const GUTTER_FLOOR_COLOR  := Color(0.10, 0.11, 0.12)   # dark channel interior
+const GUTTER_CONCRETE     := Color(0.62, 0.60, 0.56)   # weathered concrete
+const GUTTER_SLAB_COLOR   := Color(0.68, 0.66, 0.62)   # slightly lighter slabs
 
 # ── Accra facade palette ────────────────────────────────────────────────────
 const FACADE_COLORS: Array = [
@@ -200,6 +212,7 @@ func _ready() -> void:
 		var dir_sign: float = arm[2]
 		var road_w: float = arm[3]
 		_build_arm_buildings(arm_name, axis, dir_sign, road_w)
+		_build_arm_gutters(axis, dir_sign, road_w)
 
 	# Build junction corner anchor buildings
 	_build_junction_corners()
@@ -587,6 +600,53 @@ func _build_arm_buildings(_arm_name: String, axis: int, dir_sign: float,
 			cursor += building_length + _rng.randf_range(MIN_GAP, MAX_GAP)
 
 
+func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
+	## Open concrete drainage gutters along both sides of a road arm, in the
+	## strip between the sidewalk and the building setback, with periodic slab
+	## bridges so frontages stay accessible — the classic Accra streetscape.
+	var inner: float = road_width / 2.0 + SIDEWALK_WIDTH       # channel inner edge
+	var outer: float = inner + GUTTER_WIDTH                     # channel outer edge
+	var g_start: float = JUNCTION_HALF + 1.2                    # past the corner zone
+	var g_end: float = JUNCTION_HALF + ROAD_LENGTH - 1.0
+	var g_len: float = g_end - g_start
+	var g_mid: float = (g_start + g_end) / 2.0
+
+	for side_sign in [-1.0, 1.0]:
+		# Dark channel interior (reads as the recessed open drain)
+		var channel := CSGBox3D.new()
+		channel.size = _orient_size(axis, g_len, 0.04, GUTTER_WIDTH)
+		channel.position = _compute_position(axis, dir_sign, g_mid,
+				side_sign * inner, side_sign, GUTTER_WIDTH) + Vector3(0, 0.02, 0)
+		channel.material = _get_material(GUTTER_FLOOR_COLOR)
+		channel.name = "GutterChannel"
+		add_child(channel)
+
+		# Concrete rims on both edges of the channel
+		for rim_inner_edge in [inner - GUTTER_RIM_W, outer]:
+			var rim := CSGBox3D.new()
+			rim.size = _orient_size(axis, g_len, GUTTER_RIM_H, GUTTER_RIM_W)
+			rim.position = _compute_position(axis, dir_sign, g_mid,
+					side_sign * rim_inner_edge, side_sign, GUTTER_RIM_W) \
+					+ Vector3(0, GUTTER_RIM_H / 2.0, 0)
+			rim.material = _get_material(GUTTER_CONCRETE)
+			rim.name = "GutterRim"
+			add_child(rim)
+
+		# Access slab bridges across the channel at irregular intervals
+		var span: float = GUTTER_WIDTH + 2.0 * GUTTER_RIM_W
+		var cursor: float = g_start + _rng.randf_range(1.0, 3.5)
+		while cursor < g_end - 1.5:
+			var slab := CSGBox3D.new()
+			slab.size = _orient_size(axis, 1.1, 0.06, span)
+			slab.position = _compute_position(axis, dir_sign, cursor,
+					side_sign * (inner - GUTTER_RIM_W), side_sign, span) \
+					+ Vector3(0, GUTTER_RIM_H + 0.01, 0)
+			slab.material = _get_material(GUTTER_SLAB_COLOR)
+			slab.name = "GutterBridge"
+			add_child(slab)
+			cursor += GUTTER_BRIDGE_EVERY + _rng.randf_range(-1.5, 2.5)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # BUILDING TYPES
 # ═════════════════════════════════════════════════════════════════════════════
@@ -754,19 +814,24 @@ func _place_market_stalls(axis: int, dir_sign: float, along: float,
 
 func _build_junction_corners() -> void:
 	## Place distinctive anchor buildings at the 4 corners of the junction.
-	var corner_offset: float = JUNCTION_HALF + SIDEWALK_WIDTH + BUILDING_OFFSET + 0.5
-	var corners: Array = [
-		Vector3(-corner_offset, 0, corner_offset),   # NW
-		Vector3(corner_offset, 0, corner_offset),     # NE
-		Vector3(-corner_offset, 0, -corner_offset),   # SW
-		Vector3(corner_offset, 0, -corner_offset),    # SE
+	## Faces respect the same setback line as the arm buildings (sidewalk +
+	## BUILDING_OFFSET), so corners no longer crowd the TL poles or the road.
+	var face_line: float = JUNCTION_HALF + SIDEWALK_WIDTH + BUILDING_OFFSET
+	var corner_signs: Array = [
+		Vector2(-1,  1),   # NW
+		Vector2( 1,  1),   # NE
+		Vector2(-1, -1),   # SW
+		Vector2( 1, -1),   # SE
 	]
 
-	for i in range(corners.size()):
-		var pos: Vector3 = corners[i]
+	for i in range(corner_signs.size()):
 		var height: float = _rng.randf_range(3.0, 5.5)
 		var width: float = _rng.randf_range(3.5, 5.0)
 		var depth: float = _rng.randf_range(3.0, 4.5)
+		var sgn: Vector2 = corner_signs[i]
+		# Center sits half a footprint behind the setback line on BOTH axes
+		var pos := Vector3(sgn.x * (face_line + width / 2.0), 0,
+						   sgn.y * (face_line + depth / 2.0))
 		var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
 		var awning_color: Color = AWNING_COLORS[_rng.randi() % AWNING_COLORS.size()]
 

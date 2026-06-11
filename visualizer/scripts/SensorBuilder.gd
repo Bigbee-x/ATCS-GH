@@ -151,7 +151,6 @@ func _attach_sensors_to_pole(pole: Node3D) -> void:
 	##   local +Y → up
 	## So cameras & radar face local +Z to watch the approach.
 	_add_cctv(pole)
-	_add_radar(pole)
 	_add_cabinet(pole)
 	_add_sightline_cone(pole)
 
@@ -214,29 +213,6 @@ func _add_cctv(pole: Node3D) -> void:
 	led.material = _mat_led
 	root.add_child(led)
 
-
-func _add_radar(pole: Node3D) -> void:
-	## Microwave/radar vehicle detector — flat white panel on the side of the
-	## signal housing, facing approaching traffic, tilted 15° down so its beam
-	## intersects the road surface ~15m back.
-	const PITCH: float = deg_to_rad(15.0)
-
-	var panel := CSGBox3D.new()
-	panel.name = "Sensor_Radar"
-	panel.size = Vector3(0.15, 0.22, 0.06)
-	panel.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.55, 0.20)
-	# +rotation.x tilts the +Z face (the aperture) downward toward the road.
-	panel.rotation.x = PITCH
-	panel.material = _mat_housing_white
-	pole.add_child(panel)
-
-	# Dark radome covering the front face — actual microwave aperture
-	var radome := CSGBox3D.new()
-	radome.size = Vector3(0.12, 0.18, 0.015)
-	radome.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.548, 0.232)
-	radome.rotation.x = PITCH
-	radome.material = _mat_radome
-	pole.add_child(radome)
 
 
 func _add_cabinet(pole: Node3D) -> void:

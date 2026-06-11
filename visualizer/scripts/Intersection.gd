@@ -457,112 +457,173 @@ func _build_traffic_lights() -> void:
 		brace.name = "Brace"
 		pole_root.add_child(brace)
 
-		# ── Signal housing (hangs from arm tip, over road) ───────────────
-		var housing := CSGBox3D.new()
-		housing.size = Vector3(0.45, 1.3, 0.30)
-		housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 0.75, 0)
-		housing.material = _mat_pole
-		housing.name = "Housing"
-		pole_root.add_child(housing)
+		# ── Signal heads (2026-06-11): the real-world double setup ───────
+		# 1. HORIZONTAL overhead head hung from the mast arm (3 aspects
+		#    side-by-side + the left-arrow doghouse below) — the main signal.
+		# 2. Compact 2-aspect pole head (red/green) at driver height — assists
+		#    THROUGH/RIGHT traffic only; it NEVER signals the left turn.
+		#    Left-turners read the overhead arrow exclusively.
+		var head_over: Dictionary = _build_overhead_head(pole_root, -(ARM_LEN - 0.45), POLE_HEIGHT)
+		var head_pole: Dictionary = _build_pole_head(pole_root, 3.5)
 
-		# ── Visor / sun shade ────────────────────────────────────────────
-		var visor := CSGBox3D.new()
-		visor.size = Vector3(0.55, 0.06, 0.40)
-		visor.position = Vector3(-ARM_LEN, POLE_HEIGHT - 0.05, 0.15)
-		visor.material = _mat_pole
-		visor.name = "Visor"
-		pole_root.add_child(visor)
+		_lights[approach] = {
+			"red":    head_over["red"],
+			"yellow": head_over["yellow"],
+			"green":  head_over["green"],
+			"arrow":  head_over["arrow"],
+			"pole":   head_pole,           # {"red": {mesh,glow}, "green": {mesh,glow}}
+		}
 
-		# ── Three bulbs: red (top), yellow (mid), green (bottom) ─────────
-		var bulb_data: Array = [
-			{"name": "red",    "y": POLE_HEIGHT - 0.30, "color": Color(1, 0, 0)},
-			{"name": "yellow", "y": POLE_HEIGHT - 0.65, "color": Color(1, 0.85, 0)},
-			{"name": "green",  "y": POLE_HEIGHT - 1.00, "color": Color(0, 1, 0.2)},
-		]
 
-		var approach_lights: Dictionary = {}
+func _build_overhead_head(pole_root: Node3D, cx: float, arm_y: float) -> Dictionary:
+	## Horizontal 3-aspect signal head hung under the mast arm at local x = cx,
+	## bulbs side-by-side (driver's view: red | yellow | green), plus the
+	## left-arrow "doghouse" unit below. Bulbs face local +Z (the approach).
+	var head: Dictionary = {}
+	var hub_y: float = arm_y - 0.32          # housing centre, just under the arm
 
-		for bd in bulb_data:
-			var bulb := CSGSphere3D.new()
-			bulb.radius = 0.13
-			bulb.radial_segments = 12
-			bulb.rings = 6
-			bulb.position = Vector3(-ARM_LEN, bd["y"], 0.18)
-			bulb.material = _mat_light_off
-			bulb.name = "Bulb_%s" % bd["name"]
-			pole_root.add_child(bulb)
+	var housing := CSGBox3D.new()
+	housing.size = Vector3(1.30, 0.45, 0.30)
+	housing.position = Vector3(cx, hub_y, 0)
+	housing.material = _mat_pole
+	housing.name = "Housing_Over"
+	pole_root.add_child(housing)
 
-			var glow := OmniLight3D.new()
-			glow.position = Vector3(-ARM_LEN, bd["y"], 0.18)
-			glow.light_energy = 0.0
-			glow.light_color = bd["color"]
-			glow.omni_range = 5.0
-			glow.omni_attenuation = 1.5
-			glow.shadow_enabled = false
-			glow.name = "Glow_%s" % bd["name"]
-			pole_root.add_child(glow)
+	# Single wide visor over the top edge
+	var visor := CSGBox3D.new()
+	visor.size = Vector3(1.40, 0.06, 0.40)
+	visor.position = Vector3(cx, hub_y + 0.26, 0.15)
+	visor.material = _mat_pole
+	visor.name = "Visor_Over"
+	pole_root.add_child(visor)
 
-			approach_lights[bd["name"]] = {
-				"mesh": bulb,
-				"glow": glow,
-			}
+	# Three bulbs left→right from the driver's POV: red, yellow, green.
+	# (+X is the driver's left in the pole_root local frame.)
+	var bulb_data: Array = [
+		{"name": "red",    "x": cx + 0.40, "color": Color(1, 0, 0)},
+		{"name": "yellow", "x": cx,        "color": Color(1, 0.85, 0)},
+		{"name": "green",  "x": cx - 0.40, "color": Color(0, 1, 0.2)},
+	]
+	for bd in bulb_data:
+		var bulb := CSGSphere3D.new()
+		bulb.radius = 0.13
+		bulb.radial_segments = 12
+		bulb.rings = 6
+		bulb.position = Vector3(bd["x"], hub_y, 0.18)
+		bulb.material = _mat_light_off
+		bulb.name = "Bulb_%s_Over" % bd["name"]
+		pole_root.add_child(bulb)
 
-		# ── Dedicated LEFT-TURN arrow signal (separate "doghouse" unit) ──
-		# Smaller square housing below the main 3-bulb signal, containing a
-		# proper arrow-shaped mesh (not a blob). Matches the real-world
-		# design where a green arrow = protected left turn, while the main
-		# red/yellow/green circles continue to control through traffic.
-		var arrow_housing := CSGBox3D.new()
-		arrow_housing.size = Vector3(0.38, 0.38, 0.28)
-		arrow_housing.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0)
-		arrow_housing.material = _mat_pole
-		arrow_housing.name = "ArrowHousing"
-		pole_root.add_child(arrow_housing)
+		var glow := OmniLight3D.new()
+		glow.position = Vector3(bd["x"], hub_y, 0.18)
+		glow.light_energy = 0.0
+		glow.light_color = bd["color"]
+		glow.omni_range = 5.0
+		glow.omni_attenuation = 1.5
+		glow.shadow_enabled = false
+		glow.name = "Glow_%s_Over" % bd["name"]
+		pole_root.add_child(glow)
 
-		# Small visor above the arrow housing (matches main signal style)
-		var arrow_visor := CSGBox3D.new()
-		arrow_visor.size = Vector3(0.46, 0.04, 0.34)
-		arrow_visor.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.50, 0.13)
-		arrow_visor.material = _mat_pole
-		arrow_visor.name = "ArrowVisor"
-		pole_root.add_child(arrow_visor)
+		head[bd["name"]] = {"mesh": bulb, "glow": glow}
 
-		# Arrow mesh — extruded polygon shaped like a left-pointing arrow.
-		# Polygon lives in local XY; tip points toward +X (driver's left in
-		# pole_root's per-approach local frame). Extrudes along +Z so the
-		# silhouette is visible both from the approaching vehicle's POV and
-		# from the isometric overhead camera.
-		var arrow_mesh := CSGPolygon3D.new()
-		arrow_mesh.polygon = PackedVector2Array([
-			Vector2(-0.11,  0.028),   # shaft tail — top
-			Vector2( 0.02,  0.028),   # shaft / head joint — top
-			Vector2( 0.02,  0.085),   # head outer-top
-			Vector2( 0.14,  0.000),   # arrow TIP (points to +X = driver's left)
-			Vector2( 0.02, -0.085),   # head outer-bottom
-			Vector2( 0.02, -0.028),   # shaft / head joint — bottom
-			Vector2(-0.11, -0.028),   # shaft tail — bottom
-		])
-		arrow_mesh.depth = 0.04
-		arrow_mesh.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0.14)
-		arrow_mesh.material = _mat_arrow_off
-		arrow_mesh.name = "Arrow"
-		pole_root.add_child(arrow_mesh)
+	# LEFT-TURN arrow doghouse below the horizontal head: green arrow =
+	# protected left, while the circles above control through traffic.
+	var arrow_y: float = hub_y - 0.48
 
-		# Glow positioned just behind the arrow plate so the green light
-		# appears to emanate from the arrow when lit.
-		var arrow_glow := OmniLight3D.new()
-		arrow_glow.position = Vector3(-ARM_LEN, POLE_HEIGHT - 1.70, 0.16)
-		arrow_glow.light_energy = 0.0
-		arrow_glow.light_color = Color(0, 1, 0.3)
-		arrow_glow.omni_range = 3.5
-		arrow_glow.omni_attenuation = 1.5
-		arrow_glow.shadow_enabled = false
-		arrow_glow.name = "ArrowGlow"
-		pole_root.add_child(arrow_glow)
+	var arrow_housing := CSGBox3D.new()
+	arrow_housing.size = Vector3(0.38, 0.38, 0.28)
+	arrow_housing.position = Vector3(cx, arrow_y, 0)
+	arrow_housing.material = _mat_pole
+	arrow_housing.name = "ArrowHousing_Over"
+	pole_root.add_child(arrow_housing)
 
-		approach_lights["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
+	var arrow_visor := CSGBox3D.new()
+	arrow_visor.size = Vector3(0.46, 0.04, 0.34)
+	arrow_visor.position = Vector3(cx, arrow_y + 0.20, 0.13)
+	arrow_visor.material = _mat_pole
+	arrow_visor.name = "ArrowVisor_Over"
+	pole_root.add_child(arrow_visor)
 
-		_lights[approach] = approach_lights
+	# Arrow mesh — extruded polygon, tip points to +X (driver's left in the
+	# pole_root local frame); extrudes along +Z so it reads from the driver's
+	# POV and the overhead camera.
+	var arrow_mesh := CSGPolygon3D.new()
+	arrow_mesh.polygon = PackedVector2Array([
+		Vector2(-0.11,  0.028),   # shaft tail — top
+		Vector2( 0.02,  0.028),   # shaft / head joint — top
+		Vector2( 0.02,  0.085),   # head outer-top
+		Vector2( 0.14,  0.000),   # arrow TIP (points to +X = driver's left)
+		Vector2( 0.02, -0.085),   # head outer-bottom
+		Vector2( 0.02, -0.028),   # shaft / head joint — bottom
+		Vector2(-0.11, -0.028),   # shaft tail — bottom
+	])
+	arrow_mesh.depth = 0.04
+	arrow_mesh.position = Vector3(cx, arrow_y, 0.14)
+	arrow_mesh.material = _mat_arrow_off
+	arrow_mesh.name = "Arrow_Over"
+	pole_root.add_child(arrow_mesh)
+
+	var arrow_glow := OmniLight3D.new()
+	arrow_glow.position = Vector3(cx, arrow_y, 0.16)
+	arrow_glow.light_energy = 0.0
+	arrow_glow.light_color = Color(0, 1, 0.3)
+	arrow_glow.omni_range = 3.5
+	arrow_glow.omni_attenuation = 1.5
+	arrow_glow.shadow_enabled = false
+	arrow_glow.name = "ArrowGlow_Over"
+	pole_root.add_child(arrow_glow)
+
+	head["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
+	return head
+
+
+func _build_pole_head(pole_root: Node3D, top_y: float) -> Dictionary:
+	## Compact 2-aspect head (red over green) clamped to the pole at driver
+	## height. Serves THROUGH/RIGHT traffic only — there is deliberately no
+	## yellow aspect and no arrow: left-turners never take cues from this head.
+	var head: Dictionary = {}
+
+	var housing := CSGBox3D.new()
+	housing.size = Vector3(0.30, 0.72, 0.24)
+	housing.position = Vector3(0, top_y - 0.36, 0.12)
+	housing.material = _mat_pole
+	housing.name = "Housing_Pole"
+	pole_root.add_child(housing)
+
+	var visor := CSGBox3D.new()
+	visor.size = Vector3(0.36, 0.04, 0.28)
+	visor.position = Vector3(0, top_y + 0.02, 0.20)
+	visor.material = _mat_pole
+	visor.name = "Visor_Pole"
+	pole_root.add_child(visor)
+
+	var bulb_data: Array = [
+		{"name": "red",   "y": top_y - 0.19, "color": Color(1, 0, 0)},
+		{"name": "green", "y": top_y - 0.53, "color": Color(0, 1, 0.2)},
+	]
+	for bd in bulb_data:
+		var bulb := CSGSphere3D.new()
+		bulb.radius = 0.10
+		bulb.radial_segments = 12
+		bulb.rings = 6
+		bulb.position = Vector3(0, bd["y"], 0.27)
+		bulb.material = _mat_light_off
+		bulb.name = "Bulb_%s_Pole" % bd["name"]
+		pole_root.add_child(bulb)
+
+		var glow := OmniLight3D.new()
+		glow.position = Vector3(0, bd["y"], 0.27)
+		glow.light_energy = 0.0
+		glow.light_color = bd["color"]
+		glow.omni_range = 3.5
+		glow.omni_attenuation = 1.5
+		glow.shadow_enabled = false
+		glow.name = "Glow_%s_Pole" % bd["name"]
+		pole_root.add_child(glow)
+
+		head[bd["name"]] = {"mesh": bulb, "glow": glow}
+
+	return head
 
 
 func _set_light(approach: String, active_color: String) -> void:
@@ -574,11 +635,11 @@ func _set_light(approach: String, active_color: String) -> void:
 
 	var bulbs: Dictionary = _lights[approach]
 
+	# ── Overhead horizontal head (3 aspects) ─────────────────────────────
 	for color_name in ["red", "yellow", "green"]:
 		var is_on: bool = (color_name == active_color)
 		var mesh: CSGSphere3D = bulbs[color_name]["mesh"]
 		var glow: OmniLight3D = bulbs[color_name]["glow"]
-
 		if is_on:
 			match color_name:
 				"red":
@@ -597,6 +658,25 @@ func _set_light(approach: String, active_color: String) -> void:
 			mesh.material = _mat_light_off
 			glow.light_energy = 0.0
 
+	# ── Pole-mounted 2-aspect head (through/right traffic ONLY) ──────────
+	# Green only on a through-green; red on red AND during yellow clearance
+	# (conservative — a 2-aspect head has no yellow). The left-arrow phase
+	# shows red here: left-turners take cues from the overhead arrow only.
+	if bulbs.has("pole"):
+		var pole: Dictionary = bulbs["pole"]
+		var p_green_on: bool = (active_color == "green")
+		var p_red_on: bool = not p_green_on
+
+		var pr_mesh: CSGSphere3D = pole["red"]["mesh"]
+		var pr_glow: OmniLight3D = pole["red"]["glow"]
+		pr_mesh.material = _mat_red_on if p_red_on else _mat_light_off
+		pr_glow.light_energy = 2.5 if p_red_on else 0.0
+
+		var pg_mesh: CSGSphere3D = pole["green"]["mesh"]
+		var pg_glow: OmniLight3D = pole["green"]["glow"]
+		pg_mesh.material = _mat_green_on if p_green_on else _mat_light_off
+		pg_glow.light_energy = 2.5 if p_green_on else 0.0
+
 
 func _set_arrow(approach: String, is_on: bool) -> void:
 	## Set the turn arrow indicator on/off for an approach.
@@ -605,6 +685,8 @@ func _set_arrow(approach: String, is_on: bool) -> void:
 	var bulbs: Dictionary = _lights[approach]
 	if not bulbs.has("arrow"):
 		return
+	# The arrow lives on the overhead head ONLY — the pole head never
+	# signals left-turners by design.
 	var arrow_mesh: CSGPolygon3D = bulbs["arrow"]["mesh"]
 	var arrow_glow: OmniLight3D = bulbs["arrow"]["glow"]
 	if is_on:

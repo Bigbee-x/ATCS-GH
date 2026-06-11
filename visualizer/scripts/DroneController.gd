@@ -289,6 +289,14 @@ func _update_chase_camera(delta: float) -> void:
 # RIG CONSTRUCTION — procedural chopper mesh
 # ═════════════════════════════════════════════════════════════════════════════
 
+# Kenney-matched livery (flat matte, like the Car Kit colormap): white body,
+# red accents, dark trim — reads as the same family as the ambulance/taxi.
+const HELI_BODY   := Color(0.93, 0.93, 0.96)   # Kenney white
+const HELI_ACCENT := Color(0.85, 0.22, 0.18)   # Kenney red
+const HELI_TRIM   := Color(0.16, 0.16, 0.18)   # dark matte trim
+const HELI_MATTE  := 0.9                       # roughness for painted parts
+
+
 func _build_rig() -> void:
 	# Hierarchy:
 	#   self (this Node3D)
@@ -347,48 +355,50 @@ func _csg_cyl(radius: float, height: float, sides: int, color: Color, metallic: 
 
 
 func _build_body() -> void:
-	## Fuselage — main cabin + rounded nose.
-	var paint := Color(0.88, 0.22, 0.18)       # classic red helo paint
-	var trim  := Color(0.12, 0.12, 0.14)       # dark belly/underbody
-
+	## Fuselage — main cabin + rounded nose, Kenney-style white with red livery.
 	# Main cabin — slightly wider than tall, elongated
-	var cabin: CSGBox3D = _csg_box(Vector3(1.45, 0.95, 2.4), paint, 0.2, 0.45)
+	var cabin: CSGBox3D = _csg_box(Vector3(1.45, 0.95, 2.4), HELI_BODY, 0.0, HELI_MATTE)
 	cabin.position = Vector3(0.0, 0.1, 0.0)
 	_tilt_pivot.add_child(cabin)
 
-	# Belly plate — darker accent strip
-	var belly: CSGBox3D = _csg_box(Vector3(1.50, 0.10, 2.30), trim, 0.1, 0.6)
+	# Livery stripes — red band along each cabin side (news/medic chopper read)
+	for side in [-1.0, 1.0]:
+		var stripe: CSGBox3D = _csg_box(Vector3(0.04, 0.22, 2.42), HELI_ACCENT, 0.0, HELI_MATTE)
+		stripe.position = Vector3(side * 0.735, 0.0, 0.0)
+		_tilt_pivot.add_child(stripe)
+
+	# Belly plate — dark trim strip
+	var belly: CSGBox3D = _csg_box(Vector3(1.50, 0.10, 2.30), HELI_TRIM, 0.0, HELI_MATTE)
 	belly.position = Vector3(0.0, -0.45, 0.0)
 	_tilt_pivot.add_child(belly)
 
 	# Nose — forward-tapering block so the silhouette has a "beak"
-	var nose: CSGBox3D = _csg_box(Vector3(1.10, 0.78, 0.8), paint, 0.2, 0.45)
+	var nose: CSGBox3D = _csg_box(Vector3(1.10, 0.78, 0.8), HELI_BODY, 0.0, HELI_MATTE)
 	nose.position = Vector3(0.0, 0.0, -1.45)
 	_tilt_pivot.add_child(nose)
 
-	# Tiny nose tip — darker, adds readable detail
-	var tip: CSGBox3D = _csg_box(Vector3(0.8, 0.55, 0.35), trim, 0.3, 0.4)
+	# Nose tip — red accent, adds readable detail
+	var tip: CSGBox3D = _csg_box(Vector3(0.8, 0.55, 0.35), HELI_ACCENT, 0.0, HELI_MATTE)
 	tip.position = Vector3(0.0, -0.05, -1.9)
 	_tilt_pivot.add_child(tip)
 
 
 func _build_tail() -> void:
 	## Tail boom + vertical fin + tail-rotor assembly.
-	var paint := Color(0.88, 0.22, 0.18)
 	var metal := Color(0.28, 0.28, 0.32)
 
-	# Tail boom — a long thin box extending from cabin rear
-	var boom: CSGBox3D = _csg_box(Vector3(0.28, 0.30, 2.6), paint, 0.3, 0.5)
+	# Tail boom — white like the body
+	var boom: CSGBox3D = _csg_box(Vector3(0.28, 0.30, 2.6), HELI_BODY, 0.0, HELI_MATTE)
 	boom.position = Vector3(0.0, 0.25, 2.4)
 	_tilt_pivot.add_child(boom)
 
-	# Vertical stabilizer / fin at the tail end
-	var fin: CSGBox3D = _csg_box(Vector3(0.08, 0.80, 0.55), paint, 0.3, 0.5)
+	# Vertical stabilizer / fin — red accent (livery tail flash)
+	var fin: CSGBox3D = _csg_box(Vector3(0.08, 0.80, 0.55), HELI_ACCENT, 0.0, HELI_MATTE)
 	fin.position = Vector3(0.0, 0.65, 3.55)
 	_tilt_pivot.add_child(fin)
 
-	# Horizontal stabilizer (small side wings)
-	var stab: CSGBox3D = _csg_box(Vector3(1.0, 0.06, 0.35), paint, 0.3, 0.5)
+	# Horizontal stabilizer (small side wings) — red accent
+	var stab: CSGBox3D = _csg_box(Vector3(1.0, 0.06, 0.35), HELI_ACCENT, 0.0, HELI_MATTE)
 	stab.position = Vector3(0.0, 0.35, 3.4)
 	_tilt_pivot.add_child(stab)
 
@@ -453,13 +463,14 @@ func _build_rotors() -> void:
 
 func _build_skids() -> void:
 	## Landing skids — two parallel bars below the cabin with 4 struts.
+	## Dark matte like the Kenney wheels/trim (no metallic sheen).
 	var metal := Color(0.22, 0.22, 0.26)
 	for side in [-1, 1]:
-		var skid: CSGBox3D = _csg_box(Vector3(0.09, 0.09, 2.0), metal, 0.5, 0.4)
+		var skid: CSGBox3D = _csg_box(Vector3(0.09, 0.09, 2.0), metal, 0.1, 0.8)
 		skid.position = Vector3(side * 0.55, -0.75, 0.0)
 		_tilt_pivot.add_child(skid)
 		for z in [-0.7, 0.7]:
-			var strut: CSGBox3D = _csg_box(Vector3(0.06, 0.35, 0.06), metal, 0.4, 0.45)
+			var strut: CSGBox3D = _csg_box(Vector3(0.06, 0.35, 0.06), metal, 0.1, 0.8)
 			strut.position = Vector3(side * 0.55, -0.55, z)
 			_tilt_pivot.add_child(strut)
 
@@ -467,9 +478,10 @@ func _build_skids() -> void:
 func _build_canopy() -> void:
 	## Tinted cockpit glass — front half of the cabin, translucent dark blue.
 	var glass_mat := StandardMaterial3D.new()
-	glass_mat.albedo_color = Color(0.12, 0.18, 0.30, 0.62)
+	# Same dark reflective glass as the building windows / car glazing
+	glass_mat.albedo_color = Color(0.14, 0.17, 0.22, 0.80)
 	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass_mat.metallic = 0.6
+	glass_mat.metallic = 0.35
 	glass_mat.roughness = 0.15
 
 	var canopy := CSGBox3D.new()
