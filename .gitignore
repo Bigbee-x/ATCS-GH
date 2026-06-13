@@ -56,6 +56,9 @@ simulation/*.bak
 ai/_validation/
 ai/_confirm/
 ai/_pre_retrain_backup/
+ai/_smoke_backup_*/
+ai/_smoke_artifacts_*/
+data/smoke_*.log
 data/baseline_c*.csv
 data/confirm_reward_log.csv
 data/validation_log.csv
