@@ -87,13 +87,10 @@ from dqn_agent import DQNAgent
 from traffic_env import (
     TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
-    NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
     ACTION_NS_THROUGH, ACTION_NS_LEFT,
     ACTION_EW_THROUGH, ACTION_EW_LEFT,
-    ACTION_NS_ALL, ACTION_EW_ALL,
-    sanitize_action,
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_WAIT, MAX_PHASE_T, SIM_DURATION,
@@ -410,13 +407,23 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
     if mode == SimMode.AI:
         agent = DQNAgent(state_size=STATE_SIZE, action_size=ACTION_SIZE)
         if model_path.exists():
-            agent.load(model_path)
-            agent.set_eval_mode()
-            print(f"[SIM] Loaded model: {model_path.name}")
+            try:
+                agent.load(model_path)
+                agent.set_eval_mode()
+                print(f"[SIM] Loaded model: {model_path.name}")
+            except Exception as e:                              # noqa: BLE001
+                # e.g. checkpoint trained with the old 7-action head won't fit
+                # the protected-left 5-action network — run the fixed timer
+                # until a compatible model is retrained.
+                print(f"[WARN] Model incompatible ({e})")
+                print("[WARN] Falling back to BASELINE mode (fixed timer)")
+                agent = None
+                mode = SimMode.BASELINE
         else:
             print(f"[WARN] Model not found: {model_path}")
-            print("[WARN] Falling back to DEMO mode (random actions)")
-            mode = SimMode.DEMO
+            print("[WARN] Falling back to BASELINE mode (fixed timer)")
+            agent = None
+            mode = SimMode.BASELINE
 
     elif mode == SimMode.DEMO:
         print("[SIM] Demo mode — using random actions")
@@ -425,7 +432,8 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
         print("[SIM] Manual mode — waiting for Godot UI commands")
 
     elif mode == SimMode.BASELINE:
-        print("[SIM] Baseline mode — fixed-timer cycling (60s NS / 30s EW)")
+        print("[SIM] Baseline mode — protected-left fixed timer "
+              "(NS 40s → arrow 15s → EW 25s → arrow 10s)")
 
     # Baseline timer (always created — used when switching to baseline at runtime)
     baseline_timer = BaselineTimer()
@@ -487,10 +495,9 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                           f"action={ACTION_NAMES[action]}")
 
                 elif active_control_mode == SimMode.AI and agent is not None:
-                    # Remap permissive-left actions (NS_ALL/EW_ALL) to their
-                    # protected-through equivalents so the live viz matches
-                    # the baseline's clean protected-left phasing.
-                    action = sanitize_action(agent.select_action(state))
+                    # Action space is protected-left only (NS_ALL/EW_ALL were
+                    # removed 2026-06-11) — no sanitizing needed.
+                    action = agent.select_action(state)
 
                 elif active_control_mode == SimMode.BASELINE:
                     action = baseline_timer.get_action(env._sim_step)
@@ -698,12 +705,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     # Pedestrian data
                     "pedestrians": _collect_pedestrian_data(),
 
-                    # Crossing signal states (for visualizer crosswalk lights)
+                    # Crossing signal states (for visualizer crosswalk lights).
+                    # After the lane-restricted rebuild, the TL signal string is
+                    # 20 chars (16 vehicle links + 4 crossings). Crossings occupy
+                    # positions 16-19 in order: c0=N, c1=E, c2=S, c3=W.
                     "crossing_green": {
-                        "north": PHASE_SIGNALS.get(env._phase, "r" * 23)[19] in "Gg",
-                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 23)[20] in "Gg",
-                        "south": PHASE_SIGNALS.get(env._phase, "r" * 23)[21] in "Gg",
-                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 23)[22] in "Gg",
+                        "north": PHASE_SIGNALS.get(env._phase, "r" * 20)[16] in "Gg",
+                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 20)[17] in "Gg",
+                        "south": PHASE_SIGNALS.get(env._phase, "r" * 20)[18] in "Gg",
+                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 20)[19] in "Gg",
                     },
 
                     # Meta

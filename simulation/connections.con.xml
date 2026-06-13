@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | Junction J0 lane-to-movement connection map.
+  ══════════════════════════════════════════════════════
+
+  Enforces the Accra street-rule that the INNER lane (lane 2) of each
+  2-lane approach is reserved for left-turners (plus u-turn), and the
+  OUTER lane (lane 1) handles through + right-turn movements.
+
+  Without this file netconvert auto-generates connections that also let
+  lane 2 → straight. A straight car parked in lane 2 blocks left-turners
+  behind it during the protected-left phase — which is the root cause of
+  the "AI ignores left-turn lights" issue we were seeing on Aggrey St.
+
+  Lane numbering (all approaches have index 0 = sidewalk):
+    lane 1 = right-hand driving lane  → right turn + straight
+    lane 2 = inner driving lane        → left turn  + u-turn (no straight)
+
+  Directions (Ghana drives on the RIGHT, so from N heading S:
+  W = right turn, E = left turn):
+
+    From North (ACH_N2J)  → W (right), S (straight), E (left), N (uturn)
+    From South (ACH_S2J)  → E (right), N (straight), W (left), S (uturn)
+    From East  (AGG_E2J)  → N (right), W (straight), S (left), E (uturn)
+    From West  (GUG_W2J)  → S (right), E (straight), N (left), W (uturn)
+-->
+<connections>
+
+  <!-- ─── North approach (ACH_N2J) ─────────────────────────────────── -->
+  <connection from="ACH_N2J" to="GUG_J2W" fromLane="1" toLane="1"/>  <!-- right  -->
+  <connection from="ACH_N2J" to="ACH_J2S" fromLane="1" toLane="1"/>  <!-- straight -->
+  <connection from="ACH_N2J" to="AGG_J2E" fromLane="2" toLane="2"/>  <!-- left   -->
+  <connection from="ACH_N2J" to="ACH_J2N" fromLane="2" toLane="2"/>  <!-- uturn  -->
+
+  <!-- ─── South approach (ACH_S2J) ─────────────────────────────────── -->
+  <connection from="ACH_S2J" to="AGG_J2E" fromLane="1" toLane="1"/>  <!-- right  -->
+  <connection from="ACH_S2J" to="ACH_J2N" fromLane="1" toLane="1"/>  <!-- straight -->
+  <connection from="ACH_S2J" to="GUG_J2W" fromLane="2" toLane="2"/>  <!-- left   -->
+  <connection from="ACH_S2J" to="ACH_J2S" fromLane="2" toLane="2"/>  <!-- uturn  -->
+
+  <!-- ─── East approach (AGG_E2J) ──────────────────────────────────── -->
+  <connection from="AGG_E2J" to="ACH_J2N" fromLane="1" toLane="1"/>  <!-- right  -->
+  <connection from="AGG_E2J" to="GUG_J2W" fromLane="1" toLane="1"/>  <!-- straight -->
+  <connection from="AGG_E2J" to="ACH_J2S" fromLane="2" toLane="2"/>  <!-- left   -->
+  <connection from="AGG_E2J" to="AGG_J2E" fromLane="2" toLane="2"/>  <!-- uturn  -->
+
+  <!-- ─── West approach (GUG_W2J) ──────────────────────────────────── -->
+  <connection from="GUG_W2J" to="ACH_J2S" fromLane="1" toLane="1"/>  <!-- right  -->
+  <connection from="GUG_W2J" to="AGG_J2E" fromLane="1" toLane="1"/>  <!-- straight -->
+  <connection from="GUG_W2J" to="ACH_J2N" fromLane="2" toLane="2"/>  <!-- left   -->
+  <connection from="GUG_W2J" to="GUG_J2W" fromLane="2" toLane="2"/>  <!-- uturn  -->
+
+</connections>

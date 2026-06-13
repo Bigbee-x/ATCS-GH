@@ -19,11 +19,23 @@ const SIDEWALK_WIDTH  := 1.5
 const ROAD_THICKNESS  := 0.1
 
 # ── Building generation parameters ──────────────────────────────────────────
-const BUILDING_OFFSET := 0.5     # Gap between sidewalk edge and first building
+const BUILDING_OFFSET := 2.6     # Setback: sidewalk edge → building face
+                                 # (was 0.5 — buildings loomed over the road;
+                                 # now gutter 0.6 + verge ~2.0 sit between)
 const MIN_GAP         := 0.3     # Minimum gap between buildings
 const MAX_GAP         := 1.5     # Maximum gap between buildings
-const JUNCTION_MARGIN := 3.0     # Don't place buildings too close to junction
+const JUNCTION_MARGIN := 5.5     # Don't place buildings too close to junction
+                                 # (was 3.0 — crowded the TL poles/cabinets)
 const ROAD_END_MARGIN := 5.0     # Don't place buildings at road edge
+
+# ── Open roadside drainage (classic Accra concrete U-gutters) ───────────────
+const GUTTER_WIDTH        := 0.6    # channel width, runs beside the sidewalk
+const GUTTER_RIM_W        := 0.10   # concrete rim thickness each side
+const GUTTER_RIM_H        := 0.15   # rim height (matches sidewalk curb)
+const GUTTER_BRIDGE_EVERY := 7.0    # avg spacing of access slab bridges
+const GUTTER_FLOOR_COLOR  := Color(0.10, 0.11, 0.12)   # dark channel interior
+const GUTTER_CONCRETE     := Color(0.62, 0.60, 0.56)   # weathered concrete
+const GUTTER_SLAB_COLOR   := Color(0.68, 0.66, 0.62)   # slightly lighter slabs
 
 # ── Accra facade palette ────────────────────────────────────────────────────
 const FACADE_COLORS: Array = [
@@ -115,14 +127,50 @@ const TREES_PER_QUADRANT := 18
 var _materials: Dictionary = {}   # Color hash → StandardMaterial3D
 
 # ── Emissive materials for night-time glow (toggled via TimeOfDayManager) ───
-var _mat_window_warm: StandardMaterial3D   # House / residential windows
-var _mat_window_cool: StandardMaterial3D   # Office / tower windows
+var _mat_window_warm: StandardMaterial3D   # House / residential windows (full-night)
+var _mat_window_cool: StandardMaterial3D   # Office / tower windows (full-night)
+## "_early" variants turn on at dusk (16:30) instead of waiting for full dark.
+## A fraction of window assignments use these so some buildings light up before
+## sundown — mirrors real-world behaviour where some residents flip lights on
+## as darkness approaches and others wait.
+var _mat_window_warm_early: StandardMaterial3D
+var _mat_window_cool_early: StandardMaterial3D
 var _mat_sign_glow: StandardMaterial3D     # Mall signage, bright commercial
 var _mat_stadium_cap: StandardMaterial3D   # Stadium light heads
 var _mat_canopy_glow: StandardMaterial3D   # Petrol under-canopy
 var _mat_cross_white: StandardMaterial3D   # Church cross
 var _mat_cross_red: StandardMaterial3D     # Clinic red cross
 var _mat_sodium_glow: StandardMaterial3D   # Industrial yard floods (warm orange)
+
+## Fraction of window assignments that use the "_early" dusk-lit variant.
+## 0.0 = no buildings come on early, 1.0 = every building does. 0.40 gives
+## a pleasant scatter of "some lights on" at dusk.
+const DUSK_EARLY_WINDOW_FRAC: float = 0.40
+## Dusk-time emission intensity (dimmer than full-night so the transition
+## reads as evolving toward darkness rather than popping on full-blast).
+const DUSK_WINDOW_EMISSION: float = 1.2
+## Full-night emission intensity (same as the pre-dusk value for _mat_window_warm).
+const NIGHT_WINDOW_EMISSION: float = 2.2
+
+# ── Roadside facade detail (doors + windows with interior light) ────────────
+## Door dimensions and open-vs-closed probabilities for roadside buildings.
+## Open doors use a warm emissive material (_pick_window_warm) so they look
+## like "light spilling out through the doorway"; closed doors use a dark
+## wood panel.
+const ROADSIDE_DOOR_HEIGHT: float = 1.7
+const ROADSIDE_DOOR_WIDTH_HOUSE: float = 0.75
+const ROADSIDE_DOOR_WIDTH_SHOP: float = 1.05
+const ROADSIDE_DOOR_OPEN_PROB_HOUSE: float = 0.35
+const ROADSIDE_DOOR_OPEN_PROB_SHOP: float = 0.60
+const ROADSIDE_WINDOW_WIDTH: float = 0.55
+const ROADSIDE_WINDOW_HEIGHT: float = 0.65
+const ROADSIDE_UPPER_WINDOW_WIDTH: float = 0.55
+const ROADSIDE_UPPER_WINDOW_HEIGHT: float = 0.55
+const ROADSIDE_DETAIL_PROTRUDE: float = 0.035   # How far detail sits off facade (anti-z-fight)
+const ROADSIDE_DOOR_DARK: Color = Color(0.18, 0.12, 0.08)  # Stained wood
+
+var _is_dusk: bool = false
+var _is_night: bool = false
 
 # ── OmniLight3D instances toggled at night ──────────────────────────────────
 var _stadium_lights: Array[OmniLight3D] = []
@@ -164,6 +212,7 @@ func _ready() -> void:
 		var dir_sign: float = arm[2]
 		var road_w: float = arm[3]
 		_build_arm_buildings(arm_name, axis, dir_sign, road_w)
+		_build_arm_gutters(axis, dir_sign, road_w)
 
 	# Build junction corner anchor buildings
 	_build_junction_corners()
@@ -205,22 +254,49 @@ func _create_glow_materials() -> void:
 	## Build all shared emissive materials. Emission energy starts at 0.0 so the
 	## materials look normal during the day; _on_night_mode_changed() bumps them.
 
-	# Warm window (residential houses) — yellow-orange domestic glow
+	# Warm window (residential houses) — yellow-orange domestic glow.
+	# VISUAL FIX (2026-06-07): albedo is now DARK GLASS, not warm cream. The old
+	# cream albedo looked like a flat beige panel pasted on the wall in daylight
+	# (emission is off during the day). A dark, slightly-reflective glass tone
+	# reads as a real window pane when unlit; the warm emission still drives the
+	# night glow (emission is additive and dominates once the multiplier ramps).
 	_mat_window_warm = StandardMaterial3D.new()
-	_mat_window_warm.albedo_color = Color(0.95, 0.85, 0.55)
-	_mat_window_warm.roughness = 0.4
+	_mat_window_warm.albedo_color = Color(0.14, 0.17, 0.22)   # dark glass (day look)
+	_mat_window_warm.roughness = 0.15                          # low = reflective glass
+	_mat_window_warm.metallic = 0.35
 	_mat_window_warm.emission_enabled = true
-	_mat_window_warm.emission = Color(1.00, 0.82, 0.45)
+	_mat_window_warm.emission = Color(1.00, 0.82, 0.45)        # warm glow (night look)
 	_mat_window_warm.emission_energy_multiplier = 0.0
 
-	# Cool window (offices / towers / schools) — blue-white fluorescent
+	# Cool window (offices / towers / schools) — blue-white fluorescent.
+	# Same day/night split: dark blue glass when unlit, cool glow at night.
 	_mat_window_cool = StandardMaterial3D.new()
-	_mat_window_cool.albedo_color = Color(0.75, 0.85, 0.95)
-	_mat_window_cool.roughness = 0.3
-	_mat_window_cool.metallic = 0.2
+	_mat_window_cool.albedo_color = Color(0.13, 0.18, 0.26)   # dark blue glass (day look)
+	_mat_window_cool.roughness = 0.12
+	_mat_window_cool.metallic = 0.40
 	_mat_window_cool.emission_enabled = true
-	_mat_window_cool.emission = Color(0.82, 0.92, 1.00)
+	_mat_window_cool.emission = Color(0.82, 0.92, 1.00)       # cool glow (night look)
 	_mat_window_cool.emission_energy_multiplier = 0.0
+
+	# "_early" dusk-lit variants — same look as the full-night materials, but
+	# their emission ramps up at DUSK (4:30 PM) instead of waiting for 6 PM.
+	# Buildings that get these materials appear to have their occupants turn
+	# on the lights before sundown.
+	_mat_window_warm_early = StandardMaterial3D.new()
+	_mat_window_warm_early.albedo_color = _mat_window_warm.albedo_color
+	_mat_window_warm_early.roughness = _mat_window_warm.roughness
+	_mat_window_warm_early.metallic = _mat_window_warm.metallic
+	_mat_window_warm_early.emission_enabled = true
+	_mat_window_warm_early.emission = _mat_window_warm.emission
+	_mat_window_warm_early.emission_energy_multiplier = 0.0
+
+	_mat_window_cool_early = StandardMaterial3D.new()
+	_mat_window_cool_early.albedo_color = _mat_window_cool.albedo_color
+	_mat_window_cool_early.roughness = _mat_window_cool.roughness
+	_mat_window_cool_early.metallic = _mat_window_cool.metallic
+	_mat_window_cool_early.emission_enabled = true
+	_mat_window_cool_early.emission = _mat_window_cool.emission
+	_mat_window_cool_early.emission_energy_multiplier = 0.0
 
 	# Mall / commercial signage — bright orange-red
 	_mat_sign_glow = StandardMaterial3D.new()
@@ -280,24 +356,68 @@ func _wire_day_night() -> void:
 		return
 	if tod.has_signal("night_mode_changed"):
 		tod.night_mode_changed.connect(_on_night_mode_changed)
-	# Apply current state immediately so nothing is "stuck dim" on load
+	if tod.has_signal("dusk_mode_changed"):
+		tod.dusk_mode_changed.connect(_on_dusk_mode_changed)
+	# Apply current state immediately so nothing is "stuck dim" on load.
+	# Call night first, then dusk — dusk-lit materials are driven by
+	# _apply_window_emission() which reads both flags.
 	if tod.has_method("is_night"):
-		_on_night_mode_changed(tod.is_night())
+		_is_night = tod.is_night()
+	if tod.has_method("is_dusk"):
+		_is_dusk = tod.is_dusk()
+	_apply_light_state()
 
 
 func _on_night_mode_changed(is_night: bool) -> void:
-	## Bump emission energy on shared materials and toggle scene OmniLights.
-	var window_e: float = 2.2 if is_night else 0.0
-	var sign_e: float = 2.8 if is_night else 0.0
-	var stadium_e: float = 3.5 if is_night else 0.0
-	var canopy_e: float = 2.6 if is_night else 0.0
-	var cross_e: float = 2.0 if is_night else 0.0
-	var sodium_e: float = 3.0 if is_night else 0.0
+	_is_night = is_night
+	_apply_light_state()
 
+
+func _on_dusk_mode_changed(is_dusk: bool) -> void:
+	_is_dusk = is_dusk
+	_apply_light_state()
+
+
+func _apply_light_state() -> void:
+	## Update emission multipliers from the current (dusk, night) pair,
+	## and toggle scene-affecting OmniLights. Called whenever either state
+	## changes.
+	##
+	## State matrix:
+	##   neither     → everything dark (full daylight)
+	##   dusk only   → _early window materials at partial intensity;
+	##                 late-night materials stay dark; OmniLights off
+	##   dusk + night → all window materials at full intensity;
+	##                  OmniLights on, signage/stadium/canopy on
+	##   night only  → shouldn't happen (dusk is a superset), but handle
+	##                 defensively as "night" state
+	var night: bool = _is_night
+	var dusk_only: bool = _is_dusk and not _is_night
+
+	# Window materials
 	if _mat_window_warm:
-		_mat_window_warm.emission_energy_multiplier = window_e
+		_mat_window_warm.emission_energy_multiplier = NIGHT_WINDOW_EMISSION if night else 0.0
 	if _mat_window_cool:
-		_mat_window_cool.emission_energy_multiplier = window_e
+		_mat_window_cool.emission_energy_multiplier = NIGHT_WINDOW_EMISSION if night else 0.0
+	# Early-dusk variants: dimmer during dusk-only, full at night, off during day
+	var early_e: float = 0.0
+	if night:
+		early_e = NIGHT_WINDOW_EMISSION
+	elif dusk_only:
+		early_e = DUSK_WINDOW_EMISSION
+	if _mat_window_warm_early:
+		_mat_window_warm_early.emission_energy_multiplier = early_e
+	if _mat_window_cool_early:
+		_mat_window_cool_early.emission_energy_multiplier = early_e
+
+	# Signage, stadium, canopy, crosses, sodium — all still night-only
+	# (sodium lights would actually come on at dusk via photocell in real
+	# life, but that can be a follow-up tweak).
+	var sign_e: float = 2.8 if night else 0.0
+	var stadium_e: float = 3.5 if night else 0.0
+	var canopy_e: float = 2.6 if night else 0.0
+	var cross_e: float = 2.0 if night else 0.0
+	var sodium_e: float = 3.0 if night else 0.0
 	if _mat_sign_glow:
 		_mat_sign_glow.emission_energy_multiplier = sign_e
 	if _mat_stadium_cap:
@@ -311,15 +431,124 @@ func _on_night_mode_changed(is_night: bool) -> void:
 	if _mat_sodium_glow:
 		_mat_sodium_glow.emission_energy_multiplier = sodium_e
 
-	# Scene-affecting lights: only "on" at night, otherwise hidden to save work
+	# Scene-affecting OmniLights: only at full night
 	for light in _stadium_lights:
 		if light:
-			light.visible = is_night
+			light.visible = night
 	for light in _yard_lights:
 		if light:
-			light.visible = is_night
+			light.visible = night
 	if _petrol_light:
-		_petrol_light.visible = is_night
+		_petrol_light.visible = night
+
+
+# ── Dusk window material pickers ────────────────────────────────────────────
+## Use these in place of direct `_mat_window_warm` / `_mat_window_cool`
+## references when creating windows. Each call rolls the RNG and returns
+## the "_early" variant ~DUSK_EARLY_WINDOW_FRAC of the time so some windows
+## light up before sundown.
+
+func _pick_window_warm() -> StandardMaterial3D:
+	if _rng.randf() < DUSK_EARLY_WINDOW_FRAC:
+		return _mat_window_warm_early
+	return _mat_window_warm
+
+
+func _pick_window_cool() -> StandardMaterial3D:
+	if _rng.randf() < DUSK_EARLY_WINDOW_FRAC:
+		return _mat_window_cool_early
+	return _mat_window_cool
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ROADSIDE FACADE DECORATION (doors + windows with interior light)
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _decorate_roadside_facade(body_center: Vector3, width: float,
+								height: float, depth: float,
+								road_dir: Vector3, lateral_dir: Vector3,
+								is_shop: bool) -> void:
+	## Place a door and one or two rows of windows on the road-facing face of a
+	## roadside building. Doors have a chance to be "open" (warm-lit aperture);
+	## closed doors get a dark wood panel. Windows use `_pick_window_warm()`
+	## so some light up at golden hour and others hold out until full night —
+	## this integrates with the existing dusk system in _apply_light_state().
+	##
+	## body_center: center of the building body (height/2 above ground)
+	## width:       dimension along the road (lateral)
+	## height:      building height from ground
+	## depth:       dimension perpendicular to road (into building)
+	## road_dir:    unit vector pointing outward from the facade toward the road
+	## lateral_dir: unit vector along the facade (perpendicular to road_dir, horizontal)
+	## is_shop:     true for shop fronts (wider door, higher open probability)
+	##
+	## Details sit ROADSIDE_DETAIL_PROTRUDE outside the facade plane to avoid
+	## z-fighting with the body geometry.
+	var lateral_is_x: bool = abs(lateral_dir.x) > 0.5
+
+	# Facade plane sits at body_center.xz + road_dir * depth/2. We push
+	# details a tiny bit beyond that so they render cleanly against the body.
+	var facade_base: Vector3 = Vector3(body_center.x, 0.0, body_center.z) \
+							   + road_dir * (depth / 2.0 + ROADSIDE_DETAIL_PROTRUDE)
+
+	# ── Door ────────────────────────────────────────────────────────────────
+	var door_width: float = ROADSIDE_DOOR_WIDTH_SHOP if is_shop else ROADSIDE_DOOR_WIDTH_HOUSE
+	door_width = min(door_width, width * 0.55)
+	var door_height: float = min(ROADSIDE_DOOR_HEIGHT, height * 0.75)
+	var door_open_prob: float = ROADSIDE_DOOR_OPEN_PROB_SHOP if is_shop else ROADSIDE_DOOR_OPEN_PROB_HOUSE
+	var door_is_open: bool = _rng.randf() < door_open_prob
+
+	var door := CSGBox3D.new()
+	if lateral_is_x:
+		door.size = Vector3(door_width, door_height, 0.06)
+	else:
+		door.size = Vector3(0.06, door_height, door_width)
+	door.position = facade_base + Vector3(0.0, door_height / 2.0, 0.0)
+	if door_is_open:
+		door.material = _pick_window_warm()   # Warm interior glow spilling out
+	else:
+		door.material = _get_material(ROADSIDE_DOOR_DARK)
+	door.name = "RoadsideDoor"
+	add_child(door)
+
+	# ── Ground-floor flanking windows (skip if body is too narrow) ─────────
+	var gw_half_span: float = door_width / 2.0 + 0.32 + ROADSIDE_WINDOW_WIDTH / 2.0
+	var facade_margin: float = width / 2.0 - ROADSIDE_WINDOW_WIDTH / 2.0 - 0.12
+	if gw_half_span <= facade_margin:
+		var gw_y: float = min(door_height * 0.55 + 0.15,
+							  height - ROADSIDE_WINDOW_HEIGHT / 2.0 - 0.2)
+		for side in [-1.0, 1.0]:
+			var gwin := CSGBox3D.new()
+			if lateral_is_x:
+				gwin.size = Vector3(ROADSIDE_WINDOW_WIDTH, ROADSIDE_WINDOW_HEIGHT, 0.05)
+			else:
+				gwin.size = Vector3(0.05, ROADSIDE_WINDOW_HEIGHT, ROADSIDE_WINDOW_WIDTH)
+			gwin.position = facade_base + Vector3(0.0, gw_y, 0.0) \
+							+ lateral_dir * (side * gw_half_span)
+			gwin.material = _pick_window_warm()
+			gwin.name = "RoadsideWindowGround"
+			add_child(gwin)
+
+	# ── Upper-floor window row (only if tall enough for a 2nd storey) ──────
+	if height >= 2.8:
+		var upper_y: float = height - 0.8
+		var num_windows: int = max(2, int(width / 1.3))
+		for i in range(num_windows):
+			# Distribute windows across the facade, evenly spaced
+			var t_norm: float = (float(i) + 1.0) / (float(num_windows) + 1.0) - 0.5
+			var lateral_t: float = t_norm * (width - 0.5)
+			var uwin := CSGBox3D.new()
+			if lateral_is_x:
+				uwin.size = Vector3(ROADSIDE_UPPER_WINDOW_WIDTH,
+									ROADSIDE_UPPER_WINDOW_HEIGHT, 0.05)
+			else:
+				uwin.size = Vector3(0.05, ROADSIDE_UPPER_WINDOW_HEIGHT,
+									ROADSIDE_UPPER_WINDOW_WIDTH)
+			uwin.position = facade_base + Vector3(0.0, upper_y, 0.0) \
+							+ lateral_dir * lateral_t
+			uwin.material = _pick_window_warm()
+			uwin.name = "RoadsideWindowUpper"
+			add_child(uwin)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -371,6 +600,53 @@ func _build_arm_buildings(_arm_name: String, axis: int, dir_sign: float,
 			cursor += building_length + _rng.randf_range(MIN_GAP, MAX_GAP)
 
 
+func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
+	## Open concrete drainage gutters along both sides of a road arm, in the
+	## strip between the sidewalk and the building setback, with periodic slab
+	## bridges so frontages stay accessible — the classic Accra streetscape.
+	var inner: float = road_width / 2.0 + SIDEWALK_WIDTH       # channel inner edge
+	var outer: float = inner + GUTTER_WIDTH                     # channel outer edge
+	var g_start: float = JUNCTION_HALF + 1.2                    # past the corner zone
+	var g_end: float = JUNCTION_HALF + ROAD_LENGTH - 1.0
+	var g_len: float = g_end - g_start
+	var g_mid: float = (g_start + g_end) / 2.0
+
+	for side_sign in [-1.0, 1.0]:
+		# Dark channel interior (reads as the recessed open drain)
+		var channel := CSGBox3D.new()
+		channel.size = _orient_size(axis, g_len, 0.04, GUTTER_WIDTH)
+		channel.position = _compute_position(axis, dir_sign, g_mid,
+				side_sign * inner, side_sign, GUTTER_WIDTH) + Vector3(0, 0.02, 0)
+		channel.material = _get_material(GUTTER_FLOOR_COLOR)
+		channel.name = "GutterChannel"
+		add_child(channel)
+
+		# Concrete rims on both edges of the channel
+		for rim_inner_edge in [inner - GUTTER_RIM_W, outer]:
+			var rim := CSGBox3D.new()
+			rim.size = _orient_size(axis, g_len, GUTTER_RIM_H, GUTTER_RIM_W)
+			rim.position = _compute_position(axis, dir_sign, g_mid,
+					side_sign * rim_inner_edge, side_sign, GUTTER_RIM_W) \
+					+ Vector3(0, GUTTER_RIM_H / 2.0, 0)
+			rim.material = _get_material(GUTTER_CONCRETE)
+			rim.name = "GutterRim"
+			add_child(rim)
+
+		# Access slab bridges across the channel at irregular intervals
+		var span: float = GUTTER_WIDTH + 2.0 * GUTTER_RIM_W
+		var cursor: float = g_start + _rng.randf_range(1.0, 3.5)
+		while cursor < g_end - 1.5:
+			var slab := CSGBox3D.new()
+			slab.size = _orient_size(axis, 1.1, 0.06, span)
+			slab.position = _compute_position(axis, dir_sign, cursor,
+					side_sign * (inner - GUTTER_RIM_W), side_sign, span) \
+					+ Vector3(0, GUTTER_RIM_H + 0.01, 0)
+			slab.material = _get_material(GUTTER_SLAB_COLOR)
+			slab.name = "GutterBridge"
+			add_child(slab)
+			cursor += GUTTER_BRIDGE_EVERY + _rng.randf_range(-1.5, 2.5)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # BUILDING TYPES
 # ═════════════════════════════════════════════════════════════════════════════
@@ -400,6 +676,13 @@ func _place_block_building(axis: int, dir_sign: float, along: float,
 	parapet.material = _get_material(facade_color * 0.7)
 	parapet.name = "BlockParapet"
 	add_child(parapet)
+
+	# Road-facing door + windows with their own interior glow, so the building
+	# has presence at night instead of just catching street-light spill.
+	var road_dir: Vector3 = Vector3(0.0, 0.0, -side_sign) if axis == 0 else Vector3(-side_sign, 0.0, 0.0)
+	var lateral_dir: Vector3 = Vector3(1.0, 0.0, 0.0) if axis == 0 else Vector3(0.0, 0.0, 1.0)
+	_decorate_roadside_facade(body.position, width, height, depth,
+							  road_dir, lateral_dir, false)
 
 	return width
 
@@ -451,6 +734,13 @@ func _place_shop_front(axis: int, dir_sign: float, along: float,
 	pillar.material = _get_material(Color(0.3, 0.3, 0.32))
 	pillar.name = "ShopPillar"
 	add_child(pillar)
+
+	# Storefront door + windows — shops get a wider, more-often-open door and
+	# lit front-window so they read as "open for business" at dusk/night.
+	var road_dir: Vector3 = Vector3(0.0, 0.0, -side_sign) if axis == 0 else Vector3(-side_sign, 0.0, 0.0)
+	var lateral_dir: Vector3 = Vector3(1.0, 0.0, 0.0) if axis == 0 else Vector3(0.0, 0.0, 1.0)
+	_decorate_roadside_facade(body.position, width, height, depth,
+							  road_dir, lateral_dir, true)
 
 	return width
 
@@ -524,19 +814,24 @@ func _place_market_stalls(axis: int, dir_sign: float, along: float,
 
 func _build_junction_corners() -> void:
 	## Place distinctive anchor buildings at the 4 corners of the junction.
-	var corner_offset: float = JUNCTION_HALF + SIDEWALK_WIDTH + BUILDING_OFFSET + 0.5
-	var corners: Array = [
-		Vector3(-corner_offset, 0, corner_offset),   # NW
-		Vector3(corner_offset, 0, corner_offset),     # NE
-		Vector3(-corner_offset, 0, -corner_offset),   # SW
-		Vector3(corner_offset, 0, -corner_offset),    # SE
+	## Faces respect the same setback line as the arm buildings (sidewalk +
+	## BUILDING_OFFSET), so corners no longer crowd the TL poles or the road.
+	var face_line: float = JUNCTION_HALF + SIDEWALK_WIDTH + BUILDING_OFFSET
+	var corner_signs: Array = [
+		Vector2(-1,  1),   # NW
+		Vector2( 1,  1),   # NE
+		Vector2(-1, -1),   # SW
+		Vector2( 1, -1),   # SE
 	]
 
-	for i in range(corners.size()):
-		var pos: Vector3 = corners[i]
+	for i in range(corner_signs.size()):
 		var height: float = _rng.randf_range(3.0, 5.5)
 		var width: float = _rng.randf_range(3.5, 5.0)
 		var depth: float = _rng.randf_range(3.0, 4.5)
+		var sgn: Vector2 = corner_signs[i]
+		# Center sits half a footprint behind the setback line on BOTH axes
+		var pos := Vector3(sgn.x * (face_line + width / 2.0), 0,
+						   sgn.y * (face_line + depth / 2.0))
 		var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
 		var awning_color: Color = AWNING_COLORS[_rng.randi() % AWNING_COLORS.size()]
 
@@ -567,6 +862,31 @@ func _build_junction_corners() -> void:
 		awning.material = _get_material(awning_color)
 		awning.name = "CornerAwning_%d" % i
 		add_child(awning)
+
+		# Door + windows on the road-facing facade. Alternate the facing axis
+		# per-corner so 2 corners face the N/S arm and 2 face the E/W arm —
+		# avoids all 4 corner doors looking in the same direction.
+		# Corner body size is Vector3(width, height, depth) (X-along, Z-perp).
+		var facing_x_road: bool = (i % 2 == 0)   # i=0,2 face E/W arm (road_dir along Z)
+		var corner_road_dir: Vector3
+		var corner_lateral: Vector3
+		var corner_facade_w: float
+		var corner_facade_d: float
+		if facing_x_road:
+			# Facade faces the E/W arm: road_dir along Z toward junction
+			corner_road_dir = Vector3(0.0, 0.0, -sign(pos.z))
+			corner_lateral = Vector3(1.0, 0.0, 0.0)
+			corner_facade_w = width   # lateral is X (= width)
+			corner_facade_d = depth   # into-building is Z (= depth)
+		else:
+			# Facade faces the N/S arm: road_dir along X toward junction
+			corner_road_dir = Vector3(-sign(pos.x), 0.0, 0.0)
+			corner_lateral = Vector3(0.0, 0.0, 1.0)
+			corner_facade_w = depth   # lateral is Z (= depth)
+			corner_facade_d = width   # into-building is X (= width)
+		_decorate_roadside_facade(body.position, corner_facade_w, height,
+								  corner_facade_d, corner_road_dir,
+								  corner_lateral, true)  # corners act as shops (have awnings)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -843,7 +1163,7 @@ func _place_office_tower(center: Vector3, stories: int, base_w: float, base_d: f
 		band.size = Vector3(base_w + 0.05, 0.7, base_d + 0.05)
 		band.position = center + Vector3(0, i * story_h + story_h * 0.55, 0)
 		if _rng.randf() < 0.7:
-			band.material = _mat_window_cool
+			band.material = _pick_window_cool()
 		else:
 			band.material = _get_glass_material(glass_col)
 		band.name = "TowerGlassBand"
@@ -865,7 +1185,7 @@ func _place_office_tower(center: Vector3, stories: int, base_w: float, base_d: f
 			band.size = Vector3(top_w + 0.05, 0.7, top_d + 0.05)
 			band.position = center + Vector3(0, base_h + i * story_h + story_h * 0.55, 0)
 			if _rng.randf() < 0.7:
-				band.material = _mat_window_cool
+				band.material = _pick_window_cool()
 			else:
 				band.material = _get_glass_material(glass_col)
 			band.name = "TowerGlassBand"
@@ -900,7 +1220,7 @@ func _place_midrise_office(center: Vector3, stories: int, w: float, d: float) ->
 		band.size = Vector3(w + 0.05, 0.55, d + 0.05)
 		band.position = center + Vector3(0, i * story_h + story_h * 0.55, 0)
 		if _rng.randf() < 0.65:
-			band.material = _mat_window_cool
+			band.material = _pick_window_cool()
 		else:
 			band.material = _get_glass_material(glass)
 		band.name = "MidriseGlassBand"
@@ -995,7 +1315,7 @@ func _place_school_building(center: Vector3, stories: int, w: float, d: float) -
 		band.size = Vector3(w + 0.05, 0.45, d + 0.05)
 		band.position = center + Vector3(0, i * story_h + story_h * 0.6, 0)
 		if _rng.randf() < 0.4:
-			band.material = _mat_window_cool
+			band.material = _pick_window_cool()
 		else:
 			band.material = _get_glass_material(window_col)
 		band.name = "SchoolWindowBand"
@@ -1276,13 +1596,13 @@ func _place_house_compound(center: Vector3, compound_size: float, stories: int) 
 			var front := CSGBox3D.new()
 			front.size = Vector3(window_w, window_h, win_depth)
 			front.position = house_center + Vector3(wx, row_y, house_d / 2.0 + win_depth / 2.0)
-			front.material = _mat_window_warm
+			front.material = _pick_window_warm()
 			front.name = "HouseWindowFront"
 			add_child(front)
 			var back := CSGBox3D.new()
 			back.size = Vector3(window_w, window_h, win_depth)
 			back.position = house_center + Vector3(wx, row_y, -house_d / 2.0 - win_depth / 2.0)
-			back.material = _mat_window_warm
+			back.material = _pick_window_warm()
 			back.name = "HouseWindowBack"
 			add_child(back)
 		# Left (-X) and right (+X) faces — windows across the depth
@@ -1292,13 +1612,13 @@ func _place_house_compound(center: Vector3, compound_size: float, stories: int) 
 			var right := CSGBox3D.new()
 			right.size = Vector3(win_depth, window_h, window_w)
 			right.position = house_center + Vector3(house_w / 2.0 + win_depth / 2.0, row_y, wz)
-			right.material = _mat_window_warm
+			right.material = _pick_window_warm()
 			right.name = "HouseWindowRight"
 			add_child(right)
 			var left := CSGBox3D.new()
 			left.size = Vector3(win_depth, window_h, window_w)
 			left.position = house_center + Vector3(-house_w / 2.0 - win_depth / 2.0, row_y, wz)
-			left.material = _mat_window_warm
+			left.material = _pick_window_warm()
 			left.name = "HouseWindowLeft"
 			add_child(left)
 
@@ -1457,7 +1777,7 @@ func _place_factory(center: Vector3, w: float, h: float, d: float) -> void:
 	var win_band := CSGBox3D.new()
 	win_band.size = Vector3(w * 0.8, h * 0.22, 0.05)
 	win_band.position = center + Vector3(0, h * 0.55, d / 2.0 + 0.03)
-	win_band.material = _mat_window_warm
+	win_band.material = _pick_window_warm()
 	win_band.name = "FactoryWindows"
 	add_child(win_band)
 

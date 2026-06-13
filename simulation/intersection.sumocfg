@@ -25,12 +25,24 @@
     </time>
 
     <processing>
-        <!-- Disable teleporting: we WANT vehicles to queue and wait.
-             Teleporting would hide congestion and distort wait-time metrics. -->
-        <time-to-teleport value="-1"/>
+        <!-- AUDIT FIX (2026-04-24):
+             Previous policy disabled teleport ("we WANT vehicles to queue")
+             but that meant junction-box deadlocks had no escape valve — once
+             the intersection filled with cars that couldn't clear, the entire
+             system locked up permanently and the AI's phase choices became
+             meaningless (no green can drain a blocked box).
+             Teleport at 90s lets the junction self-heal from gridlock while
+             still keeping normal queuing visible (real waits are well under
+             90s for a healthy controller). -->
+        <time-to-teleport value="90"/>
 
-        <!-- Warn on collisions but keep running (don't abort the sim) -->
-        <collision.action value="warn"/>
+        <!-- Teleport on collision so a single crash doesn't snowball into a
+             chain pile-up that locks the whole intersection. -->
+        <collision.action value="teleport"/>
+
+        <!-- Cars must yield to crossing pedestrians/vehicles. Default already,
+             but set explicitly so the assumption is documented. -->
+        <collision.check-junctions value="true"/>
 
         <!-- NOTE: pedestrian.model striping removed for now — it changes vehicle
              yielding dynamics and breaks the pre-trained AI model. The Godot

@@ -56,49 +56,49 @@
 
   <!-- Flows: Heavy Emergency — morning rush (ambulances deployed via UI) -->
   <flow id="flow_NS" type="car" route="route_NS"
-        begin="0" end="7200" vehsPerHour="820"
+        begin="0" end="7200" vehsPerHour="590.4"
         departLane="best" departSpeed="max"/>
   <flow id="flow_NS_t" type="trotro" route="route_NS"
-        begin="0" end="7200" vehsPerHour="80"
+        begin="0" end="7200" vehsPerHour="57.6"
         departLane="best" departSpeed="max"/>
   <flow id="flow_SN" type="car" route="route_SN"
-        begin="0" end="7200" vehsPerHour="250"
+        begin="0" end="7200" vehsPerHour="180.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_SN_t" type="trotro" route="route_SN"
-        begin="0" end="7200" vehsPerHour="50"
+        begin="0" end="7200" vehsPerHour="36.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_NE" type="car" route="route_NE"
-        begin="0" end="7200" vehsPerHour="130"
+        begin="0" end="7200" vehsPerHour="93.6"
         departLane="best" departSpeed="max"/>
   <flow id="flow_NW" type="car" route="route_NW"
-        begin="0" end="7200" vehsPerHour="90"
+        begin="0" end="7200" vehsPerHour="64.8"
         departLane="best" departSpeed="max"/>
   <flow id="flow_SE" type="car" route="route_SE"
-        begin="0" end="7200" vehsPerHour="120"
+        begin="0" end="7200" vehsPerHour="86.4"
         departLane="best" departSpeed="max"/>
   <flow id="flow_SW" type="car" route="route_SW"
-        begin="0" end="7200" vehsPerHour="200"
+        begin="0" end="7200" vehsPerHour="144.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_EW" type="car" route="route_EW"
-        begin="0" end="7200" vehsPerHour="280"
+        begin="0" end="7200" vehsPerHour="201.6"
         departLane="best" departSpeed="max"/>
   <flow id="flow_EW_t" type="trotro" route="route_EW"
-        begin="0" end="7200" vehsPerHour="40"
+        begin="0" end="7200" vehsPerHour="28.8"
         departLane="best" departSpeed="max"/>
   <flow id="flow_EN" type="car" route="route_EN"
-        begin="0" end="7200" vehsPerHour="180"
+        begin="0" end="7200" vehsPerHour="129.6"
         departLane="best" departSpeed="max"/>
   <flow id="flow_ES" type="car" route="route_ES"
-        begin="0" end="7200" vehsPerHour="100"
+        begin="0" end="7200" vehsPerHour="72.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_WE" type="car" route="route_WE"
-        begin="0" end="7200" vehsPerHour="100"
+        begin="0" end="7200" vehsPerHour="72.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_WN" type="car" route="route_WN"
-        begin="0" end="7200" vehsPerHour="150"
+        begin="0" end="7200" vehsPerHour="108.0"
         departLane="best" departSpeed="max"/>
   <flow id="flow_WS" type="car" route="route_WS"
-        begin="0" end="7200" vehsPerHour="50"
+        begin="0" end="7200" vehsPerHour="36.0"
         departLane="best" departSpeed="max"/>
 
   <!-- Pedestrian crossing flows -->

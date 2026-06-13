@@ -36,7 +36,12 @@
   <!-- Standard passenger car (Toyota Corolla / Kia Rio — common in Accra)
        speedFactor/speedDev: each car draws a random speed multiplier from
        a normal distribution (mean=1.0, std=0.2) so some drive ~56 km/h
-       and others ~84 km/h. Realistic urban speed spread. -->
+       and others ~84 km/h. Realistic urban speed spread.
+
+       AUDIT FIX (2026-04-24): Junction-awareness parameters added to stop
+       cars from racing yellow into intersections they can't clear. Without
+       these, the junction box would deadlock at high demand (vehicles entered
+       on yellow, sat in the box when it turned red, blocked the cross flow). -->
   <vType id="car"
          accel="2.6"
          decel="4.5"
@@ -49,11 +54,20 @@
          speedDev="0.2"
          guiShape="passenger"
          color="0.6,0.6,0.9"
-         jmCrossingGap="3.0"/>
+         jmCrossingGap="10.0"
+         jmStoplineGap="2.0"
+         jmIgnoreFoeProb="0.0"
+         jmDriveAfterYellowTime="-1"
+         impatience="0.3"
+         lcCooperative="1.0"
+         lcKeepRight="0.5"/>
 
   <!-- Trotro (shared minibus) — extremely common in Accra, slower + longer
        speedFactor=0.9: trotros generally drive below the limit (frequent stops)
-       speedDev=0.15: some variation between trotro drivers -->
+       speedDev=0.15: some variation between trotro drivers
+       Junction params slightly more aggressive than cars (real Accra trotros
+       are pushier in traffic) but still respect "don't enter what you can't
+       clear" — impatience=0.5, jmCrossingGap=8. -->
   <vType id="trotro"
          accel="1.8"
          decel="3.5"
@@ -66,7 +80,13 @@
          speedDev="0.15"
          guiShape="bus/city"
          color="1.0,0.8,0.0"
-         jmCrossingGap="3.0"/>
+         jmCrossingGap="8.0"
+         jmStoplineGap="2.0"
+         jmIgnoreFoeProb="0.05"
+         jmDriveAfterYellowTime="-1"
+         impatience="0.5"
+         lcCooperative="0.7"
+         lcKeepRight="0.5"/>
 
   <!-- Pedestrian — faster walking speed (Ghanaian crossing behavior) -->
   <vType id="ped_fast" vClass="pedestrian"
@@ -98,25 +118,29 @@
        Vehicles travel: [incoming edge] → junction J0 → [outgoing edge]
   ═══════════════════════════════════════════════════════════════ -->
 
+  <!-- Turn directions below follow Ghana right-hand traffic (drivers on right).
+       From N heading S: W is on the right, E is on the left, etc.
+       Authoritative lane map: see simulation/connections.con.xml. -->
+
   <!-- From North (Achimota Forest Rd — Nsawam direction) -->
   <route id="route_NS" edges="ACH_N2J ACH_J2S"/>   <!-- Nsawam → CBD (straight) -->
-  <route id="route_NE" edges="ACH_N2J AGG_J2E"/>   <!-- Nsawam → Aggrey St (right turn) -->
-  <route id="route_NW" edges="ACH_N2J GUG_J2W"/>   <!-- Nsawam → Guggisberg (left turn) -->
+  <route id="route_NE" edges="ACH_N2J AGG_J2E"/>   <!-- Nsawam → Aggrey St (LEFT turn) -->
+  <route id="route_NW" edges="ACH_N2J GUG_J2W"/>   <!-- Nsawam → Guggisberg (RIGHT turn) -->
 
   <!-- From South (Achimota Forest Rd — CBD direction) -->
   <route id="route_SN" edges="ACH_S2J ACH_J2N"/>   <!-- CBD → Nsawam (straight) -->
-  <route id="route_SE" edges="ACH_S2J AGG_J2E"/>   <!-- CBD → Aggrey St (left turn) -->
-  <route id="route_SW" edges="ACH_S2J GUG_J2W"/>   <!-- CBD → Guggisberg (right turn) -->
+  <route id="route_SE" edges="ACH_S2J AGG_J2E"/>   <!-- CBD → Aggrey St (RIGHT turn) -->
+  <route id="route_SW" edges="ACH_S2J GUG_J2W"/>   <!-- CBD → Guggisberg (LEFT turn) -->
 
   <!-- From East (Aggrey Street) -->
   <route id="route_EW" edges="AGG_E2J GUG_J2W"/>   <!-- Aggrey → Guggisberg (straight) -->
-  <route id="route_EN" edges="AGG_E2J ACH_J2N"/>   <!-- Aggrey → Nsawam (right turn) -->
-  <route id="route_ES" edges="AGG_E2J ACH_J2S"/>   <!-- Aggrey → CBD (left turn) -->
+  <route id="route_EN" edges="AGG_E2J ACH_J2N"/>   <!-- Aggrey → Nsawam (RIGHT turn) -->
+  <route id="route_ES" edges="AGG_E2J ACH_J2S"/>   <!-- Aggrey → CBD (LEFT turn) -->
 
   <!-- From West (Guggisberg Street) -->
   <route id="route_WE" edges="GUG_W2J AGG_J2E"/>   <!-- Guggisberg → Aggrey (straight) -->
-  <route id="route_WN" edges="GUG_W2J ACH_J2N"/>   <!-- Guggisberg → Nsawam (right turn) -->
-  <route id="route_WS" edges="GUG_W2J ACH_J2S"/>   <!-- Guggisberg → CBD (left turn) -->
+  <route id="route_WN" edges="GUG_W2J ACH_J2N"/>   <!-- Guggisberg → Nsawam (LEFT turn) -->
+  <route id="route_WS" edges="GUG_W2J ACH_J2S"/>   <!-- Guggisberg → CBD (RIGHT turn) -->
 
 
   <!-- ═══════════════════════════════════════════════════════════════
@@ -127,60 +151,78 @@
        W (Guggisberg St) is a minor residential feeder — light flow, 2 lanes.
   ═══════════════════════════════════════════════════════════════ -->
 
+  <!--
+    LANE DISCIPLINE (Accra street-rule):
+      departLane="1" arrivalLane="1"  →  OUTER lane = straight + right-turn
+      departLane="2" arrivalLane="2"  →  INNER lane = left-turn (+ u-turn)
+    This keeps left-turners out of the through lane so they don't block
+    straight-moving traffic during the protected-left phase, and keeps
+    straight cars out of the left-turn lane so left-turners aren't stuck
+    behind them during the NS_LEFT / EW_LEFT phase.
+  -->
+
   <!-- ── Achimota Forest Rd: Nsawam → CBD (HEAVIEST — inbound commuters) ── -->
   <flow id="flow_NS"   type="car"    route="route_NS"
         begin="0" end="7200" vehsPerHour="820"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
   <flow id="flow_NS_t" type="trotro" route="route_NS"
         begin="0" end="7200" vehsPerHour="80"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
 
   <!-- ── Achimota Forest Rd: CBD → Nsawam (lighter reverse flow) ────────── -->
   <flow id="flow_SN"   type="car"    route="route_SN"
         begin="0" end="7200" vehsPerHour="250"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
   <flow id="flow_SN_t" type="trotro" route="route_SN"
         begin="0" end="7200" vehsPerHour="50"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
 
   <!-- ── N/S turning movements ──────────────────────────────────────────── -->
+  <!-- flow_NE: N→E is a LEFT turn  → inner lane (2) -->
   <flow id="flow_NE" type="car" route="route_NE"
         begin="0" end="7200" vehsPerHour="130"
-        departLane="best" departSpeed="max"/>
+        departLane="2" arrivalLane="2" departSpeed="max"/>
+  <!-- flow_NW: N→W is a RIGHT turn → outer lane (1) -->
   <flow id="flow_NW" type="car" route="route_NW"
         begin="0" end="7200" vehsPerHour="90"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
+  <!-- flow_SE: S→E is a RIGHT turn → outer lane (1) -->
   <flow id="flow_SE" type="car" route="route_SE"
         begin="0" end="7200" vehsPerHour="120"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
+  <!-- flow_SW: S→W is a LEFT turn  → inner lane (2) -->
   <flow id="flow_SW" type="car" route="route_SW"
         begin="0" end="7200" vehsPerHour="200"
-        departLane="best" departSpeed="max"/>
+        departLane="2" arrivalLane="2" departSpeed="max"/>
 
   <!-- ── Aggrey Street: East → (moderate secondary road, now 2-lane) ────── -->
   <flow id="flow_EW" type="car" route="route_EW"
         begin="0" end="7200" vehsPerHour="280"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
   <flow id="flow_EW_t" type="trotro" route="route_EW"
         begin="0" end="7200" vehsPerHour="40"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
+  <!-- flow_EN: E→N is a RIGHT turn → outer lane (1) -->
   <flow id="flow_EN" type="car" route="route_EN"
         begin="0" end="7200" vehsPerHour="180"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
+  <!-- flow_ES: E→S is a LEFT turn  → inner lane (2) -->
   <flow id="flow_ES" type="car" route="route_ES"
         begin="0" end="7200" vehsPerHour="100"
-        departLane="best" departSpeed="max"/>
+        departLane="2" arrivalLane="2" departSpeed="max"/>
 
-  <!-- ── Guggisberg Street: West → (minor residential feeder, 1-lane) ───── -->
+  <!-- ── Guggisberg Street: West → (minor residential feeder, 2-lane) ───── -->
   <flow id="flow_WE" type="car" route="route_WE"
         begin="0" end="7200" vehsPerHour="100"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
+  <!-- flow_WN: W→N is a LEFT turn  → inner lane (2) -->
   <flow id="flow_WN" type="car" route="route_WN"
         begin="0" end="7200" vehsPerHour="150"
-        departLane="best" departSpeed="max"/>
+        departLane="2" arrivalLane="2" departSpeed="max"/>
+  <!-- flow_WS: W→S is a RIGHT turn → outer lane (1) -->
   <flow id="flow_WS" type="car" route="route_WS"
         begin="0" end="7200" vehsPerHour="50"
-        departLane="best" departSpeed="max"/>
+        departLane="1" arrivalLane="1" departSpeed="max"/>
 
 
   <!-- ═══════════════════════════════════════════════════════════════

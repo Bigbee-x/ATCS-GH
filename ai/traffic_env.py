@@ -113,12 +113,15 @@ CROSSING_EDGES = [":J0_c0", ":J0_c1", ":J0_c2", ":J0_c3"]
 WALKING_AREAS  = [":J0_w0", ":J0_w1", ":J0_w2", ":J0_w3"]
 
 # Phase indices -- 8 phases for through + left-turn separation
-# Connection mapping (23 link indices from intersection.net.xml):
-#   pos 0-4:   ACH_N2J -> right(0), straight(1,2), left(3), uturn(4)
-#   pos 5-8:   AGG_E2J -> right(5), straight(6), left(7), uturn(8)
-#   pos 9-13:  ACH_S2J -> right(9), straight(10,11), left(12), uturn(13)
-#   pos 14-18: GUG_W2J -> right(14), straight(15,16), left(17), uturn(18)
-#   pos 19-22: crossings -> c0_N(19), c1_E(20), c2_S(21), c3_W(22)
+# Connection mapping (16 vehicle + 4 crossing = 20 link indices).
+# As of the lane-restricted rebuild, each approach has ONE through connection
+# (from lane 1 only — the lane-2-straight connection was removed so that
+# lane 2 is exclusively for left-turners / u-turners). Layout:
+#   pos 0-3:   ACH_N2J  -> right(0), straight(1), left(2), uturn(3)
+#   pos 4-7:   AGG_E2J  -> right(4), straight(5), left(6), uturn(7)
+#   pos 8-11:  ACH_S2J  -> right(8), straight(9), left(10), uturn(11)
+#   pos 12-15: GUG_W2J  -> right(12), straight(13), left(14), uturn(15)
+#   pos 16-19: crossings -> c0_N(16), c1_E(17), c2_S(18), c3_W(19)
 #
 # Pedestrian crossings piggyback on vehicle phases:
 #   NS phases: E/W crossings (c1,c3) green, N/S crossings (c0,c2) red
@@ -141,23 +144,26 @@ PHASE_NAMES = {
     6: "NS_ALL",     7: "EW_ALL",
 }
 
-# 24-character signal state strings for setRedYellowGreenState()
-# Connection layout (20 vehicle + 4 crossings = 24):
-#   N(0-4):  right, straight, straight, left, uturn   — ACH_N2J
-#   E(5-9):  right, straight, straight, left, uturn   — AGG_E2J
-#   S(10-14): right, straight, straight, left, uturn  — ACH_S2J
-#   W(15-19): right, straight, straight, left, uturn  — GUG_W2J
-#   Crossings(20-23): c0(N), c1(E), c2(S), c3(W)
+# 20-character signal state strings for setRedYellowGreenState().
+# Link layout (16 vehicle + 4 crossings = 20):
+#   N(0-3):   right, straight, left, uturn   — ACH_N2J
+#   E(4-7):   right, straight, left, uturn   — AGG_E2J
+#   S(8-11):  right, straight, left, uturn   — ACH_S2J
+#   W(12-15): right, straight, left, uturn   — GUG_W2J
+#   Crossings(16-19): c0(N), c1(E), c2(S), c3(W)
 PHASE_SIGNALS = {
-    #                N----E----S----W----XWLK
-    NS_THROUGH: "GGGrrrrrrrGGGrrrrrrrrGrG",  # N/S straight+right; left/EW red; EW crossings green
-    NS_LEFT:    "grrGrrrrrrgrrGrrrrrrrGrG",  # N/S protected left; straight red
-    NS_YELLOW:  "yyyyyrrrrryyyyyrrrrrrrrr",   # N/S yellow; all crossings red
-    EW_THROUGH: "rrrrrGGGrrrrrrrGGGrrGrGr",  # E/W straight+right; left/NS red; NS crossings green
-    EW_LEFT:    "rrrrrgrrGrrrrrrgrrGrGrGr",  # E/W protected left; straight red
-    EW_YELLOW:  "rrrrryyyyyrrrrryyyyyrrrr",   # E/W yellow; all crossings red
-    NS_ALL:     "GGGgrrrrrrGGGgrrrrrrrGrG",  # N/S through+right, left permissive (yield)
-    EW_ALL:     "rrrrrGGGgrrrrrrGGGgrGrGr",  # E/W through+right, left permissive (yield)
+    #                N---E---S---W---XWLK
+    NS_THROUGH: "GGrrrrrrGGrrrrrrrGrG",  # N/S straight+right protected; left/uturn red; EW crossings green
+    NS_LEFT:    "grGGrrrrgrGGrrrrrGrG",  # N/S protected left+uturn; right permissive; straight red
+    NS_YELLOW:  "yyyyrrrryyyyrrrrrrrr",   # N/S yellow; all crossings red
+    EW_THROUGH: "rrrrGGrrrrrrGGrrGrGr",  # E/W straight+right protected; left/uturn red; NS crossings green
+    EW_LEFT:    "rrrrgrGGrrrrgrGGGrGr",  # E/W protected left+uturn; right permissive; straight red
+    EW_YELLOW:  "rrrryyyyrrrryyyyrrrr",   # E/W yellow; all crossings red
+    NS_ALL:     "GGGrrrrrGGGrrrrrrGrG",  # N/S right+straight+left protected, uturn RED (matches baseline)
+    EW_ALL:     "rrrrGGGrrrrrGGGrGrGr",  # E/W right+straight+left protected, uturn RED (matches baseline)
+    # NOTE: was permissive ('g') left+uturn — turners yielded to oncoming straight,
+    #   stalled in the junction box and deadlocked under load. Baseline keeps uturn
+    #   red and left protected for exactly this reason; aligned 2026-06-09.
 }
 
 # Green phases (non-yellow)
@@ -181,13 +187,19 @@ EDGE_TO_GREENS = {
 }
 
 # Action constants
+# REALISM FIX (2026-06-11): ACTION_NS_ALL / ACTION_EW_ALL removed. The all-green
+# phases greened the protected-left arrow AND oncoming through simultaneously —
+# left-turners entered the junction box against oncoming traffic and blocked it.
+# The real Achimota junction (and the visualizer's fixed timer) runs protected
+# lefts: through and left arrows NEVER green together. The agent now works with
+# the same phase vocabulary as the real junction. (NS_ALL/EW_ALL phase strings
+# remain defined below only for state-encoding compatibility; they are
+# unreachable through the action space.)
 ACTION_HOLD       = 0
 ACTION_NS_THROUGH = 1
 ACTION_NS_LEFT    = 2
 ACTION_EW_THROUGH = 3
 ACTION_EW_LEFT    = 4
-ACTION_NS_ALL     = 5
-ACTION_EW_ALL     = 6
 
 # Map action index → target green phase
 ACTION_TO_PHASE = {
@@ -195,70 +207,38 @@ ACTION_TO_PHASE = {
     ACTION_NS_LEFT:    NS_LEFT,
     ACTION_EW_THROUGH: EW_THROUGH,
     ACTION_EW_LEFT:    EW_LEFT,
-    ACTION_NS_ALL:     NS_ALL,
-    ACTION_EW_ALL:     EW_ALL,
 }
 
-ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
-                "NS_ALL", "EW_ALL"]
+ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT"]
 
-
-class ActionSanitizer:
-    """Remap permissive-left phases to protected phases, alternating lefts and throughs.
-
-    NS_ALL/EW_ALL would normally light the through-green and the left-arrow
-    simultaneously — a "permissive left" that forces left-turners to yield
-    to oncoming through traffic. That doesn't match the fixed-timer
-    baseline (which serves lefts with a dedicated protected-left phase).
-
-    A naive fix is to collapse NS_ALL → NS_THROUGH, but that starves lefts
-    because the trained policy relied on NS_ALL to serve both movements in
-    one green. Instead, we **alternate** each time an ALL-phase is picked:
-
-        1st NS_ALL in a row → NS_LEFT    (serve the starved lefts first)
-        2nd NS_ALL in a row → NS_THROUGH
-        3rd NS_ALL in a row → NS_LEFT
-        ...
-
-    Same for EW_ALL ↔ {EW_THROUGH, EW_LEFT}. This preserves the agent's
-    directional intent (N/S or E/W priority) while splitting the combined
-    movement across two decision ticks, so both through AND protected-left
-    eventually get a turn. Training is intentionally untouched so existing
-    checkpoints (7-action output head) still load.
-    """
-
-    def __init__(self) -> None:
-        # Start by serving lefts first when the AI picks an ALL-phase — they
-        # were the starved movement under the naive collapse fix.
-        self._ns_serve_left_next = True
-        self._ew_serve_left_next = True
-
-    def __call__(self, action: int) -> int:
-        if action == ACTION_NS_ALL:
-            remapped = ACTION_NS_LEFT if self._ns_serve_left_next else ACTION_NS_THROUGH
-            self._ns_serve_left_next = not self._ns_serve_left_next
-            return remapped
-        if action == ACTION_EW_ALL:
-            remapped = ACTION_EW_LEFT if self._ew_serve_left_next else ACTION_EW_THROUGH
-            self._ew_serve_left_next = not self._ew_serve_left_next
-            return remapped
-        return action
-
-
-# Module-level default instance — backwards-compatible shim so callers that
-# import `sanitize_action` keep working without wiring up an instance.
-_default_sanitizer = ActionSanitizer()
-
-
-def sanitize_action(action: int) -> int:
-    """Back-compat wrapper around the module-level ActionSanitizer."""
-    return _default_sanitizer(action)
+# NOTE: the old ActionSanitizer / sanitize_action machinery was deleted
+# (2026-06-11) along with the ALL-phase actions it existed to clean up.
+# With a protected-left-only action space there is nothing to sanitize.
 
 # ── State normalisation ───────────────────────────────────────────────────────
-MAX_QUEUE      = 50.0    # vehicles per approach (per edge, all lanes summed)
-MAX_QUEUE_LANE = 25.0    # vehicles per lane
+# AUDIT FIX (2026-06-07): Raised after the first full retrain (250 eps, mixed
+# scenarios) produced a SPLIT policy — excellent on light traffic (off_peak /
+# weekend, peak queues 14-44, avg wait 3-4s) but CATASTROPHIC on heavy traffic
+# (morning/evening rush + heavy_emergency at 2640 veh/hr, peak queues 600-760,
+# avg wait 700-880s vs an 81.8s fixed-timer baseline on the SAME demand).
+#
+# Root cause: with MAX_QUEUE=50, heavy-traffic queues normalise to 12-15× over
+# 1.0 on EVERY approach at once. The "no clip so overflow still informs the net"
+# theory failed in practice — when all dims saturate together the relative
+# signal (which approach is worst) is destroyed, activations blow up, and the
+# policy degenerates into gridlock. The agent did well *exactly* when queues
+# stayed under 50 and failed *exactly* when they exceeded it — a perfect
+# correlation pinning the cause to normaliser scale.
+#
+# Fix: size the caps to the actionable danger zone so the agent can perceive
+# queues climbing (50→100→150) and intervene BEFORE runaway gridlock. A good
+# policy keeps heavy-traffic queues well under 150 (baseline does), so this
+# range stays mostly unsaturated under competent control.
+# NOTE: train + inference MUST use the same normalisers — retrain after changing.
+MAX_QUEUE      = 150.0   # vehicles per approach (was 50 — heavy traffic needs headroom)
+MAX_QUEUE_LANE = 75.0    # vehicles per lane (was 25)
 MAX_SPEED      = 13.89   # 50 km/h in m/s (lane speed normalisation)
-MAX_WAIT       = 600.0   # seconds — higher than baseline (399s) to allow headroom
+MAX_WAIT       = 1200.0  # seconds (was 600 — heavy-traffic waits exceed 600 pre-convergence)
 MAX_PHASE_T    = 96.0    # one full 96-second TL cycle
 MAX_PED_QUEUE  = 15.0    # max pedestrians waiting at one walking area
 
@@ -269,22 +249,55 @@ MIN_GREEN_LEFT     = 8     # left-turn phases serve fewer vehicles — shorter h
 YELLOW_DURATION    = 3     # seconds of yellow clearance
 SIM_DURATION       = 7200  # seconds per episode (matches baseline)
 
+# Warm-start expert (guided exploration). The KEY lesson from the 2026-06-09
+# diagnosis: heavy demand is cleared by SUSTAINED greens, not fast switching.
+# A 60/30 timer gridlocks 1901 veh/hr at 811s; a 90/45 (longer green) clears the
+# same demand at 22s. So the expert holds the current green until it drains
+# (gap-out) or hits a max, instead of flipping on the instantaneous bigger queue.
+EXPERT_GAP_QUEUE    = 3     # a direction is "empty" at/below this (gap-out)
+EXPERT_NS_GREEN     = 90    # N/S through green (s) — the heavy group, ~66% of demand
+EXPERT_EW_GREEN     = 45    # E/W through green (s). 90/45 is the plan proven to clear 1901
+EXPERT_NS_LEFT_GREEN = 15   # protected left-arrow greens (match the viz fixed timer)
+EXPERT_EW_LEFT_GREEN = 10
+# Left-turn lanes (lane _2 on each edge is reserved for left + uturn)
+_LEFT_LANES_NS  = ("ACH_N2J_2", "ACH_S2J_2")
+_LEFT_LANES_EW  = ("AGG_E2J_2", "GUG_W2J_2")
+_THRU_LANES_NS  = ("ACH_N2J_1", "ACH_S2J_1")
+_THRU_LANES_EW  = ("AGG_E2J_1", "GUG_W2J_1")
+                            # veh/hr at ~21s; demand-matched split, not 50/50.
+
 # Exported constants for use by train_agent.py / run_ai.py
 STATE_SIZE  = 45   # 8*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
-ACTION_SIZE = 7
+ACTION_SIZE = 5   # was 7 — NS_ALL/EW_ALL removed (protected-left realism fix)
 
-# ── Reward weights ────────────────────────────────────────────────────────────
-# These are tuned so the baseline fixed-timer scores ≈ -2000 per episode
-# and a near-optimal policy scores ≈ +8000 per episode, giving a clear signal.
-W_QUEUE_ABS   = 0.2    # continuous penalty per vehicle in queue per decision block
-W_QUEUE_DELTA = 0.5    # signed penalty/reward for queue growing/shrinking
-W_ARRIVED     = 3.0    # reward per vehicle completing its journey
-W_EMERGENCY   = 50.0   # penalty per decision block any emergency vehicle waits
-W_FLICKER     = 10.0   # penalty for switching before MIN_GREEN_DURATION
-W_BALANCE     = 4.0    # bonus for balanced queue distribution (was 1.0 — increased
-                        # to prevent N/S bias due to 2-lane vs 1-lane asymmetry)
-W_MAX_WAIT    = 0.4    # penalty per second any approach waits beyond the threshold
-W_PED_WAIT    = 0.3    # penalty per waiting pedestrian per decision block
+# ── Reward weights (redesigned 2026-06-09 — gridlock-trap fix) ────────────────
+# Diagnosis: the previous reward used ABSOLUTE queue (-0.2·queue) and ABSOLUTE
+# max-wait (-0.4·excess) penalties. Both diverge without bound once the junction
+# saturates, so a heavy episode scored ≈ -1.5M while a light one scored ≈ +5k.
+# Two failures resulted:
+#   1. A single Q-net cannot regress targets spanning a ~300× range across
+#      scenarios → destructive cross-scenario interference.
+#   2. In gridlock every action's reward saturated at "hugely negative", so the
+#      agent got no gradient telling it which action was *less* bad → it could
+#      never learn its way out. Light traffic never saturated, so it learned
+#      instantly. Hence the permanent light-genius / heavy-gridlock split.
+# Redesign: every penalty is NORMALISED to a reference scale and the per-block
+# reward is CLIPPED to ±REWARD_CLIP. Heavy traffic now yields a finite,
+# discriminative gradient (queue 100 scores better than queue 400) and the
+# cross-scenario reward spread collapses from ~300× to ~10×.
+QUEUE_REF     = 40.0   # reference queue (≈ baseline peak) — congestion normaliser
+WAIT_REF      = 90.0   # reference excess-wait (s) — max-wait normaliser
+PED_REF       = 10.0   # reference pedestrian backlog
+REWARD_CLIP   = 40.0   # per-decision-block reward saturates at ±this
+
+W_QUEUE_ABS   = 4.0    # congestion penalty     × (total_queue / QUEUE_REF)
+W_QUEUE_DELTA = 2.0    # queue-growth penalty    × (growth / QUEUE_REF)
+W_ARRIVED     = 1.0    # throughput reward       × n_arrived (~0-15 per block)
+W_EMERGENCY   = 8.0    # emergency-wait penalty  × n_emerg_waiting (bounded, strong)
+W_FLICKER     = 2.0    # anti-flicker penalty
+W_BALANCE     = 2.0    # fairness bonus          × balance∈[0,1]
+W_MAX_WAIT    = 4.0    # worst-approach penalty  × min(excess / WAIT_REF, 3)
+W_PED_WAIT    = 1.0    # pedestrian-wait penalty × min(n_ped / PED_REF, 2)
 FAIR_WAIT_THRESH = 30.0  # seconds — acceptable wait; penalty kicks in above this
 
 
@@ -305,6 +318,11 @@ class TrafficEnv:
         Training loops should call env.close() at the end of each episode
         (or rely on reset() to do it automatically).
     """
+
+    # Class-level flag so the link-layout diagnostic prints once per process
+    # (avoids spamming during 250-episode training runs while still surfacing
+    # a verifiable record of how SUMO ordered the controlled links).
+    _layout_diagnostic_printed: bool = False
 
     def __init__(self, gui: bool = False, verbose: bool = False,
                  route_file: str | None = None):
@@ -580,21 +598,22 @@ class TrafficEnv:
                                      (prevents E/W starvation from N/S throughput bias)
         8. Pedestrian wait penalty — penalises waiting pedestrians at crossings
         """
-        # 1. Absolute congestion penalty (per decision block)
-        r_abs   = -W_QUEUE_ABS * total_queue
+        # All penalties are NORMALISED to a reference scale so heavy traffic
+        # produces a finite, discriminative gradient (see weight-block note).
 
-        # 2. Delta: penalise net queue GROWTH only (no reward for shrinkage).
-        #    Throughput bonus (r_thru) already rewards vehicles leaving.
-        #    Rewarding shrinkage created a reward-hacking vulnerability where
-        #    the agent could oscillate phases to harvest delta rewards without
-        #    improving net throughput.
+        # 1. Congestion penalty — normalised by QUEUE_REF (was absolute → diverged)
+        r_abs   = -W_QUEUE_ABS * (total_queue / QUEUE_REF)
+
+        # 2. Delta: penalise net queue GROWTH only (no reward for shrinkage —
+        #    rewarding shrinkage let the agent oscillate phases to farm reward
+        #    without improving net throughput).
         delta   = total_queue - prev_total_queue
-        r_delta = -W_QUEUE_DELTA * max(0.0, delta)   # only penalise growth
+        r_delta = -W_QUEUE_DELTA * (max(0.0, delta) / QUEUE_REF)
 
         # 3. Throughput (accumulated over the DECISION_INTERVAL steps)
         r_thru  = W_ARRIVED * n_arrived
 
-        # 4. Emergency vehicle waiting (strong signal)
+        # 4. Emergency vehicle waiting (strong, bounded signal)
         r_emerg = -W_EMERGENCY * n_emerg_waiting
 
         # 5. Flicker penalty
@@ -610,18 +629,91 @@ class TrafficEnv:
             r_balance = W_BALANCE  # zero traffic = maximum balance
 
         # 7. Max-wait penalty: prevent any single approach from being starved.
-        #    Only kicks in above FAIR_WAIT_THRESH to allow normal cycling.
+        #    Normalised by WAIT_REF and CAPPED so one gridlocked approach cannot
+        #    dominate the whole reward (the old unbounded form did exactly that).
         r_max_wait = 0.0
         if wait_distribution:
             worst_wait = max(wait_distribution)
             excess     = max(0.0, worst_wait - FAIR_WAIT_THRESH)
-            r_max_wait = -W_MAX_WAIT * excess
+            r_max_wait = -W_MAX_WAIT * min(excess / WAIT_REF, 3.0)
 
-        # 8. Pedestrian waiting penalty
-        r_ped = -W_PED_WAIT * n_ped_waiting
+        # 8. Pedestrian waiting penalty — normalised + capped
+        r_ped = -W_PED_WAIT * min(n_ped_waiting / PED_REF, 2.0)
 
-        return (r_abs + r_delta + r_thru + r_emerg
-                + r_flick + r_balance + r_max_wait + r_ped)
+        total = (r_abs + r_delta + r_thru + r_emerg
+                 + r_flick + r_balance + r_max_wait + r_ped)
+
+        # Clip so cross-scenario Q-targets stay well-conditioned and no single
+        # block can blow up the return: bounds per-block reward to ±REWARD_CLIP.
+        return float(max(-REWARD_CLIP, min(REWARD_CLIP, total)))
+
+    # ── Expert / warm-start policy ────────────────────────────────────────────
+
+    def _lane_halts(self, lanes: tuple) -> int:
+        """Sum of halted vehicles on the given lanes (0 on any TraCI hiccup)."""
+        total = 0
+        for lane in lanes:
+            try:
+                total += traci.lane.getLastStepHaltingNumber(lane)
+            except traci.TraCIException:
+                pass
+        return total
+
+    def expert_action(self) -> int:
+        """
+        Protected-left actuated expert used to guide exploration (warm-start).
+
+        Mirrors how the real Achimota junction (and the visualizer's fixed
+        timer) phases traffic: through movements and the left arrow NEVER green
+        together. The cycle is THROUGH (long, gap-out or max-green) → protected
+        LEFT (short, skipped when no lefts wait) → other axis, with N/S getting
+        the longer greens (~66% of demand). Two prior expert designs failed:
+        max-pressure thrashing (gridlock from short greens) and all-green
+        phases (left-turners blocking the junction box against oncoming
+        through). This one holds long greens AND keeps conflicts protected.
+        Emergency preemption is handled by the env's safety layer, not here.
+        """
+        ns_thru = self._lane_halts(_THRU_LANES_NS)
+        ew_thru = self._lane_halts(_THRU_LANES_EW)
+        ns_left = self._lane_halts(_LEFT_LANES_NS)
+        ew_left = self._lane_halts(_LEFT_LANES_EW)
+        ns_q = ns_thru + ns_left
+        ew_q = ew_thru + ew_left
+
+        if self._phase == NS_THROUGH:
+            done = (self._phase_timer >= EXPERT_NS_GREEN
+                    or (ns_thru <= EXPERT_GAP_QUEUE
+                        and ns_left + ew_q > EXPERT_GAP_QUEUE))
+            if not done:
+                return ACTION_HOLD
+            if ns_left > 0:
+                return ACTION_NS_LEFT          # serve the waiting left arrow
+            return ACTION_EW_THROUGH if ew_q > 0 else ACTION_HOLD
+
+        if self._phase == NS_LEFT:
+            done = (self._phase_timer >= EXPERT_NS_LEFT_GREEN or ns_left == 0)
+            if not done:
+                return ACTION_HOLD
+            return ACTION_EW_THROUGH if ew_q > 0 else ACTION_NS_THROUGH
+
+        if self._phase == EW_THROUGH:
+            done = (self._phase_timer >= EXPERT_EW_GREEN
+                    or (ew_thru <= EXPERT_GAP_QUEUE
+                        and ew_left + ns_q > EXPERT_GAP_QUEUE))
+            if not done:
+                return ACTION_HOLD
+            if ew_left > 0:
+                return ACTION_EW_LEFT
+            return ACTION_NS_THROUGH if ns_q > 0 else ACTION_HOLD
+
+        if self._phase == EW_LEFT:
+            done = (self._phase_timer >= EXPERT_EW_LEFT_GREEN or ew_left == 0)
+            if not done:
+                return ACTION_HOLD
+            return ACTION_NS_THROUGH if ns_q > 0 else ACTION_EW_THROUGH
+
+        # Startup / yellow / legacy ALL phase → serve the bigger axis, through first.
+        return ACTION_NS_THROUGH if ns_q >= ew_q else ACTION_EW_THROUGH
 
     # ── Phase Control ─────────────────────────────────────────────────────────
 
@@ -704,7 +796,8 @@ class TrafficEnv:
 
         The long-duration program prevents SUMO from auto-advancing.
         All actual signal changes go through setRedYellowGreenState()
-        with our custom 15-character PHASE_SIGNALS strings.
+        with our custom 20-character PHASE_SIGNALS strings
+        (16 vehicle links + 4 pedestrian crossings).
         """
         logics = traci.trafficlight.getAllProgramLogics(TL_ID)
         if not logics:
@@ -726,6 +819,28 @@ class TrafficEnv:
         )
         traci.trafficlight.setProgramLogic(TL_ID, ai_logic)
         traci.trafficlight.setProgram(TL_ID, "ai_control")
+
+        # AUDIT FIX (2026-04-24): Print the actual TraCI controlled-link
+        # layout once per process (or every reset when verbose=True) so we
+        # can verify our PHASE_SIGNALS assumptions against what netconvert
+        # actually produced after the lane-restricted rebuild. The comment
+        # block at the top of this file claims connections are ordered
+        # N → E → S → W; this print confirms or refutes it from runtime.
+        if self.verbose or not TrafficEnv._layout_diagnostic_printed:
+            TrafficEnv._layout_diagnostic_printed = True
+            try:
+                links = traci.trafficlight.getControlledLinks(TL_ID)
+                print(f"[ENV] TL '{TL_ID}' controlled-link layout "
+                      f"({len(links)} links — verify against PHASE_SIGNALS):")
+                for i, link_set in enumerate(links):
+                    if link_set:
+                        from_lane, to_lane, _via = link_set[0]
+                        print(f"        link[{i:2d}]: {from_lane:14s} -> {to_lane}")
+                    else:
+                        print(f"        link[{i:2d}]: (empty)")
+            except traci.exceptions.TraCIException as exc:
+                print(f"[ENV] WARNING: Could not fetch link layout: {exc}")
+
         # Set initial phase using direct signal state string
         traci.trafficlight.setRedYellowGreenState(TL_ID, PHASE_SIGNALS[NS_THROUGH])
         self._phase = NS_THROUGH

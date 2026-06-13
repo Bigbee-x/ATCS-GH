@@ -18,7 +18,7 @@ Usage:
     python scripts/train_agent.py --resume ai/checkpoints/dqn_ep010.pth
 
 Outputs:
-    ai/best_model.pth         — best checkpoint by avg wait time
+    ai/best_model.pth         — best checkpoint by worst-scenario relative wait (maximin)
     ai/trained_model.pth      — final model after all episodes
     ai/checkpoints/dqn_eXXX.pth  — periodic checkpoints
     data/training_log.csv     — per-episode metrics
@@ -27,6 +27,7 @@ Outputs:
 import sys
 import csv
 import time
+import random
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -79,6 +80,55 @@ def _load_baseline_avg_wait() -> float:
 
 BASELINE_AVG_WAIT = _load_baseline_avg_wait()
 
+# ── Per-scenario fair grading ─────────────────────────────────────────────────
+# The single global baseline above was measured on ONE demand profile, so it
+# made rush-hour episodes look like failures (graded against off-peak traffic).
+# Instead, grade each episode against ITS OWN scenario's fixed-timer baseline —
+# the naive 60/30 timer the AI is meant to beat. Produced by
+# scripts/_per_scenario_baselines.py → data/scenario_baselines.csv.
+SCENARIO_BASELINE_CSV = PROJECT_ROOT / "data" / "scenario_baselines.csv"
+
+
+def _load_scenario_baselines() -> dict[str, float]:
+    """{scenario_stem: fixed-timer avg wait}. Empty dict falls back to global."""
+    out: dict[str, float] = {}
+    if SCENARIO_BASELINE_CSV.exists():
+        try:
+            with open(SCENARIO_BASELINE_CSV) as f:
+                for r in csv.DictReader(f):
+                    try:
+                        out[r["scenario"]] = float(r["baseline_avg_wait_s"])
+                    except (ValueError, KeyError):
+                        pass
+        except Exception as e:                                   # noqa: BLE001
+            print(f"[WARN] Could not parse scenario baselines: {e}")
+    return out
+
+
+SCENARIO_BASELINES = _load_scenario_baselines()
+
+# Selection-only floor on the normalizing baseline. off_peak's real baseline is
+# tiny (14.2s), so its relative score has a high noise floor — a 6s↔8s wobble
+# (both excellent in absolute terms) swings its rel 0.43↔0.55 and can out-shout
+# a 20s improvement on evening_rush in the maximin. Flooring the DENOMINATOR at
+# one minute means "solved" light-traffic scenarios stop driving selection
+# unless their absolute waits actually degrade toward 60s. Set to 0 to recover
+# pure baseline normalization. Logging/Δ% always use the true baseline.
+MIN_SELECT_BASELINE_S = 60.0
+
+# Only judge "best" once exploration is mostly off. Early windows score well
+# partly because the EXPERT is driving (at ε=0.4, ~40% of actions aren't the
+# network's) — replaying run 4's log, the maximin's last save landed at ep 36
+# where ε≈0.41, an expert-propped window. Gating on ε keeps selection honest:
+# windows must reflect the network's own (near-greedy) behaviour, matching how
+# best_model.pth is actually deployed (ε=0).
+MAX_SELECT_EPSILON = 0.10
+
+# Warm-start: during exploration, this fraction follows the sustained-green
+# expert (env.expert_action) instead of a uniform-random action, so heavy
+# episodes keep flowing and the agent learns to HOLD greens rather than thrash.
+EXPERT_FRAC = 0.70
+
 
 # ── Training loop ─────────────────────────────────────────────────────────────
 
@@ -109,7 +159,23 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     n_scenarios = len(SCENARIOS)
 
     log_rows:       list[dict] = []
-    best_avg_wait:  float      = float("inf")
+    # "Best model" selection — worst-case-aware (maximin), not single-episode.
+    # FIX (2026-06-07): the old code saved best_model.pth whenever ANY single
+    # episode beat the running best avg_wait. With a 5-scenario rotation that
+    # meant the "best" model was just a snapshot taken right after a lucky
+    # off-peak episode (3s wait) — not a model that's good across rush hour too.
+    # FIX (2026-06-11): the rolling MEAN of raw waits still under-weighted the
+    # hardest scenario — run 4 selected a checkpoint scoring 22.8s/11.3s/6.2s on
+    # morning/weekend/off_peak but 475s on evening_rush (WORSE than its 427s
+    # fixed-timer baseline), while other checkpoints held evening at ~296s with
+    # minimal loss elsewhere. Now each episode's avg_wait is normalized by its
+    # scenario's fixed-timer baseline (rel = avg_wait / baseline, floored at
+    # MIN_SELECT_BASELINE_S — lower is better) and "best" means the WORST
+    # per-scenario rolling relative score improved, tie-breaking on the mean —
+    # no scenario can be sacrificed to flatter the average.
+    BEST_WINDOW:    int        = 2 * n_scenarios     # 10 eps = 2 full rotations
+    recent_rel:     list[tuple[str, float]] = []     # (scenario, wait / baseline)
+    best_score:     tuple[float, float] = (float("inf"), float("inf"))  # (worst, mean)
     training_start: float      = time.time()
     _csv_header_written: bool  = False      # track incremental CSV state
 
@@ -124,7 +190,16 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     print(f"  State size   : {STATE_SIZE}  |  Action size: {ACTION_SIZE}")
     print(f"  Batch size   : {DQNAgent.BATCH_SIZE}  |  Buffer: {DQNAgent.BUFFER_SIZE:,}")
     print(f"  ε start/min  : {DQNAgent.EPSILON_START} → {DQNAgent.EPSILON_MIN}")
-    print(f"  Baseline     : avg wait = {BASELINE_AVG_WAIT}s  (Phase 1 fixed timer)")
+    if SCENARIO_BASELINES:
+        print(f"  Grading      : per-scenario fixed-timer baselines "
+              f"({len(SCENARIO_BASELINES)} loaded — naive timer to beat)")
+    else:
+        print(f"  Baseline     : avg wait = {BASELINE_AVG_WAIT}s  (global fallback)")
+    print(f"  Warm-start   : sustained-green expert at {EXPERT_FRAC:.0%} of exploration")
+    print(f"  Best select  : maximin — save when the WORST per-scenario relative "
+          f"wait over the last {BEST_WINDOW} eps improves "
+          f"(baselines floored at {MIN_SELECT_BASELINE_S:.0f}s, "
+          f"gated to ε ≤ {MAX_SELECT_EPSILON})")
     print(f"  Checkpoints  : every {CHECKPOINT_FREQ} episodes → {CHECKPOINT_DIR.name}/")
     print("═" * 72)
     print(f"\n  {'Ep':>5}  {'Scenario':>16}  {'Reward':>10}  {'Avg Wait':>9}  {'Peak Q':>7}  "
@@ -136,7 +211,9 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
         # Rotate through scenarios so agent sees all demand patterns
         scenario_path = SCENARIOS[(episode - 1) % n_scenarios]
-        scenario_name = scenario_path.stem
+        # .stem of "morning_rush.rou.xml" is "morning_rush.rou" (only the last
+        # suffix drops); strip ".rou" so it matches scenario_baselines.csv keys.
+        scenario_name = scenario_path.stem.replace(".rou", "")
 
         # Create environment with this episode's scenario route file
         env = TrafficEnv(gui=gui, verbose=False, route_file=str(scenario_path))
@@ -148,7 +225,15 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
 
         # ── Episode rollout ───────────────────────────────────────────────────
         while not done:
-            action                         = agent.select_action(state)
+            # Guided ε-exploration: explore mostly via the sustained-green expert
+            # (warm-start) so heavy episodes keep flowing and the agent learns to
+            # HOLD greens; otherwise exploit the learned policy.
+            if random.random() < agent.epsilon:
+                action = (env.expert_action()
+                          if random.random() < EXPERT_FRAC
+                          else random.randrange(ACTION_SIZE))
+            else:
+                action = agent.greedy_action(state)
             next_state, reward, done, info = env.step(action)
             agent.remember(state, action, reward, next_state, done)
             agent.learn()
@@ -162,16 +247,30 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         total_reward = env.episode_total_reward
         peak_queue   = env.episode_peak_queue
         ep_time      = time.time() - ep_start
-        delta_pct    = (avg_wait - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
+        scenario_baseline = SCENARIO_BASELINES.get(scenario_name, BASELINE_AVG_WAIT)
+        delta_pct    = (avg_wait - scenario_baseline) / scenario_baseline * 100
 
         emerg_max    = max(env.emergency_log.values(), default=0.0)
 
-        # ── Save best model ───────────────────────────────────────────────────
+        # ── Save best model (maximin over rolling per-scenario relative score) ─
         note = ""
-        if avg_wait < best_avg_wait:
-            best_avg_wait = avg_wait
-            agent.save(BEST_MODEL_PATH)
-            note = "★ best"
+        sel_base = max(scenario_baseline, MIN_SELECT_BASELINE_S)
+        recent_rel.append((scenario_name, avg_wait / sel_base))
+        if len(recent_rel) > BEST_WINDOW:
+            recent_rel.pop(0)
+        # Only judge "best" once we have a full window spanning every scenario
+        # (so a single easy episode can't trigger a save) AND exploration is
+        # near-greedy (so the window reflects the network, not the expert).
+        if len(recent_rel) >= BEST_WINDOW and agent.epsilon <= MAX_SELECT_EPSILON:
+            rel_by_scen: dict[str, list[float]] = {}
+            for scen, rel in recent_rel:
+                rel_by_scen.setdefault(scen, []).append(rel)
+            scen_means = [sum(v) / len(v) for v in rel_by_scen.values()]
+            score = (max(scen_means), sum(scen_means) / len(scen_means))
+            if score < best_score:               # worst first, mean breaks ties
+                best_score = score
+                agent.save(BEST_MODEL_PATH)
+                note = "★ best"
 
         # ── Periodic checkpoint ───────────────────────────────────────────────
         if episode % CHECKPOINT_FREQ == 0:
@@ -223,7 +322,7 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     _save_log(log_rows)
 
     total_wall = time.time() - training_start
-    _print_summary(log_rows, best_avg_wait, total_wall)
+    _print_summary(log_rows, best_score, total_wall)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -238,7 +337,7 @@ def _save_log(rows: list[dict]) -> None:
 
 
 def _print_summary(rows: list[dict],
-                   best_avg_wait: float,
+                   best_score: tuple[float, float],
                    wall_seconds: float) -> None:
     """Print a formatted summary after all episodes complete."""
     n = len(rows)
@@ -250,8 +349,6 @@ def _print_summary(rows: list[dict],
     first_avg = sum(r["avg_wait_s"] for r in rows[:n_first]) / n_first
     last_avg  = sum(r["avg_wait_s"] for r in rows[-n_last:])  / n_last
     improvement = (first_avg - last_avg) / first_avg * 100 if first_avg > 0 else 0.0
-    vs_baseline = (best_avg_wait - BASELINE_AVG_WAIT) / BASELINE_AVG_WAIT * 100
-
     print("\n" + "═" * 62)
     print("  ATCS-GH — TRAINING COMPLETE")
     print("═" * 62)
@@ -266,10 +363,28 @@ def _print_summary(rows: list[dict],
           f"(learned policy)")
     print(f"  Improvement over training   : {improvement:.1f}%")
     print()
-    print(f"  Best avg wait     : {best_avg_wait:.1f}s")
-    print(f"  Baseline avg wait : {BASELINE_AVG_WAIT:.1f}s")
-    print(f"  vs Baseline       : {vs_baseline:+.1f}%  "
-          f"({'BETTER ✓' if vs_baseline < 0 else 'needs more training'})")
+    if best_score[0] == float("inf"):
+        print(f"  Best checkpoint   : none saved (run shorter than warm-up window)")
+    else:
+        print(f"  Best checkpoint   : worst scenario {best_score[0]:.2f}x baseline "
+              f"(mean {best_score[1]:.2f}x; baselines floored at "
+              f"{MIN_SELECT_BASELINE_S:.0f}s) — maximin over rolling window")
+    print()
+    print(f"  Per-scenario — mean of last 3 episodes vs each scenario's naive timer:")
+    by_scen: dict[str, list[float]] = {}
+    for r in rows:
+        by_scen.setdefault(r["scenario"], []).append(r["avg_wait_s"])
+    wins = 0
+    for scen, waits in by_scen.items():
+        last = waits[-3:] if len(waits) >= 3 else waits
+        ai   = sum(last) / len(last)
+        base = SCENARIO_BASELINES.get(scen, BASELINE_AVG_WAIT)
+        d    = (ai - base) / base * 100
+        beat = d < 0
+        wins += int(beat)
+        print(f"    {scen:>17}: AI {ai:>7.1f}s  vs timer {base:>7.1f}s  "
+              f"{d:>+6.1f}%  {'✓ beats' if beat else '✗'}")
+    print(f"\n  AI beats the naive fixed timer on {wins}/{len(by_scen)} scenarios")
     print()
     print(f"  Saved models:")
     print(f"    Best  → {BEST_MODEL_PATH.relative_to(PROJECT_ROOT)}")

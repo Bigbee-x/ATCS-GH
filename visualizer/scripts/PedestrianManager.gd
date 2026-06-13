@@ -22,6 +22,18 @@ const LEG_HEIGHT        := 0.18    # Legs (lower body)
 const TOTAL_HEIGHT      := 0.52    # Approximate total (legs + body + head)
 const SIDEWALK_Y        := 0.15    # Matches Intersection.gd SIDEWALK_HEIGHT
 
+# ── Procedural walk animation ──────────────────────────────────────────────────
+# Pedestrians now have articulated legs + arms that swing as they move, plus a
+# subtle vertical bob. All driven by a per-person `phase` (radians) advanced by
+# distance walked, so faster walkers stride faster. Pure transform animation —
+# no skeletons/imported rigs — so it stays cheap and matches the low-poly style.
+const STRIDE_RATE       := 9.0     # stride-phase radians gained per Godot unit walked
+const LEG_SWING         := 0.55    # peak leg swing angle (rad, ~31°)
+const ARM_SWING         := 0.42    # peak arm swing angle (rad), opposite the legs
+const BOB_HEIGHT        := 0.012   # vertical body bob amplitude (Godot units)
+const LEG_SPLIT_W       := 0.045   # each leg's width (two legs replace the old block)
+const ARM_LENGTH        := 0.16    # arm length
+
 # ── SUMO coordinate transform ──────────────────────────────────────────────────
 const SUMO_CENTER       := 1500.0  # SUMO junction center (single-junction mode)
 ## Piecewise mapping constants (must match VehicleManager.gd)
@@ -166,11 +178,17 @@ func _process(delta: float) -> void:
 	for ped in _ambient_peds:
 		_move_ambient(ped, delta)
 
-	# Smoothly interpolate crossing pedestrians toward target positions
+	# Smoothly interpolate crossing pedestrians toward target positions,
+	# animating their stride only while they're actually moving.
 	for pid in _crossing_peds:
 		var data: Dictionary = _crossing_peds[pid]
 		var node: Node3D = data["node"]
+		var prev: Vector3 = node.position
 		node.position = node.position.lerp(data["target_pos"], minf(delta * 8.0, 1.0))
+		var moving: bool = node.position.distance_to(prev) > 0.0015
+		if moving:
+			data["phase"] = data.get("phase", 0.0) + delta * STRIDE_RATE * 0.9
+		_animate_walk(node, data.get("phase", 0.0), moving)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -257,6 +275,7 @@ func _spawn_ambient() -> void:
 			"progress": randf(),
 			"speed": MIN_SPEED + randf() * (MAX_SPEED - MIN_SPEED),
 			"forward": randf() > 0.5,
+			"phase": randf() * TAU,   # desync each walker's stride
 		}
 		_update_ambient_position(ped_data)
 		_ambient_peds.append(ped_data)
@@ -278,13 +297,18 @@ func _move_ambient(ped: Dictionary, delta: float) -> void:
 			ped["progress"] = 0.0
 			ped["forward"] = true
 
+	# Advance the walk phase by distance covered this frame, then animate.
+	ped["phase"] += ped["speed"] * delta * STRIDE_RATE
 	_update_ambient_position(ped)
+	_animate_walk(ped["node"], ped["phase"], true)
 
 
 func _update_ambient_position(ped: Dictionary) -> void:
 	var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
 	var pos: Vector3 = path["start"].lerp(path["end"], ped["progress"])
 	pos.y = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0
+	# Subtle vertical bob synced to the stride (2× the leg frequency).
+	pos.y += absf(sin(ped.get("phase", 0.0) * 2.0)) * BOB_HEIGHT
 	var node: Node3D = ped["node"]
 	node.position = pos
 	var dir: Vector3 = (path["end"] - path["start"]).normalized()
@@ -367,6 +391,7 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 			_crossing_peds[pid] = {
 				"node": new_mesh,
 				"target_pos": target_pos,
+				"phase": randf() * TAU,   # desync stride per crosser
 			}
 
 		# Update facing direction from SUMO angle
@@ -502,19 +527,21 @@ func _make_pedestrian_mesh() -> Node3D:
 	var skin_color: Color = SKIN_COLORS[randi() % SKIN_COLORS.size()]
 	var leg_color: Color = LEG_COLORS[randi() % LEG_COLORS.size()]
 
-	# Legs
 	var leg_mat := StandardMaterial3D.new()
 	leg_mat.albedo_color = leg_color
-	var legs := CSGBox3D.new()
-	legs.size = Vector3(BODY_WIDTH, LEG_HEIGHT, BODY_DEPTH)
-	legs.position = Vector3(0, -BODY_HEIGHT / 2.0 - LEG_HEIGHT / 2.0 + 0.02, 0)
-	legs.material = leg_mat
-	legs.name = "Legs"
-	root.add_child(legs)
-
-	# Torso
 	var shirt_mat := StandardMaterial3D.new()
 	shirt_mat.albedo_color = shirt_color
+	var skin_mat := StandardMaterial3D.new()
+	skin_mat.albedo_color = skin_color
+
+	# Legs — two of them, each on a hip pivot so they can swing fore/aft.
+	# The pivot sits at the torso base; the leg box hangs below it.
+	var hip_y: float = -BODY_HEIGHT / 2.0
+	var leg_size := Vector3(LEG_SPLIT_W, LEG_HEIGHT, BODY_DEPTH * 0.85)
+	_add_limb(root, "HipL", Vector3(-0.026, hip_y, 0), leg_size, LEG_HEIGHT, leg_mat)
+	_add_limb(root, "HipR", Vector3( 0.026, hip_y, 0), leg_size, LEG_HEIGHT, leg_mat)
+
+	# Torso
 	var torso := CSGBox3D.new()
 	torso.size = Vector3(BODY_WIDTH + 0.02, BODY_HEIGHT, BODY_DEPTH + 0.01)
 	torso.position = Vector3(0, 0, 0)
@@ -522,9 +549,14 @@ func _make_pedestrian_mesh() -> Node3D:
 	torso.name = "Torso"
 	root.add_child(torso)
 
+	# Arms — two of them, each on a shoulder pivot, swinging opposite the legs.
+	var sh_y: float = BODY_HEIGHT / 2.0 - 0.03
+	var arm_x: float = BODY_WIDTH / 2.0 + 0.018
+	var arm_size := Vector3(0.03, ARM_LENGTH, 0.03)
+	_add_limb(root, "ShoulderL", Vector3(-arm_x, sh_y, 0), arm_size, ARM_LENGTH, skin_mat)
+	_add_limb(root, "ShoulderR", Vector3( arm_x, sh_y, 0), arm_size, ARM_LENGTH, skin_mat)
+
 	# Head
-	var skin_mat := StandardMaterial3D.new()
-	skin_mat.albedo_color = skin_color
 	var head := CSGSphere3D.new()
 	head.radius = HEAD_RADIUS
 	head.radial_segments = 8
@@ -535,3 +567,35 @@ func _make_pedestrian_mesh() -> Node3D:
 	root.add_child(head)
 
 	return root
+
+
+func _add_limb(parent: Node3D, pivot_name: String, pivot_pos: Vector3,
+			   box_size: Vector3, length: float, mat: StandardMaterial3D) -> void:
+	## Build a limb that pivots from `pivot_pos`: a named Node3D pivot with a
+	## CSGBox3D hanging below it (offset down by length/2). Animating the pivot's
+	## rotation.x swings the limb fore/aft without rebuilding the CSG geometry.
+	var pivot := Node3D.new()
+	pivot.name = pivot_name
+	pivot.position = pivot_pos
+	parent.add_child(pivot)
+	var box := CSGBox3D.new()
+	box.size = box_size
+	box.position = Vector3(0, -length / 2.0, 0)
+	box.material = mat
+	pivot.add_child(box)
+
+
+func _animate_walk(root: Node3D, phase: float, moving: bool) -> void:
+	## Swing the legs and arms from a per-person walk phase. Arms swing opposite
+	## the legs (natural counter-rotation). When not moving, limbs ease to rest.
+	var s: float = sin(phase)
+	var leg: float = s * LEG_SWING if moving else 0.0
+	var arm: float = s * ARM_SWING if moving else 0.0
+	var hip_l := root.get_node_or_null("HipL") as Node3D
+	var hip_r := root.get_node_or_null("HipR") as Node3D
+	var sh_l := root.get_node_or_null("ShoulderL") as Node3D
+	var sh_r := root.get_node_or_null("ShoulderR") as Node3D
+	if hip_l: hip_l.rotation.x = leg
+	if hip_r: hip_r.rotation.x = -leg
+	if sh_l: sh_l.rotation.x = -arm
+	if sh_r: sh_r.rotation.x = arm

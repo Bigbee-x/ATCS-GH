@@ -74,7 +74,6 @@ from traffic_env import (
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
-    sanitize_action,
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
@@ -329,7 +328,7 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
                     # Suppress permissive-left actions (NS_ALL/EW_ALL) — the
                     # baseline uses a dedicated protected-left phase, so we
                     # force the AI to do the same for a fair comparison.
-                    action = sanitize_action(agent.select_action(state))
+                    action = agent.select_action(state)
 
                     if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
                         target = ACTION_TO_PHASE[action]

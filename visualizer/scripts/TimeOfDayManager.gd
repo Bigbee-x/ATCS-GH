@@ -12,6 +12,15 @@ extends Node
 
 signal time_changed(hour: float)
 signal night_mode_changed(is_night: bool)
+## Fires at DUSK_START_HOUR (4:00 PM — start of golden hour) going into
+## evening, and again at MORNING_HOUR (6:00 AM) when day fully returns. The
+## signal name says "dusk" for continuity but the trigger is actually golden-
+## hour-start: that's when the sun begins dimming and early-risers start
+## flipping lights on in real life. The flag stays true through the entire
+## evening/night so consumers can light a subset of windows / car headlights
+## earlier than full dark, mimicking real-world behaviour (early adopters
+## turn lights on before sundown).
+signal dusk_mode_changed(is_dusk: bool)
 
 # ── Mode ────────────────────────────────────────────────────────────────────
 enum Mode { MANUAL, AUTO_CYCLE, SIM_LINKED }
@@ -22,8 +31,18 @@ var cycle_speed: float = 120.0  # Real seconds per sim-hour (full day in ~48 min
                                 # Slower than before so CLEAR noon is visible for a while
                                 # before the sun drops, even if the user switches to AUTO.
 
-# ── Night state ─────────────────────────────────────────────────────────────
+# ── Dusk / night thresholds ─────────────────────────────────────────────────
+## Note: the signal is named dusk_mode_changed for historical reasons, but the
+## trigger is actually "start of golden hour" — i.e. the moment the sun starts
+## dimming and the sky begins to warm. That's when early-risers realistically
+## start flipping lights on in the real world, well before full dusk.
+const DUSK_START_HOUR: float = 16.0   # 4:00 PM — golden hour begins (sun energy starts dropping)
+const NIGHT_START_HOUR: float = 18.0  # 6:00 PM — full dark (all lights should be on)
+const MORNING_HOUR: float = 6.0       # 6:00 AM — day returns, lights go off
+
+# ── Night / dusk state ──────────────────────────────────────────────────────
 var _is_night: bool = false
+var _is_dusk: bool = false
 
 # ── Node references (set by parent script) ──────────────────────────────────
 var sun: DirectionalLight3D
@@ -146,6 +165,13 @@ func is_night() -> bool:
 	return _is_night
 
 
+func is_dusk() -> bool:
+	## True whenever the "some lights starting to come on" window applies
+	## (16:30 through 6:00 AM — i.e. dusk + full night). Full night consumers
+	## should also check is_night() to distinguish partial vs. full brightness.
+	return _is_dusk
+
+
 func force_reapply() -> void:
 	## Re-apply the current time-of-day values to sun/sky/ambient/fog.
 	## Used by WeatherManager each frame so it can layer its modifiers on
@@ -237,7 +263,15 @@ func _apply_time(hour: float) -> void:
 			_environment.fog_light_color = kf_a[5].lerp(kf_b[5], t)  # Tint fog with ambient
 
 	# ── Night mode detection ───────────────────────────────────────────
-	var now_night: bool = (hour >= 18.0 or hour < 6.0)
+	var now_night: bool = (hour >= NIGHT_START_HOUR or hour < MORNING_HOUR)
 	if now_night != _is_night:
 		_is_night = now_night
 		night_mode_changed.emit(_is_night)
+
+	# ── Dusk mode detection (superset of night) ────────────────────────
+	# True from 4:30 PM through 6:00 AM so a subset of windows / car
+	# headlights can come on before full dark and stay on through the night.
+	var now_dusk: bool = (hour >= DUSK_START_HOUR or hour < MORNING_HOUR)
+	if now_dusk != _is_dusk:
+		_is_dusk = now_dusk
+		dusk_mode_changed.emit(_is_dusk)

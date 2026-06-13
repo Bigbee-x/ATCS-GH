@@ -81,7 +81,7 @@ var _slider_tod: HSlider
 var _btn_tod_mode: Button
 var _tod_mode_idx: int = 0                  # 0=Manual, 1=Auto, 2=SimLinked
 											 # Default Manual so time doesn't drift into
-                                             # dusk within a couple of minutes of launch.
+											 # dusk within a couple of minutes of launch.
 const TOD_MODE_NAMES: Array = ["Manual", "Auto", "Sim"]
 
 # Weather controls (sits inside the TOD panel)

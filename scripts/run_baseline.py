@@ -124,28 +124,45 @@ YELLOW_DURATION = 3        # Yellow clearance phase (seconds)
 TIMER_PRESETS = {
     "naive": {"ns_green": 45, "ew_green": 45, "label": "45s/45s equal split"},
     "tuned": {"ns_green": 60, "ew_green": 30, "label": "60s/30s demand-proportional"},
+    # The REALISTIC status-quo controller (2026-06-11): protected lefts, like
+    # the real Achimota junction and the visualizer's fixed-timer mode. Through
+    # and left-arrow movements never green together — the all-movement presets
+    # above let left-turners block the junction box against oncoming through.
+    # Cycle: NS 40s → arrow 15s → EW 25s → arrow 10s (+3s yellows) = 102s.
+    "protected": {"ns_green": 40, "ew_green": 25, "ns_left": 15, "ew_left": 10,
+                  "label": "protected-left 4-phase (NS 40/15, EW 25/10)"},
 }
 
 # Human-readable phase names indexed by SUMO phase index (0–3)
 PHASE_NAMES = {0: "NS_GREEN", 1: "NS_YELLOW", 2: "EW_GREEN", 3: "EW_YELLOW"}
 
-# Explicit signal strings for the baseline fixed timer (24 connections).
-# Connection order from net.xml (20 vehicle movements + 4 crossings):
-#   0-4:   ACH_N2J (right, str1, str2, left, uturn)  — North
-#   5-9:   AGG_E2J (right, str1, str2, left, uturn)  — East
-#   10-14: ACH_S2J (right, str1, str2, left, uturn)  — South
-#   15-19: GUG_W2J (right, str1, str2, left, uturn)  — West
-#   20: crossing c0 (N arm)  21: crossing c1 (E arm)
-#   22: crossing c2 (S arm)  23: crossing c3 (W arm)
+# Explicit signal strings for the baseline fixed timer (20 connections).
+# After the lane-restricted rebuild (connections.con.xml), each approach has
+# exactly 4 movements: right, straight, left, uturn — no more str1/str2 split,
+# because lane 2 is now reserved for left + uturn only.
+# Connection order from net.xml (16 vehicle movements + 4 crossings):
+#   0-3:   ACH_N2J (right, straight, left, uturn)  — North
+#   4-7:   AGG_E2J (right, straight, left, uturn)  — East
+#   8-11:  ACH_S2J (right, straight, left, uturn)  — South
+#   12-15: GUG_W2J (right, straight, left, uturn)  — West
+#   16: crossing c0 (N arm)  17: crossing c1 (E arm)
+#   18: crossing c2 (S arm)  19: crossing c3 (W arm)
 #
-# Baseline gives ALL movements green in their direction simultaneously
-# (no separate protected left-turn phases — that's the AI's advantage).
+# Baseline gives right + straight + left green in their direction simultaneously
+# (no separate protected left-turn phases — that's the AI's advantage). U-turn
+# stays red since allowing it concurrent with oncoming straight would deadlock.
 # Pedestrian crossings piggyback: N/S green → E/W crossings green, and vice versa.
 BASELINE_SIGNALS = {
-    "NS_GREEN":  "GGGGrrrrrrGGGGrrrrrrrGrG",   # N/S all green + E/W crossings
-    "NS_YELLOW": "yyyyyrrrrryyyyyrrrrrrrrr",     # N/S yellow, all crossings red
-    "EW_GREEN":  "rrrrrGGGGrrrrrrGGGGrGrGr",    # E/W all green + N/S crossings
-    "EW_YELLOW": "rrrrryyyyyrrrrryyyyyrrrr",     # E/W yellow, all crossings red
+    "NS_GREEN":  "GGGrrrrrGGGrrrrrrGrG",   # N/S right+str+left green (uturn red) + E/W crossings
+    "NS_YELLOW": "yyyyrrrryyyyrrrrrrrr",   # N/S yellow, all crossings red
+    "EW_GREEN":  "rrrrGGGrrrrrGGGrGrGr",   # E/W right+str+left green (uturn red) + N/S crossings
+    "EW_YELLOW": "rrrryyyyrrrryyyyrrrr",   # E/W yellow, all crossings red
+    # Protected-left phases (match ai/traffic_env.PHASE_SIGNALS exactly so the
+    # baseline and the AI drive the junction with the same signal vocabulary)
+    "NS_THROUGH": "GGrrrrrrGGrrrrrrrGrG",  # N/S straight+right protected; left/uturn red
+    "NS_LEFT":    "grGGrrrrgrGGrrrrrGrG",  # N/S protected left+uturn; straight red
+    "EW_THROUGH": "rrrrGGrrrrrrGGrrGrGr",  # E/W straight+right protected; left/uturn red
+    "EW_LEFT":    "rrrrgrGGrrrrgrGGGrGr",  # E/W protected left+uturn; straight red
 }
 
 
@@ -181,7 +198,9 @@ def find_sumo_binary(gui: bool = False) -> str:
 def configure_fixed_timer(tl_id: str,
                           ns_green: int = 45,
                           ew_green: int = 45,
-                          program_label: str = "fixed_timer") -> list:
+                          program_label: str = "fixed_timer",
+                          ns_left: int | None = None,
+                          ew_left: int | None = None) -> list:
     """
     Override the auto-generated traffic light with an explicit 4-phase fixed timer.
 
@@ -210,6 +229,18 @@ def configure_fixed_timer(tl_id: str,
         ("EW_GREEN",  ew_green,       BASELINE_SIGNALS["EW_GREEN"]),
         ("EW_YELLOW", YELLOW_DURATION, BASELINE_SIGNALS["EW_YELLOW"]),
     ]
+    if ns_left is not None and ew_left is not None:
+        # Protected-left 8-phase plan: through and left arrows never co-green
+        phase_plan = [
+            ("NS_THROUGH", ns_green,        BASELINE_SIGNALS["NS_THROUGH"]),
+            ("NS_YELLOW",  YELLOW_DURATION, BASELINE_SIGNALS["NS_YELLOW"]),
+            ("NS_LEFT",    ns_left,         BASELINE_SIGNALS["NS_LEFT"]),
+            ("NS_YELLOW",  YELLOW_DURATION, BASELINE_SIGNALS["NS_YELLOW"]),
+            ("EW_THROUGH", ew_green,        BASELINE_SIGNALS["EW_THROUGH"]),
+            ("EW_YELLOW",  YELLOW_DURATION, BASELINE_SIGNALS["EW_YELLOW"]),
+            ("EW_LEFT",    ew_left,         BASELINE_SIGNALS["EW_LEFT"]),
+            ("EW_YELLOW",  YELLOW_DURATION, BASELINE_SIGNALS["EW_YELLOW"]),
+        ]
 
     new_phases = []
     for _name, dur, state in phase_plan:
@@ -310,6 +341,8 @@ def run_simulation(gui: bool = False,
         ns_green=ns_green,
         ew_green=ew_green,
         program_label=f"fixed_{preset}",
+        ns_left=timer.get("ns_left"),
+        ew_left=timer.get("ew_left"),
     )
 
     # Initialise metrics logger

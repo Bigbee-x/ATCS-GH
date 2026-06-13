@@ -109,6 +109,8 @@ func _ready() -> void:
 	tod_manager.world_env = $WorldEnvironment
 	tod_manager.time_changed.connect(_on_time_changed)
 	tod_manager.night_mode_changed.connect(_on_night_mode_changed)
+	if tod_manager.has_signal("dusk_mode_changed"):
+		tod_manager.dusk_mode_changed.connect(_on_dusk_mode_changed)
 	ui.time_of_day_changed.connect(_on_ui_time_changed)
 	ui.tod_mode_changed.connect(_on_ui_tod_mode_changed)
 	if tod_manager.has_method("force_reapply"):
@@ -267,6 +269,16 @@ func _on_night_mode_changed(is_night: bool) -> void:
 	if intersection.has_method("set_street_lights_night"):
 		intersection.set_street_lights_night(is_night)
 	print("[Main] Night mode: %s" % ("ON" if is_night else "OFF"))
+
+
+func _on_dusk_mode_changed(is_dusk: bool) -> void:
+	## Handle dusk transitions (~4:30 PM). A subset of cars flip their
+	## headlights on, and the EnvironmentBuilder lights a fraction of its
+	## windows — mimics real-world pre-sundown behaviour.
+	var vm := vehicle_manager as Node3D
+	if vm.has_method("set_dusk_mode"):
+		vm.set_dusk_mode(is_dusk)
+	print("[Main] Dusk mode: %s" % ("ON" if is_dusk else "OFF"))
 
 
 func _on_ui_time_changed(hour: float) -> void:
