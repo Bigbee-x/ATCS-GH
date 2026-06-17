@@ -40,6 +40,9 @@ data/training_log.csv
 .idea/
 *.swp
 
+# Claude Code local session/config (per-machine)
+.claude/
+
 # Godot editor cache (regenerated on open)
 visualizer/.godot/editor/
 visualizer/.godot/uid_cache.bin
