@@ -63,11 +63,14 @@ recalibrated to solvable demand (originals in `scenarios/_pre_recal/`).
   Backups: `ai/_v1_shipped_5eff94f/` (the merged shipped model),
   `ai/_v3_day_only/` (pure continuous-day). Checkpoints/logs are gitignored.
 
-## IN FLIGHT right now (2026-06-13)
-- **v4 retrain running** (`logs/retrain_v4.log`, ~250 eps, ~6hr) — the hardened
-  continuous-day + sustained-peaks model. When done: run
-  `python scripts/_eval_best.py` for the full battery, then commit the model.
-  Expected: beats the protected timer on all scenarios incl. sustained evening.
+## Current deployable model (v4 — SHIPPED 2026-06-13)
+`ai/best_model.pth` is the hardened continuous-day model (41-dim, protected-left).
+**Official greedy eval (full 7200s) beats the protected fixed timer 5/5:**
+continuous_day 19.5s (−59%), morning 27.5s (−85%), evening 239s (−44%),
+weekend 13.9s (−98%), off_peak 9.1s (−36%). The hybrid rotation + maximin
+selection fixed v3's evening gridlock (1084s → 239s greedy). Committed on
+branch `feat/emergency-removal-continuous-day`. Re-run anytime with
+`python scripts/_eval_best.py`.
 
 ## Corridor (3-junction, `ai/corridor_env.py`) — code-modernized, NOT trained
 Brought in line 2026-06-13 (protected-left 5 actions, emergency removed,
