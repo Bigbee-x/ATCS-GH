@@ -11,29 +11,30 @@ Three signalised junctions along the N6 Nsawam Road (Achimota corridor):
   J2 — Nima Bypass / Tesano Rd   (300m north of J1)
 
 Each junction is independently controlled by a DQN agent that observes
-its own state plus neighbor queue/phase info (50-dim state vector).
+its own state plus neighbor queue/phase info (46-dim state vector).
 
 Green-wave design:
   At 50 km/h (13.89 m/s), 300m between junctions takes ~21.6s.
   Agents can learn to offset their NS phases by ~22s for smooth
   traffic flow through the corridor.
 
-Per-junction state vector (50 dims):
+Per-junction state vector (46 dims):
   [0-7]   8  per-lane queue counts     (padded to 8, / MAX_QUEUE_LANE)
   [8-15]  8  per-lane mean speeds      (padded to 8, / MAX_SPEED)
   [16-23] 8  per-lane wait times       (padded to 8, / MAX_WAIT)
   [24-27] 4  approach aggregate queues  (/ MAX_QUEUE)
   [28-35] 8  one-hot phase encoding
   [36]    1  normalised time-in-phase   (/ MAX_PHASE_T)
-  [37-40] 4  emergency vehicle flags    (binary)
-  [41-44] 4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
-  [45-46] 2  south neighbor info        (queue_norm, phase_norm)
-  [47-48] 2  north neighbor info        (queue_norm, phase_norm)
-  [49]    1  max corridor link occupancy (spillback risk)
+  [37-40] 4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
+  [41-42] 2  south neighbor info        (queue_norm, phase_norm)
+  [43-44] 2  north neighbor info        (queue_norm, phase_norm)
+  [45]    1  max corridor link occupancy (spillback risk)
 
-Actions per junction (7): same as single-junction env
-  0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT,
-  5=NS_ALL, 6=EW_ALL
+Actions per junction (5): protected-left only, same as single-junction env
+  0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT
+  (NS_ALL/EW_ALL all-green removed 2026-06-13 — they let left-turners block
+   the junction box against oncoming through; emergency/ambulance feature
+   removed project-wide the same day.)
 """
 
 import os
@@ -122,57 +123,22 @@ ACTION_NS_THROUGH = 1
 ACTION_NS_LEFT    = 2
 ACTION_EW_THROUGH = 3
 ACTION_EW_LEFT    = 4
-ACTION_NS_ALL     = 5
-ACTION_EW_ALL     = 6
-ACTION_SIZE       = 7
+ACTION_SIZE       = 5   # protected-left only — NS_ALL/EW_ALL removed (2026-06-13)
 
 ACTION_TO_PHASE = {
     ACTION_NS_THROUGH: NS_THROUGH,
     ACTION_NS_LEFT:    NS_LEFT,
     ACTION_EW_THROUGH: EW_THROUGH,
     ACTION_EW_LEFT:    EW_LEFT,
-    ACTION_NS_ALL:     NS_ALL,
-    ACTION_EW_ALL:     EW_ALL,
 }
 
-ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT",
-                "NS_ALL", "EW_ALL"]
+ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT"]
 
-
-class ActionSanitizer:
-    """Alternating remap of NS_ALL/EW_ALL to protected THROUGH/LEFT phases.
-
-    See ``ai/traffic_env.ActionSanitizer`` for the full rationale.
-    Summary: when the AI picks NS_ALL, alternately serve NS_LEFT then
-    NS_THROUGH on subsequent picks (and likewise for EW_ALL). Corridor
-    callers should instantiate **one sanitizer per junction** so each
-    junction's alternation is independent.
-    """
-
-    def __init__(self) -> None:
-        self._ns_serve_left_next = True
-        self._ew_serve_left_next = True
-
-    def __call__(self, action: int) -> int:
-        if action == ACTION_NS_ALL:
-            remapped = ACTION_NS_LEFT if self._ns_serve_left_next else ACTION_NS_THROUGH
-            self._ns_serve_left_next = not self._ns_serve_left_next
-            return remapped
-        if action == ACTION_EW_ALL:
-            remapped = ACTION_EW_LEFT if self._ew_serve_left_next else ACTION_EW_THROUGH
-            self._ew_serve_left_next = not self._ew_serve_left_next
-            return remapped
-        return action
-
-
-_default_sanitizer = ActionSanitizer()
-
-
-def sanitize_action(action: int) -> int:
-    """Back-compat wrapper around the module-level ActionSanitizer."""
-    return _default_sanitizer(action)
-
-EMERGENCY_TYPE = "emergency"
+# NOTE (2026-06-13): brought in line with the single-junction system —
+#   • ActionSanitizer / sanitize_action removed (no all-green to remap)
+#   • the EMERGENCY_TYPE / ambulance-priority machinery removed project-wide
+# The NS_ALL/EW_ALL *phase* constants remain defined above only for signal-
+# string compatibility; they are unreachable through the 5-action space.
 
 
 # ── State/reward normalisation ───────────────────────────────────────────────
@@ -184,7 +150,8 @@ MAX_WAIT       = 600.0
 MAX_PHASE_T    = 96.0
 MAX_PED_QUEUE  = 15.0
 
-STATE_SIZE     = 50   # per-junction state vector dimension
+STATE_SIZE     = 46   # per-junction state vector dim (was 50 — 4 emergency dims
+                      # removed 2026-06-13 with the ambulance-feature teardown)
 MAX_LANES      = 8    # pad all junctions to this many lanes
 
 # ── Environment parameters ───────────────────────────────────────────────────
@@ -195,12 +162,21 @@ MIN_GREEN_LEFT     = 8
 YELLOW_DURATION    = 3
 SIM_DURATION       = 7200
 
+# Warm-start expert (per junction) — protected-left sustained greens, mirroring
+# ai/traffic_env.expert_action. THROUGH holds until it gaps out / hits max, then
+# a short protected LEFT arrow, then the other axis. Guides exploration toward
+# long greens instead of thrashing or all-green box-blocking.
+EXPERT_GAP_QUEUE     = 3
+EXPERT_NS_GREEN      = 90
+EXPERT_EW_GREEN      = 45
+EXPERT_NS_LEFT_GREEN = 15
+EXPERT_EW_LEFT_GREEN = 10
+
 # ── Reward weights (per-junction, same as single-junction env) ───────────────
 
 W_QUEUE_ABS     = 0.2
 W_QUEUE_DELTA   = 0.5
 W_ARRIVED       = 3.0
-W_EMERGENCY     = 50.0
 W_FLICKER       = 10.0
 W_BALANCE       = 4.0
 W_MAX_WAIT      = 0.4
@@ -441,11 +417,14 @@ class CorridorEnv:
             jid: JunctionState() for jid in JUNCTION_IDS
         }
 
+        # Cache of (ns_thru, ns_left, ew_thru, ew_left) lane lists per junction,
+        # used by the warm-start expert.
+        self._expert_lanes_cache: dict[str, tuple] = {}
+
         # Per-episode stats
         self.total_arrived: int = 0
         self.episode_rewards: dict[str, list[float]] = {jid: [] for jid in JUNCTION_IDS}
         self.episode_waits:   dict[str, list[float]] = {jid: [] for jid in JUNCTION_IDS}
-        self.emergency_log:   dict[str, float] = {}
 
     # ── Gym Interface ─────────────────────────────────────────────────────────
 
@@ -461,7 +440,6 @@ class CorridorEnv:
         # Reset bookkeeping
         self._sim_step = 0
         self.total_arrived = 0
-        self.emergency_log = {}
         for jid in JUNCTION_IDS:
             self._jstate[jid].reset()
             self.episode_rewards[jid] = []
@@ -492,21 +470,13 @@ class CorridorEnv:
         for jid in JUNCTION_IDS:
             action = actions.get(jid, ACTION_HOLD)
             js = self._jstate[jid]
-            cfg = JUNCTIONS[jid]
-
-            # Emergency preemption check
-            preempted, forced_phase = self._check_emergency(jid)
-            if preempted:
-                if forced_phase != js.phase and self._can_switch(jid):
-                    self._initiate_switch(jid, forced_phase)
-            elif action != ACTION_HOLD and self._can_switch(jid):
+            if action != ACTION_HOLD and self._can_switch(jid):
                 target = ACTION_TO_PHASE.get(action)
                 if target is not None and target != js.phase:
-                        self._initiate_switch(jid, target)
+                    self._initiate_switch(jid, target)
 
         # ── Advance DECISION_INTERVAL simulation steps ───────────────────────
         block_arrived = 0
-        block_emerg: dict[str, int] = {jid: 0 for jid in JUNCTION_IDS}
 
         for _ in range(DECISION_INTERVAL):
             # Handle yellow countdowns for all junctions
@@ -524,22 +494,6 @@ class CorridorEnv:
                 self._jstate[jid].phase_timer += 1
 
             block_arrived += traci.simulation.getArrivedNumber()
-
-            # Count emergency vehicles per junction
-            for jid in JUNCTION_IDS:
-                cfg = JUNCTIONS[jid]
-                n_emerg = 0
-                for edge in cfg.incoming_edges:
-                    try:
-                        for vid in traci.edge.getLastStepVehicleIDs(edge):
-                            if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                                if traci.vehicle.getSpeed(vid) < 0.1:
-                                    n_emerg += 1
-                    except traci.exceptions.TraCIException:
-                        pass
-                block_emerg[jid] = max(block_emerg[jid], n_emerg)
-
-            self._track_emergency_vehicles()
 
             if traci.simulation.getMinExpectedNumber() == 0:
                 break
@@ -567,7 +521,6 @@ class CorridorEnv:
 
             # Check flicker
             action = actions.get(jid, ACTION_HOLD)
-            preempted, _ = self._check_emergency(jid)
             min_g = (MIN_GREEN_LEFT if js.phase in (NS_LEFT, EW_LEFT)
                      else MIN_GREEN_THROUGH)
 
@@ -576,8 +529,7 @@ class CorridorEnv:
                 total_queue        = total_q,
                 prev_total_queue   = js.prev_total_queue,
                 n_arrived          = block_arrived // len(JUNCTION_IDS),  # share evenly
-                n_emerg_waiting    = block_emerg[jid],
-                switched_too_soon  = (action != ACTION_HOLD and not preempted
+                switched_too_soon  = (action != ACTION_HOLD
                                       and js.phase_timer < min_g),
                 queue_distribution = queues,
                 wait_distribution  = waits,
@@ -603,7 +555,6 @@ class CorridorEnv:
                 "arrived_block": block_arrived,
                 "queues":        queues,
                 "avg_wait":      avg_wait,
-                "preempted":     preempted,
                 "reward":        reward,
                 "r_local":       r_local,
                 "r_corridor":    r_corridor,
@@ -643,7 +594,7 @@ class CorridorEnv:
     # ── State Construction ───────────────────────────────────────────────────
 
     def _build_state(self, jid: str) -> np.ndarray:
-        """Build 50-dim normalised state vector for one junction."""
+        """Build 46-dim normalised state vector for one junction."""
         cfg = JUNCTIONS[jid]
         js  = self._jstate[jid]
 
@@ -671,9 +622,6 @@ class CorridorEnv:
 
         # Normalised time in phase
         t_norm = np.float32(min(js.phase_timer / MAX_PHASE_T, 1.0))
-
-        # Emergency flags (4 dims)
-        emerg = self._get_emergency_flags(jid)
 
         # Pedestrian counts (4 dims)
         ped = self._get_ped_counts(jid)
@@ -713,12 +661,11 @@ class CorridorEnv:
             approach_q / MAX_QUEUE,  # 4
             phase_vec,               # 8
             [t_norm],                # 1
-            emerg,                   # 4
             ped / MAX_PED_QUEUE,     # 4
             south_info,              # 2
             north_info,              # 2
             [np.float32(max_occ)],   # 1
-        ])                           # = 50 total
+        ])                           # = 46 total (emergency dims removed)
         return state.astype(np.float32)
 
     # ── Reward Computation ───────────────────────────────────────────────────
@@ -727,17 +674,18 @@ class CorridorEnv:
                               total_queue: float,
                               prev_total_queue: float,
                               n_arrived: int,
-                              n_emerg_waiting: int,
                               switched_too_soon: bool,
                               queue_distribution: list[float],
                               wait_distribution: list[float],
                               n_ped_waiting: int = 0) -> float:
-        """Per-junction reward (identical to single-junction env)."""
+        """Per-junction reward. NOTE: still the OLD unbounded form — the
+        bounded/normalised + clipped redesign (and MAX_QUEUE raise) from the
+        single-junction env must be ported before a corridor retrain, or it
+        will hit the same gridlock-trap. Tracked as the pre-retrain TODO."""
         r_abs   = -W_QUEUE_ABS * total_queue
         delta   = total_queue - prev_total_queue
         r_delta = -W_QUEUE_DELTA * max(0.0, delta)
         r_thru  = W_ARRIVED * n_arrived
-        r_emerg = -W_EMERGENCY * n_emerg_waiting
         r_flick = -W_FLICKER if switched_too_soon else 0.0
 
         if total_queue > 0:
@@ -756,7 +704,7 @@ class CorridorEnv:
 
         r_ped = -W_PED_WAIT * n_ped_waiting
 
-        return (r_abs + r_delta + r_thru + r_emerg
+        return (r_abs + r_delta + r_thru
                 + r_flick + r_balance + r_max_wait + r_ped)
 
     def _compute_corridor_reward(self, jid: str) -> float:
@@ -927,19 +875,6 @@ class CorridorEnv:
             }
         return result
 
-    def _get_emergency_flags(self, jid: str) -> np.ndarray:
-        cfg = JUNCTIONS[jid]
-        flags = np.zeros(4, dtype=np.float32)
-        for i, edge in enumerate(cfg.incoming_edges):
-            try:
-                for vid in traci.edge.getLastStepVehicleIDs(edge):
-                    if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                        flags[i] = 1.0
-                        break
-            except traci.exceptions.TraCIException:
-                pass
-        return flags
-
     def _get_ped_counts(self, jid: str) -> np.ndarray:
         cfg = JUNCTIONS[jid]
         counts = np.zeros(4, dtype=np.float32)
@@ -950,30 +885,72 @@ class CorridorEnv:
                 pass
         return counts
 
-    def _check_emergency(self, jid: str) -> tuple[bool, int | None]:
+    # ── Warm-start expert (per junction) ──────────────────────────────────────
+
+    def _expert_lane_sets(self, jid: str) -> tuple:
+        """(ns_thru, ns_left, ew_thru, ew_left) lane lists for a junction.
+        Lane suffix _1 = through+right, _2+ = left+uturn; N/S vs E/W by edge."""
+        if jid in self._expert_lanes_cache:
+            return self._expert_lanes_cache[jid]
         cfg = JUNCTIONS[jid]
-        js  = self._jstate[jid]
-        for edge in cfg.incoming_edges:
+        N, E, S, W = cfg.incoming_edges
+        ns_edges, ew_edges = {N, S}, {E, W}
+        ns_thru, ns_left, ew_thru, ew_left = [], [], [], []
+        for lane in cfg.incoming_lanes:
+            edge = lane.rsplit("_", 1)[0]
+            is_through = lane.endswith("_1")
+            if edge in ns_edges:
+                (ns_thru if is_through else ns_left).append(lane)
+            elif edge in ew_edges:
+                (ew_thru if is_through else ew_left).append(lane)
+        sets = (ns_thru, ns_left, ew_thru, ew_left)
+        self._expert_lanes_cache[jid] = sets
+        return sets
+
+    def _lane_halts(self, lanes: list) -> int:
+        total = 0
+        for lane in lanes:
             try:
-                for vid in traci.edge.getLastStepVehicleIDs(edge):
-                    if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                        continue
-                    greens = cfg.edge_to_greens[edge]
-                    already_serving = (
-                        js.phase in greens
-                        or (js.in_yellow and js.next_green in greens)
-                    )
-                    if not already_serving:
-                        return True, greens[0]
+                total += traci.lane.getLastStepHaltingNumber(lane)
             except traci.exceptions.TraCIException:
                 pass
-        return False, None
+        return total
 
-    def _track_emergency_vehicles(self) -> None:
-        for vid in traci.vehicle.getIDList():
-            if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                continue
-            wait = traci.vehicle.getAccumulatedWaitingTime(vid)
-            prev = self.emergency_log.get(vid, 0.0)
-            if wait > prev:
-                self.emergency_log[vid] = wait
+    def expert_action(self, jid: str) -> int:
+        """Protected-left sustained-green expert for one junction (warm-start);
+        mirrors ai/traffic_env.expert_action, scoped to this junction's lanes."""
+        ns_thru_l, ns_left_l, ew_thru_l, ew_left_l = self._expert_lane_sets(jid)
+        ns_thru = self._lane_halts(ns_thru_l)
+        ns_left = self._lane_halts(ns_left_l)
+        ew_thru = self._lane_halts(ew_thru_l)
+        ew_left = self._lane_halts(ew_left_l)
+        ns_q, ew_q = ns_thru + ns_left, ew_thru + ew_left
+        js = self._jstate[jid]
+        p, t = js.phase, js.phase_timer
+
+        if p == NS_THROUGH:
+            if t >= EXPERT_NS_GREEN or (ns_thru <= EXPERT_GAP_QUEUE
+                                        and ns_left + ew_q > EXPERT_GAP_QUEUE):
+                if ns_left > 0:
+                    return ACTION_NS_LEFT
+                return ACTION_EW_THROUGH if ew_q > 0 else ACTION_HOLD
+            return ACTION_HOLD
+        if p == NS_LEFT:
+            if t >= EXPERT_NS_LEFT_GREEN or ns_left == 0:
+                return ACTION_EW_THROUGH if ew_q > 0 else ACTION_NS_THROUGH
+            return ACTION_HOLD
+        if p == EW_THROUGH:
+            if t >= EXPERT_EW_GREEN or (ew_thru <= EXPERT_GAP_QUEUE
+                                        and ew_left + ns_q > EXPERT_GAP_QUEUE):
+                if ew_left > 0:
+                    return ACTION_EW_LEFT
+                return ACTION_NS_THROUGH if ns_q > 0 else ACTION_HOLD
+            return ACTION_HOLD
+        if p == EW_LEFT:
+            if t >= EXPERT_EW_LEFT_GREEN or ew_left == 0:
+                return ACTION_NS_THROUGH if ns_q > 0 else ACTION_EW_THROUGH
+            return ACTION_HOLD
+
+        # Startup / yellow → serve the bigger axis, through first.
+        return ACTION_NS_THROUGH if ns_q >= ew_q else ACTION_EW_THROUGH
+

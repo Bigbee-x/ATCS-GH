@@ -2,6 +2,12 @@
 
 > **AI-powered smart traffic control for the Achimota/Neoplan Junction and the N6 Nsawam corridor, Accra**
 
+> ⚠️ **This README is from April 2026 and is partly outdated.** The project has
+> since moved to a **protected-left action space** (no all-green phases), a
+> **continuous-day** training profile, **bounded rewards**, and the
+> **ambulance-priority feature was removed**. For the authoritative current
+> state, read **[`CLAUDE.md`](CLAUDE.md)**.
+
 ---
 
 ## Overview

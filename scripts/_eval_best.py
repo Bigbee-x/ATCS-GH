@@ -14,7 +14,7 @@ traffic_env.SIM_DURATION = 7200
 SC = ROOT / "simulation" / "scenarios"
 BASE = {r["scenario"]: float(r["baseline_avg_wait_s"])
         for r in csv.DictReader(open(ROOT / "data" / "scenario_baselines.csv"))}
-ORDER = ["morning_rush", "evening_rush", "heavy_emergency", "weekend_market", "off_peak"]
+ORDER = ["continuous_day", "morning_rush", "evening_rush", "weekend_market", "off_peak"]
 
 agent = DQNAgent(state_size=STATE_SIZE, action_size=ACTION_SIZE)
 agent.load(str(ROOT / "ai" / "best_model.pth"))

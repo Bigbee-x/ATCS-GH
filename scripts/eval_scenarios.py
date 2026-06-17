@@ -60,11 +60,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from dqn_agent import DQNAgent
 from metrics_logger import MetricsLogger
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES,
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
-    EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
     STATE_SIZE, ACTION_SIZE, NUM_PHASES,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
@@ -97,7 +97,7 @@ SCENARIO_NAMES = [
     "evening_rush",
     "off_peak",
     "weekend_market",
-    "heavy_emergency",
+    "continuous_day",
 ]
 
 
@@ -139,15 +139,6 @@ def build_state(phase, phase_timer, _in_yellow):
     phase_vec = np.zeros(NUM_PHASES, dtype=np.float32)
     phase_vec[phase] = 1.0
     t_norm = np.float32(min(phase_timer / MAX_PHASE_T, 1.0))
-    emerg = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-    for i, edge in enumerate(INCOMING_EDGES):
-        try:
-            for vid in traci.edge.getLastStepVehicleIDs(edge):
-                if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                    emerg[i] = 1.0
-                    break
-        except traci.exceptions.TraCIException:
-            pass
     ped_counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
     for i, wa in enumerate(WALKING_AREAS):
         try:
@@ -156,27 +147,9 @@ def build_state(phase, phase_timer, _in_yellow):
             pass
     return np.concatenate([
         lane_queues / MAX_QUEUE_LANE, lane_speeds / MAX_SPEED, lane_waits / MAX_WAIT,
-        approach_queues / MAX_QUEUE, phase_vec, [t_norm], emerg,
+        approach_queues / MAX_QUEUE, phase_vec, [t_norm],
         ped_counts / MAX_PED_QUEUE,
     ]).astype(np.float32)
-
-
-def _check_emergency(phase, in_yellow, next_green):
-    for edge in INCOMING_EDGES:
-        try:
-            for vid in traci.edge.getLastStepVehicleIDs(edge):
-                if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                    continue
-                green_options = EDGE_TO_GREENS[edge]
-                already_serving = (
-                    phase in green_options
-                    or (in_yellow and next_green in green_options)
-                )
-                if not already_serving:
-                    return True, green_options[0]
-        except traci.exceptions.TraCIException:
-            pass
-    return False, None
 
 
 def _can_switch(phase, phase_timer, in_yellow):
@@ -231,31 +204,18 @@ def run_ai_episode(agent: DQNAgent, seed: int, route_file: str,
     try:
         for step_num in range(1, SIM_DURATION + 1):
             if steps_in_block == 0 and not in_yellow:
-                # Emergency preemption
-                emerg, target = _check_emergency(phase, in_yellow, next_green)
-                if emerg and target is not None and target != phase:
-                    yellow_phase = _get_yellow(phase)
-                    traci.trafficlight.setRedYellowGreenState(
-                        TL_ID, PHASE_SIGNALS[yellow_phase])
-                    phase = yellow_phase
-                    in_yellow = True
-                    yellow_cd = YELLOW_DURATION
-                    next_green = target
-                elif not emerg:
-                    state = build_state(phase, phase_timer, in_yellow)
-                    # Collapse NS_ALL/EW_ALL to protected-through for fair
-                    # comparison with the baseline's protected-left cycle.
-                    action = agent.select_action(state)
-                    if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
-                        t_phase = ACTION_TO_PHASE.get(action, phase)
-                        if t_phase != phase:
-                            yellow_phase = _get_yellow(phase)
-                            traci.trafficlight.setRedYellowGreenState(
-                                TL_ID, PHASE_SIGNALS[yellow_phase])
-                            phase = yellow_phase
-                            in_yellow = True
-                            yellow_cd = YELLOW_DURATION
-                            next_green = t_phase
+                state = build_state(phase, phase_timer, in_yellow)
+                action = agent.select_action(state)
+                if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
+                    t_phase = ACTION_TO_PHASE.get(action, phase)
+                    if t_phase != phase:
+                        yellow_phase = _get_yellow(phase)
+                        traci.trafficlight.setRedYellowGreenState(
+                            TL_ID, PHASE_SIGNALS[yellow_phase])
+                        phase = yellow_phase
+                        in_yellow = True
+                        yellow_cd = YELLOW_DURATION
+                        next_green = t_phase
 
             if in_yellow:
                 yellow_cd -= 1

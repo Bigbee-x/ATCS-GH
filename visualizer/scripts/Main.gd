@@ -89,9 +89,6 @@ func _ready() -> void:
 	# ── Connect UI manual override signal ────────────────────────────────
 	ui.override_requested.connect(_on_override_requested)
 
-	# ── Connect UI emergency deploy signal ───────────────────────────────
-	ui.emergency_spawn_requested.connect(_on_emergency_spawn_requested)
-
 	# ── Connect UI mode switch signal ────────────────────────────────────
 	ui.mode_switch_requested.connect(_on_mode_switch_requested)
 	ws_client.mode_changed.connect(_on_mode_changed)
@@ -229,12 +226,6 @@ func _on_override_requested(approach: String) -> void:
 	## Forward manual override from UI to WebSocket server.
 	print("[Main] Manual override: force green for %s" % approach)
 	ws_client.send_override(approach)
-
-
-func _on_emergency_spawn_requested(approach: String) -> void:
-	## Forward emergency vehicle deploy from UI to WebSocket server.
-	print("[Main] Deploy ambulance from %s" % approach)
-	ws_client.send_spawn_emergency(approach)
 
 
 func _on_mode_switch_requested(target_mode: String) -> void:
