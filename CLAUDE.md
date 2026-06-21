@@ -1,6 +1,6 @@
 # CLAUDE.md — ATCS-GH project brief (authoritative current state)
 
-> Read this first. It reflects the project as of **2026-06-13** and supersedes
+> Read this first. It reflects the project as of **2026-06-21** and supersedes
 > `README.md` / `plan.md`, which are from April and are now **stale/misleading**
 > (they describe emergency priority, all-procedural visuals, and a trained
 > corridor — none of which is current).
@@ -82,13 +82,12 @@ recalibration, then multi-agent training. It is a separate, currently-unused
 module — the single junction is the flagship.
 
 ## Git
-Default branch `main`; flagship work merged via PR #1 (`5eff94f`). Recent work
-(emergency removal, continuous-day, corridor modernization) is on its own
-branch. Commit messages end with `Co-Authored-By: Claude ...`. Don't commit
-model `.pth` files mid-retrain (best_model.pth is written live during training).
+Default branch `main`; flagship merged via PR #1 (`5eff94f`); v4 (emergency
+removal + continuous-day + corridor modernization) merged via PR #2 (`dc5e72a`).
+Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
+`.pth` files mid-retrain (best_model.pth is written live during training).
 
 ## Queued / TODO
-- Commit + eval the v4 model when training finishes.
-- Corridor full revival (reward redesign → baseline → retrain).
-- Delete unused `visualizer/GLB format/` folder (44 stray Kenney models).
+- Corridor full revival (reward redesign → baseline → retrain) — see the
+  corridor section above; its `_compute_local_reward` is still unbounded.
 - `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
