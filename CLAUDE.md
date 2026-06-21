@@ -75,11 +75,15 @@ branch `feat/emergency-removal-continuous-day`. Re-run anytime with
 ## Corridor (3-junction, `ai/corridor_env.py`) — code-modernized, NOT trained
 Brought in line 2026-06-13 (protected-left 5 actions, emergency removed,
 STATE_SIZE 46, per-junction `expert_action`). **Has no trained models.**
-Before any corridor retrain it STILL needs: bounded/clipped reward + MAX_QUEUE
-raise (its `_compute_local_reward` is still the old unbounded form — flagged
-with a NOTE in code), a protected-left corridor baseline, scenario
-recalibration, then multi-agent training. It is a separate, currently-unused
-module — the single junction is the flagship.
+**Phase 0 done (2026-06-21, PR #4):** local reward ported to the bounded/
+normalised + clipped form (MAX_QUEUE 150/lane 75/wait 1200, REWARD_CLIP ±40) —
+gridlock-trap removed; the green-wave/spillback reward stays additive on top.
+Before a corridor retrain it STILL needs: a protected-left corridor baseline
+(`run_corridor_baseline.py` still uses the banned all-green timing), scenario
+recalibration, a training-methodology upgrade (`train_corridor.py` predates v4
+— single route, naive best-selection, no scenario rotation, never calls the
+`expert_action` warm-start), then multi-agent training. Separate, currently-
+unused module — the single junction is the flagship.
 
 ## Git
 Default branch `main`; flagship merged via PR #1 (`5eff94f`); v4 (emergency
@@ -88,6 +92,7 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 `.pth` files mid-retrain (best_model.pth is written live during training).
 
 ## Queued / TODO
-- Corridor full revival (reward redesign → baseline → retrain) — see the
-  corridor section above; its `_compute_local_reward` is still unbounded.
+- Corridor full revival — Phase 0 (bounded reward) DONE; next: protected-left
+  baseline → scenario recal → train-methodology upgrade → multi-agent retrain
+  (see the corridor section above).
 - `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
