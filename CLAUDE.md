@@ -75,15 +75,17 @@ branch `feat/emergency-removal-continuous-day`. Re-run anytime with
 ## Corridor (3-junction, `ai/corridor_env.py`) — code-modernized, NOT trained
 Brought in line 2026-06-13 (protected-left 5 actions, emergency removed,
 STATE_SIZE 46, per-junction `expert_action`). **Has no trained models.**
-**Phase 0 done (2026-06-21, PR #4):** local reward ported to the bounded/
-normalised + clipped form (MAX_QUEUE 150/lane 75/wait 1200, REWARD_CLIP ±40) —
-gridlock-trap removed; the green-wave/spillback reward stays additive on top.
-Before a corridor retrain it STILL needs: a protected-left corridor baseline
-(`run_corridor_baseline.py` still uses the banned all-green timing), scenario
-recalibration, a training-methodology upgrade (`train_corridor.py` predates v4
-— single route, naive best-selection, no scenario rotation, never calls the
-`expert_action` warm-start), then multi-agent training. Separate, currently-
-unused module — the single junction is the flagship.
+**Phase 0+1 done (2026-06-21, PR #4/#5):** (0) local reward ported to the
+bounded/normalised + clipped form (MAX_QUEUE 150/lane 75/wait 1200, REWARD_CLIP
+±40) — gridlock-trap removed, green-wave/spillback reward additive on top; (1)
+`run_corridor_baseline.py` rewritten from banned all-green to protected-left
+(NS 40/15, EW 25/10, offset-capable). First baseline run (default route, seed
+42) = corridor avg wait 509s with J0 over capacity (998s) → demand needs recal.
+STILL needs before a retrain: scenario recalibration (Phase 2 — calibrate demand
++ per-scenario corridor baselines), a training-methodology upgrade
+(`train_corridor.py` predates v4 — single route, naive best-selection, no
+scenario rotation, never calls the `expert_action` warm-start), then multi-agent
+training. Separate, currently-unused module — the single junction is the flagship.
 
 ## Git
 Default branch `main`; flagship merged via PR #1 (`5eff94f`); v4 (emergency
@@ -92,7 +94,7 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 `.pth` files mid-retrain (best_model.pth is written live during training).
 
 ## Queued / TODO
-- Corridor full revival — Phase 0 (bounded reward) DONE; next: protected-left
-  baseline → scenario recal → train-methodology upgrade → multi-agent retrain
-  (see the corridor section above).
+- Corridor full revival — Phase 0 (bounded reward) + Phase 1 (protected-left
+  baseline) DONE; next: scenario recal (demand over capacity at J0) →
+  train-methodology upgrade → multi-agent retrain (see the corridor section).
 - `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
