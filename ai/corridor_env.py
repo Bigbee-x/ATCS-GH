@@ -143,10 +143,12 @@ ACTION_NAMES = ["HOLD", "NS_THROUGH", "NS_LEFT", "EW_THROUGH", "EW_LEFT"]
 
 # ── State/reward normalisation ───────────────────────────────────────────────
 
-MAX_QUEUE      = 50.0
-MAX_QUEUE_LANE = 25.0
+MAX_QUEUE      = 150.0   # vehicles per approach (was 50 — heavy traffic needs
+                         #   headroom; mirrors the single-junction traffic_env fix)
+MAX_QUEUE_LANE = 75.0    # vehicles per lane (was 25)
 MAX_SPEED      = 13.89
-MAX_WAIT       = 600.0
+MAX_WAIT       = 1200.0  # seconds (was 600 — heavy-traffic waits exceed 600 pre-
+                         #   convergence). Train + inference MUST share these.
 MAX_PHASE_T    = 96.0
 MAX_PED_QUEUE  = 15.0
 
@@ -172,16 +174,25 @@ EXPERT_EW_GREEN      = 45
 EXPERT_NS_LEFT_GREEN = 15
 EXPERT_EW_LEFT_GREEN = 10
 
-# ── Reward weights (per-junction, same as single-junction env) ───────────────
+# ── Reward weights (per-junction — redesigned 2026-06-09 gridlock-trap fix,
+#    ported from ai/traffic_env.py on 2026-06-21). Every penalty is NORMALISED to
+#    a reference scale and the per-block LOCAL reward is CLIPPED to ±REWARD_CLIP,
+#    so heavy traffic yields a finite, discriminative gradient instead of the
+#    divergent "hugely negative" return that gridlock-traps the agent. ──────────
+QUEUE_REF       = 40.0   # reference queue (≈ baseline peak) — congestion normaliser
+WAIT_REF        = 90.0   # reference excess-wait (s) — max-wait normaliser
+PED_REF         = 10.0   # reference pedestrian backlog
+REWARD_CLIP     = 40.0   # per-decision-block LOCAL reward saturates at ±this
+                         #   (corridor green-wave/spillback reward added on top)
 
-W_QUEUE_ABS     = 0.2
-W_QUEUE_DELTA   = 0.5
-W_ARRIVED       = 3.0
-W_FLICKER       = 10.0
-W_BALANCE       = 4.0
-W_MAX_WAIT      = 0.4
-W_PED_WAIT      = 0.3
-FAIR_WAIT_THRESH = 30.0
+W_QUEUE_ABS     = 4.0    # congestion penalty      × (total_queue / QUEUE_REF)
+W_QUEUE_DELTA   = 2.0    # queue-growth penalty     × (growth / QUEUE_REF)
+W_ARRIVED       = 1.0    # throughput reward        × n_arrived
+W_FLICKER       = 2.0    # anti-flicker penalty
+W_BALANCE       = 2.0    # fairness bonus           × balance∈[0,1]
+W_MAX_WAIT      = 4.0    # worst-approach penalty   × min(excess / WAIT_REF, 3)
+W_PED_WAIT      = 1.0    # pedestrian-wait penalty  × min(n_ped / PED_REF, 2)
+FAIR_WAIT_THRESH = 30.0  # seconds — acceptable wait; penalty kicks in above this
 
 # Corridor-specific reward weights
 W_GREEN_WAVE    = 3.0    # bonus for correct green-wave timing with neighbor
@@ -678,16 +689,21 @@ class CorridorEnv:
                               queue_distribution: list[float],
                               wait_distribution: list[float],
                               n_ped_waiting: int = 0) -> float:
-        """Per-junction reward. NOTE: still the OLD unbounded form — the
-        bounded/normalised + clipped redesign (and MAX_QUEUE raise) from the
-        single-junction env must be ported before a corridor retrain, or it
-        will hit the same gridlock-trap. Tracked as the pre-retrain TODO."""
-        r_abs   = -W_QUEUE_ABS * total_queue
+        """Per-junction reward — normalised to reference scales and CLIPPED to
+        ±REWARD_CLIP, mirroring ai/traffic_env._compute_reward (ported 2026-06-21
+        from the OLD unbounded form that gridlock-trapped heavy traffic). The
+        corridor green-wave/spillback reward is added on top in step()."""
+        # 1. Congestion penalty — normalised by QUEUE_REF (was absolute → diverged)
+        r_abs   = -W_QUEUE_ABS * (total_queue / QUEUE_REF)
+        # 2. Penalise net queue GROWTH only (no reward for shrinkage)
         delta   = total_queue - prev_total_queue
-        r_delta = -W_QUEUE_DELTA * max(0.0, delta)
+        r_delta = -W_QUEUE_DELTA * (max(0.0, delta) / QUEUE_REF)
+        # 3. Throughput (accumulated over the DECISION_INTERVAL steps)
         r_thru  = W_ARRIVED * n_arrived
+        # 4. Flicker penalty
         r_flick = -W_FLICKER if switched_too_soon else 0.0
 
+        # 5. Balance: lower variance in queue distribution = higher bonus
         if total_queue > 0:
             mean_q    = total_queue / max(len(queue_distribution), 1)
             std_q     = float(np.std(queue_distribution))
@@ -696,16 +712,22 @@ class CorridorEnv:
         else:
             r_balance = W_BALANCE
 
+        # 6. Max-wait penalty — normalised by WAIT_REF and CAPPED so one
+        #    gridlocked approach cannot dominate the whole reward.
         r_max_wait = 0.0
         if wait_distribution:
             worst_wait = max(wait_distribution)
-            excess = max(0.0, worst_wait - FAIR_WAIT_THRESH)
-            r_max_wait = -W_MAX_WAIT * excess
+            excess     = max(0.0, worst_wait - FAIR_WAIT_THRESH)
+            r_max_wait = -W_MAX_WAIT * min(excess / WAIT_REF, 3.0)
 
-        r_ped = -W_PED_WAIT * n_ped_waiting
+        # 7. Pedestrian waiting penalty — normalised + capped
+        r_ped = -W_PED_WAIT * min(n_ped_waiting / PED_REF, 2.0)
 
-        return (r_abs + r_delta + r_thru
-                + r_flick + r_balance + r_max_wait + r_ped)
+        total = (r_abs + r_delta + r_thru
+                 + r_flick + r_balance + r_max_wait + r_ped)
+        # Clip so cross-scenario Q-targets stay well-conditioned; the corridor
+        # coordination reward is added outside this bound (in step()).
+        return float(max(-REWARD_CLIP, min(REWARD_CLIP, total)))
 
     def _compute_corridor_reward(self, jid: str) -> float:
         """Corridor coordination reward components."""
