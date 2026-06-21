@@ -1,0 +1,2 @@
+label,corridor_avg_wait_s,J0_wait_s,J1_wait_s,J2_wait_s,J0_queue,J1_queue,J2_queue,arrived,demand_vehph,factor,seed
+corridor_morning,143.1,276.5,76.9,75.9,44.9,12.7,12.0,4034,2164,0.65,42

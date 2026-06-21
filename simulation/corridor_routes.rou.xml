@@ -124,85 +124,85 @@
   <!-- ── CORRIDOR THROUGH-TRAFFIC (heaviest flows) ────────────────── -->
   <!-- S→N inbound commute — N6 trunk road -->
   <flow id="f_S2N"     type="car"    route="rt_S2N"
-        begin="0" end="7200" vehsPerHour="720" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="468.0" departLane="best" departSpeed="max"/>
   <flow id="f_S2N_t"   type="trotro" route="rt_S2N"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
 
   <!-- N→S reverse flow (lighter) -->
   <flow id="f_N2S"     type="car"    route="rt_N2S"
-        begin="0" end="7200" vehsPerHour="200" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="130.0" departLane="best" departSpeed="max"/>
   <flow id="f_N2S_t"   type="trotro" route="rt_N2S"
-        begin="0" end="7200" vehsPerHour="50"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="32.5"  departLane="best" departSpeed="max"/>
 
 
   <!-- ── PARTIAL CORRIDOR (enter/exit at mid-junctions) ───────────── -->
   <flow id="f_S2E1"  type="car" route="rt_S2E1"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
   <flow id="f_S2W1"  type="car" route="rt_S2W1"
-        begin="0" end="7200" vehsPerHour="60"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="39.0"  departLane="best" departSpeed="max"/>
   <flow id="f_N2E1"  type="car" route="rt_N2E1"
-        begin="0" end="7200" vehsPerHour="60"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="39.0"  departLane="best" departSpeed="max"/>
   <flow id="f_N2W1"  type="car" route="rt_N2W1"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
   <flow id="f_S2E0"  type="car" route="rt_S2E0"
-        begin="0" end="7200" vehsPerHour="100" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="65.0" departLane="best" departSpeed="max"/>
   <flow id="f_S2W0"  type="car" route="rt_S2W0"
-        begin="0" end="7200" vehsPerHour="70"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="45.5"  departLane="best" departSpeed="max"/>
   <flow id="f_N2E2"  type="car" route="rt_N2E2"
-        begin="0" end="7200" vehsPerHour="50"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="32.5"  departLane="best" departSpeed="max"/>
   <flow id="f_N2W2"  type="car" route="rt_N2W2"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
 
 
   <!-- ── J0 CROSS-TRAFFIC (Aggrey St + Guggisberg St) ─────────────── -->
   <flow id="f_E0W0"    type="car"    route="rt_E0W0"
-        begin="0" end="7200" vehsPerHour="200" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="130.0" departLane="best" departSpeed="max"/>
   <flow id="f_E0W0_t"  type="trotro" route="rt_E0W0"
-        begin="0" end="7200" vehsPerHour="30"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="19.5"  departLane="best" departSpeed="max"/>
   <flow id="f_W0E0"    type="car"    route="rt_W0E0"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
   <flow id="f_E0N"     type="car"    route="rt_E0N"
-        begin="0" end="7200" vehsPerHour="120" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="78.0" departLane="best" departSpeed="max"/>
   <flow id="f_E0S"     type="car"    route="rt_E0S"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
   <flow id="f_W0N"     type="car"    route="rt_W0N"
-        begin="0" end="7200" vehsPerHour="100" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="65.0" departLane="best" departSpeed="max"/>
   <flow id="f_W0S"     type="car"    route="rt_W0S"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
 
 
   <!-- ── J1 CROSS-TRAFFIC (Asylum Down Rd + Ring Rd — busiest) ────── -->
   <flow id="f_E1W1"    type="car"    route="rt_E1W1"
-        begin="0" end="7200" vehsPerHour="250" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="162.5" departLane="best" departSpeed="max"/>
   <flow id="f_E1W1_t"  type="trotro" route="rt_E1W1"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
   <flow id="f_W1E1"    type="car"    route="rt_W1E1"
-        begin="0" end="7200" vehsPerHour="220" departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="143.0" departLane="best" departSpeed="max"/>
   <flow id="f_W1E1_t"  type="trotro" route="rt_W1E1"
-        begin="0" end="7200" vehsPerHour="30"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="19.5"  departLane="best" departSpeed="max"/>
   <flow id="f_E1N"     type="car"    route="rt_E1N"
-        begin="0" end="7200" vehsPerHour="90"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="58.5"  departLane="best" departSpeed="max"/>
   <flow id="f_E1S"     type="car"    route="rt_E1S"
-        begin="0" end="7200" vehsPerHour="70"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="45.5"  departLane="best" departSpeed="max"/>
   <flow id="f_W1N"     type="car"    route="rt_W1N"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
   <flow id="f_W1S"     type="car"    route="rt_W1S"
-        begin="0" end="7200" vehsPerHour="50"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="32.5"  departLane="best" departSpeed="max"/>
 
 
   <!-- ── J2 CROSS-TRAFFIC (Nima Bypass + Tesano Rd — lightest) ────── -->
   <flow id="f_E2W2"    type="car"    route="rt_E2W2"
-        begin="0" end="7200" vehsPerHour="80"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="52.0"  departLane="best" departSpeed="max"/>
   <flow id="f_W2E2"    type="car"    route="rt_W2E2"
-        begin="0" end="7200" vehsPerHour="60"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="39.0"  departLane="best" departSpeed="max"/>
   <flow id="f_E2N"     type="car"    route="rt_E2N"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
   <flow id="f_E2S"     type="car"    route="rt_E2S"
-        begin="0" end="7200" vehsPerHour="50"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="32.5"  departLane="best" departSpeed="max"/>
   <flow id="f_W2N"     type="car"    route="rt_W2N"
-        begin="0" end="7200" vehsPerHour="40"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="26.0"  departLane="best" departSpeed="max"/>
   <flow id="f_W2S"     type="car"    route="rt_W2S"
-        begin="0" end="7200" vehsPerHour="30"  departLane="best" departSpeed="max"/>
+        begin="0" end="7200" vehsPerHour="19.5"  departLane="best" departSpeed="max"/>
 
 
   <!-- ═══════════════════════════════════════════════════════════════

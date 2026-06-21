@@ -75,17 +75,21 @@ branch `feat/emergency-removal-continuous-day`. Re-run anytime with
 ## Corridor (3-junction, `ai/corridor_env.py`) — code-modernized, NOT trained
 Brought in line 2026-06-13 (protected-left 5 actions, emergency removed,
 STATE_SIZE 46, per-junction `expert_action`). **Has no trained models.**
-**Phase 0+1 done (2026-06-21, PR #4/#5):** (0) local reward ported to the
+**Phase 0–2 done (2026-06-21, PR #4–#6):** (0) local reward ported to the
 bounded/normalised + clipped form (MAX_QUEUE 150/lane 75/wait 1200, REWARD_CLIP
 ±40) — gridlock-trap removed, green-wave/spillback reward additive on top; (1)
 `run_corridor_baseline.py` rewritten from banned all-green to protected-left
-(NS 40/15, EW 25/10, offset-capable). First baseline run (default route, seed
-42) = corridor avg wait 509s with J0 over capacity (998s) → demand needs recal.
-STILL needs before a retrain: scenario recalibration (Phase 2 — calibrate demand
-+ per-scenario corridor baselines), a training-methodology upgrade
-(`train_corridor.py` predates v4 — single route, naive best-selection, no
-scenario rotation, never calls the `expert_action` warm-start), then multi-agent
-training. Separate, currently-unused module — the single junction is the flagship.
+(NS 40/15, EW 25/10, offset-capable); (2) morning demand recalibrated to a
+solvable cliff via `recalibrate_corridor.py` (×0.65 → 2164 veh/hr; pristine
+original in git history + gitignored `simulation/_pre_recal_corridor/`).
+Protected baseline at ×0.65 (seed 42) = corridor 143s, J0 276s / J1 77s / J2 76s
+(J0 the bottleneck — real room for the AI), recorded in
+`data/corridor_baselines.csv`. STILL needs before a retrain: optionally more
+scenarios (only the morning one exists — evening N→S-heavy / off-peak), a
+training-methodology upgrade (`train_corridor.py` predates v4 — single route,
+naive best-selection, no scenario rotation, never calls the `expert_action`
+warm-start), then multi-agent training. Separate, currently-unused module — the
+single junction is the flagship.
 
 ## Git
 Default branch `main`; flagship merged via PR #1 (`5eff94f`); v4 (emergency
@@ -94,7 +98,8 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 `.pth` files mid-retrain (best_model.pth is written live during training).
 
 ## Queued / TODO
-- Corridor full revival — Phase 0 (bounded reward) + Phase 1 (protected-left
-  baseline) DONE; next: scenario recal (demand over capacity at J0) →
-  train-methodology upgrade → multi-agent retrain (see the corridor section).
+- Corridor full revival — Phase 0 (reward) + 1 (baseline) + 2 (morning demand
+  recal ×0.65) DONE; next: optional evening/off-peak scenarios →
+  train-methodology upgrade (`train_corridor.py` → v4) → multi-agent retrain
+  (see the corridor section).
 - `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
