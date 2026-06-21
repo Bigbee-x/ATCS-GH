@@ -5,8 +5,12 @@ ATCS-GH | Corridor Fixed-Timer Baseline
 Runs the 3-junction corridor with fixed-timing signals (no AI).
 Provides the performance baseline for comparing against multi-agent DQN.
 
-All 3 junctions use the same fixed-timing plan:
-  NS green: 60s → yellow: 3s → EW green: 30s → yellow: 3s → repeat
+All 3 junctions use the same protected-left fixed-timing plan (mirrors the
+single-junction run_baseline.py "protected" preset). All-green is banned —
+permissive lefts deadlock the junction box — so through and left arrows never
+green together:
+  NS through 40s → y3 → NS left 15s → y3 → EW through 25s → y3 → EW left 10s → y3
+  (102s cycle)
 
 Usage:
     python scripts/run_corridor_baseline.py
@@ -30,7 +34,7 @@ import numpy as np
 # Bootstrap SUMO
 from corridor_env import (
     _bootstrap_sumo, JUNCTIONS, JUNCTION_IDS, PHASE_NAMES,
-    NS_ALL, EW_ALL, NS_YELLOW, EW_YELLOW,
+    NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
     SIM_DURATION, DECISION_INTERVAL,
 )
 
@@ -68,44 +72,44 @@ def run_baseline(gui: bool = False, offset: float = 0.0,
     ]
     traci.start(cmd)
 
-    # Fixed timing parameters
-    NS_GREEN_DUR = 60
-    EW_GREEN_DUR = 30
-    YELLOW_DUR   = 3
-    CYCLE_LEN    = NS_GREEN_DUR + YELLOW_DUR + EW_GREEN_DUR + YELLOW_DUR  # 96s
+    # Protected-left fixed-timing plan (mirrors run_baseline.py "protected"
+    # preset: NS 40/15, EW 25/10, 3s yellows). Through and left arrows never
+    # co-green; all-green (NS_ALL/EW_ALL) is banned — permissive lefts deadlock
+    # the junction box. PHASE_PLAN = ordered (phase_constant, duration_seconds).
+    YELLOW_DUR = 3
+    PHASE_PLAN = [
+        (NS_THROUGH, 40),
+        (NS_YELLOW,  YELLOW_DUR),
+        (NS_LEFT,    15),
+        (NS_YELLOW,  YELLOW_DUR),
+        (EW_THROUGH, 25),
+        (EW_YELLOW,  YELLOW_DUR),
+        (EW_LEFT,    10),
+        (EW_YELLOW,  YELLOW_DUR),
+    ]
+    CYCLE_LEN = sum(dur for _, dur in PHASE_PLAN)  # 102s
 
     # Per-junction timing state
     class TLState:
         def __init__(self, jid: str, phase_offset: float):
             self.jid = jid
             self.cfg = JUNCTIONS[jid]
-            self.timer = -int(phase_offset)  # negative = delayed start
-            self.phase = "ns_green"
-            self.phase_timer = 0
+            # Negative start = green-wave offset. Python's % wraps it back into
+            # [0, CYCLE_LEN), so J1/J2 simply run offset / 2·offset behind J0.
+            self.timer = -int(phase_offset)
+            self.phase = PHASE_NAMES[NS_THROUGH]
 
         def update(self):
             self.timer += 1
-            cycle_pos = self.timer % CYCLE_LEN
-            if cycle_pos < 0:
-                # Haven't started yet (offset delay)
-                sig = self.cfg.phase_signals[NS_ALL]
-                traci.trafficlight.setRedYellowGreenState(self.cfg.tl_id, sig)
-                return
-
-            if cycle_pos < NS_GREEN_DUR:
-                sig = self.cfg.phase_signals[NS_ALL]
-                self.phase = "ns_green"
-            elif cycle_pos < NS_GREEN_DUR + YELLOW_DUR:
-                sig = self.cfg.phase_signals[NS_YELLOW]
-                self.phase = "ns_yellow"
-            elif cycle_pos < NS_GREEN_DUR + YELLOW_DUR + EW_GREEN_DUR:
-                sig = self.cfg.phase_signals[EW_ALL]
-                self.phase = "ew_green"
-            else:
-                sig = self.cfg.phase_signals[EW_YELLOW]
-                self.phase = "ew_yellow"
-
-            traci.trafficlight.setRedYellowGreenState(self.cfg.tl_id, sig)
+            cycle_pos = self.timer % CYCLE_LEN   # always in [0, CYCLE_LEN)
+            acc = 0
+            for phase_const, dur in PHASE_PLAN:
+                if cycle_pos < acc + dur:
+                    traci.trafficlight.setRedYellowGreenState(
+                        self.cfg.tl_id, self.cfg.phase_signals[phase_const])
+                    self.phase = PHASE_NAMES[phase_const]
+                    return
+                acc += dur
 
     # Create TL states with offsets
     tl_states = [
