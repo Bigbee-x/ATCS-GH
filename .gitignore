@@ -53,6 +53,7 @@ visualizer/.godot/shader_cache/
 # Recalibration backups & temp scenario files (originals live in git history)
 simulation/scenarios/_pre_recal/
 simulation/scenarios/_recal_tmp/
+simulation/_pre_recal_corridor/
 simulation/*.bak
 
 # Temp diagnostic / validation artefacts (throwaway)
