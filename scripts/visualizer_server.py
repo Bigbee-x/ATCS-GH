@@ -85,7 +85,7 @@ import websockets
 
 from dqn_agent import DQNAgent
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES,
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
     EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
@@ -160,10 +160,6 @@ pending_override: dict | None = None
 active_control_mode: str | None = None   # Set in simulation_loop; None = use startup mode
 pending_mode_switch: str | None = None   # Queued by ws_handler, consumed by sim loop
 
-# Queue of pending emergency vehicle spawn requests
-pending_emergency_spawns: list[dict] = []
-_emergency_spawn_counter: int = 0
-
 
 # ── WebSocket handler ────────────────────────────────────────────────────────
 
@@ -218,11 +214,6 @@ async def ws_handler(websocket):
                         print(f"[WS] Manual override received: force green for {approach}")
                     else:
                         print(f"[WS] Unknown approach: {approach}")
-
-                elif action == "spawn_emergency":
-                    approach = data.get("approach", "north").lower()
-                    pending_emergency_spawns.append({"approach": approach})
-                    print(f"[WS] Emergency spawn requested from {approach}")
 
                 elif action == "switch_mode":
                     target_mode = data.get("mode", "").lower()
@@ -335,52 +326,6 @@ def _collect_pedestrian_data() -> list[dict]:
     except traci.exceptions.TraCIException:
         pass
     return pedestrians
-
-
-# ── Emergency vehicle spawner ──────────────────────────────────────────────
-
-# Maps approach name → (incoming edge, route: edge pair for through-movement)
-APPROACH_ROUTES = {
-    "north": ("ACH_N2J", "ACH_N2J ACH_J2S"),
-    "south": ("ACH_S2J", "ACH_S2J ACH_J2N"),
-    "east":  ("AGG_E2J", "AGG_E2J GUG_J2W"),
-    "west":  ("GUG_W2J", "GUG_W2J AGG_J2E"),
-}
-
-
-def _spawn_emergency_vehicles():
-    """
-    Process any pending emergency spawn requests by inserting
-    ambulance vehicles into SUMO via TraCI.
-    """
-    global _emergency_spawn_counter
-
-    while pending_emergency_spawns:
-        req = pending_emergency_spawns.pop(0)
-        approach = req.get("approach", "north")
-        if approach not in APPROACH_ROUTES:
-            print(f"[SPAWN] Unknown approach '{approach}', defaulting to north")
-            approach = "north"
-
-        _emergency_spawn_counter += 1
-        vid = f"manual_ambulance_{_emergency_spawn_counter}"
-        edge, route_edges = APPROACH_ROUTES[approach]
-        route_id = f"emer_route_{_emergency_spawn_counter}"
-
-        try:
-            # Add a new route for this ambulance
-            traci.route.add(route_id, route_edges.split())
-            # Insert the vehicle immediately
-            traci.vehicle.add(
-                vehID=vid,
-                routeID=route_id,
-                typeID=EMERGENCY_TYPE,
-                depart="now",
-                departSpeed="max",
-            )
-            print(f"[SPAWN] Ambulance '{vid}' deployed from {approach} ({edge})")
-        except traci.exceptions.TraCIException as e:
-            print(f"[SPAWN] Failed to spawn ambulance: {e}")
 
 
 # ── Simulation loop ─────────────────────────────────────────────────────────
@@ -518,15 +463,8 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                 # intermediate vehicle positions. The env.step() is called
                 # AFTER to keep reward/state computation correct.
 
-                # --- Phase 0: Spawn any manually-requested emergency vehicles ---
-                _spawn_emergency_vehicles()
-
                 # --- Phase 1: Apply action to env (same as env.step start) ---
-                preempted, forced_phase = env._check_emergency_preemption()
-                if preempted:
-                    if forced_phase != env._phase and env._can_switch():
-                        env._initiate_switch(target_green=forced_phase)
-                elif action != ACTION_HOLD and env._can_switch():
+                if action != ACTION_HOLD and env._can_switch():
                     target = ACTION_TO_PHASE.get(action)
                     if target is not None and target != env._phase:
                         env._initiate_switch(target_green=target)
@@ -549,7 +487,6 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     env._phase_timer += 1
 
                     block_arrived += traci.simulation.getArrivedNumber()
-                    env._track_emergency_vehicles()
 
                     # Broadcast vehicle positions every sim-second
                     vehicle_data = _collect_vehicle_data()
@@ -573,7 +510,6 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                 # --- Phase 3: Collect end-of-decision metrics (same as env.step end) ---
                 edge_metrics = env._collect_edge_metrics()
-                emergency_flags = env._get_emergency_flags()
 
                 # Update env internal accumulators (normally done inside step)
                 final_queues = []
@@ -597,8 +533,7 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     total_queue=total_queue,
                     prev_total_queue=env._prev_total_queue,
                     n_arrived=block_arrived,
-                    n_emerg_waiting=0,
-                    switched_too_soon=(action != ACTION_HOLD and not preempted
+                    switched_too_soon=(action != ACTION_HOLD
                                       and env._phase_timer < (
                                           MIN_GREEN_LEFT
                                           if env._phase in (NS_LEFT, EW_LEFT)
@@ -619,22 +554,6 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     or sub_step_done
                 )
                 next_state = env._build_state()
-
-                # Find emergency approach for display
-                emergency_approach = None
-                emergency_vid = None
-                approach_names = ["north", "south", "east", "west"]
-                for i, edge in enumerate(INCOMING_EDGES):
-                    if emergency_flags[i] > 0:
-                        emergency_approach = approach_names[i]
-                        try:
-                            for vid in traci.edge.getLastStepVehicleIDs(edge):
-                                if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                                    emergency_vid = vid
-                                    break
-                        except traci.exceptions.TraCIException:
-                            pass
-                        break
 
                 vehicle_data = _collect_vehicle_data()
 
@@ -684,13 +603,6 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     "vehicles_completed": env.total_arrived,
                     "avg_wait": round(env.episode_avg_wait, 1),
 
-                    # Emergency
-                    "emergency": {
-                        "active": bool(any(emergency_flags)),
-                        "approach": emergency_approach,
-                        "vehicle_id": emergency_vid,
-                    },
-
                     # AI decision
                     "ai_decision": ACTION_NAMES[action] if action < len(ACTION_NAMES) else "UNKNOWN",
                     "reward": round(reward, 1),
@@ -718,7 +630,6 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Meta
                     "mode": mode,
-                    "preempted": preempted,
                     "done": done,
                 }
 

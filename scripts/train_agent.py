@@ -50,12 +50,20 @@ FINAL_MODEL_PATH  = PROJECT_ROOT / "ai"    / "trained_model.pth"
 
 # ── Multi-scenario training ──────────────────────────────────────────────────
 SCENARIO_DIR = PROJECT_ROOT / "simulation" / "scenarios"
+# v2/v4 (2026-06-13): the continuous DAY is the centerpiece — quiet → morning
+# rush (N-heavy) → midday lull → evening rush (S-heavy) → quiet, teaching the
+# transitions and the directional flip the old constant-demand scenarios never
+# showed. BUT the day only holds each peak ~20 min, so a pure-day model gridlocks
+# a SUSTAINED 2-hr evening rush (v3 eval: evening 1084s). So we keep the constant
+# morning/evening/weekend scenarios alongside the day to harden the sustained
+# extremes. Best of both: realistic transitions + sustained-peak robustness.
+# heavy_emergency dropped — ambulance feature torn out 2026-06-13.
 SCENARIOS = [
-    SCENARIO_DIR / "morning_rush.rou.xml",
-    SCENARIO_DIR / "evening_rush.rou.xml",
-    SCENARIO_DIR / "off_peak.rou.xml",
-    SCENARIO_DIR / "weekend_market.rou.xml",
-    SCENARIO_DIR / "heavy_emergency.rou.xml",
+    SCENARIO_DIR / "continuous_day.rou.xml",   # centerpiece — realism + transitions
+    SCENARIO_DIR / "morning_rush.rou.xml",     # sustained N-heavy peak
+    SCENARIO_DIR / "continuous_day.rou.xml",
+    SCENARIO_DIR / "evening_rush.rou.xml",     # sustained S-heavy peak (the v3 gap)
+    SCENARIO_DIR / "weekend_market.rou.xml",   # E-heavy market
 ]
 
 # Phase 1 baseline — loaded dynamically from baseline CSV (falls back to hardcoded)
@@ -250,8 +258,6 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
         scenario_baseline = SCENARIO_BASELINES.get(scenario_name, BASELINE_AVG_WAIT)
         delta_pct    = (avg_wait - scenario_baseline) / scenario_baseline * 100
 
-        emerg_max    = max(env.emergency_log.values(), default=0.0)
-
         # ── Save best model (maximin over rolling per-scenario relative score) ─
         note = ""
         sel_base = max(scenario_baseline, MIN_SELECT_BASELINE_S)
@@ -287,7 +293,6 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
             "avg_wait_s":            round(avg_wait, 2),
             "peak_queue":            peak_queue,
             "epsilon":               round(agent.epsilon, 4),
-            "max_emerg_wait_s":      round(emerg_max, 1),
             "delta_vs_baseline_pct": round(delta_pct, 1),
             "episode_time_s":        round(ep_time, 1),
         }

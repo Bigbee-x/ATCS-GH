@@ -45,11 +45,8 @@ from corridor_env import (
     ACTION_HOLD, ACTION_TO_PHASE, ACTION_NAMES, ACTION_SIZE,
     ACTION_NS_THROUGH, ACTION_NS_LEFT,
     ACTION_EW_THROUGH, ACTION_EW_LEFT,
-    ACTION_NS_ALL, ACTION_EW_ALL,
-    ActionSanitizer,
     STATE_SIZE, DECISION_INTERVAL, SIM_DURATION,
     MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
-    EMERGENCY_TYPE,
 )
 
 SUMO_HOME = _bootstrap_sumo()
@@ -138,10 +135,6 @@ pending_override: dict | None = None
 active_control_mode: str | None = None   # Set in simulation_loop; None = use startup mode
 pending_mode_switch: str | None = None   # Queued by ws_handler, consumed by sim loop
 
-# Queue of pending emergency vehicle spawn requests
-pending_emergency_spawns: list[dict] = []
-_emergency_spawn_counter: int = 0
-
 
 # ── WebSocket handler ────────────────────────────────────────────────────────
 
@@ -195,11 +188,6 @@ async def ws_handler(websocket):
                         print(f"[WS] Mode switch requested: {target_mode.upper()}")
                     else:
                         print(f"[WS] Unknown mode: {target_mode}")
-
-                elif action == "spawn_emergency":
-                    approach = data.get("approach", "north").lower()
-                    pending_emergency_spawns.append({"approach": approach})
-                    print(f"[WS] Emergency spawn requested from {approach}")
 
             except json.JSONDecodeError:
                 print("[WS] Received invalid JSON, ignoring")
@@ -305,13 +293,12 @@ def _collect_pedestrian_data() -> list[dict]:
 # ── Per-junction state packet builder ────────────────────────────────────────
 
 def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
-                            reward: float, preempted: bool) -> dict:
+                            reward: float) -> dict:
     """Build the state sub-packet for one junction."""
     cfg = JUNCTIONS[jid]
     js  = env._jstate[jid]
 
     edge_metrics = env._collect_edge_metrics(jid)
-    emergency_flags = env._get_emergency_flags(jid)
     lane_m = env._collect_lane_metrics(jid)
 
     # Per-approach names (N, E, S, W)
@@ -324,21 +311,6 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
         name = approach_names[i]
         queues[name]     = edge_metrics[edge]["queue"]
         wait_times[name] = round(edge_metrics[edge]["wait"], 1)
-
-    # Emergency info
-    emergency_approach = None
-    emergency_vid = None
-    for i, edge in enumerate(cfg.incoming_edges):
-        if emergency_flags[i] > 0:
-            emergency_approach = approach_names[i]
-            try:
-                for vid in traci.edge.getLastStepVehicleIDs(edge):
-                    if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                        emergency_vid = vid
-                        break
-            except traci.exceptions.TraCIException:
-                pass
-            break
 
     # Per-lane sensor data
     lane_data = {}
@@ -374,64 +346,11 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
         "queues": queues,
         "wait_times": wait_times,
         "avg_wait": round(avg_wait, 1),
-        "emergency": {
-            "active": bool(any(emergency_flags)),
-            "approach": emergency_approach,
-            "vehicle_id": emergency_vid,
-        },
         "ai_decision": ACTION_NAMES[action] if action < len(ACTION_NAMES) else "UNKNOWN",
         "reward": round(reward, 1),
         "lane_data": lane_data,
         "crossing_green": crossing_green,
-        "preempted": preempted,
     }
-
-
-# ── Emergency vehicle spawner (corridor) ──────────────────────────────────
-
-# For corridor, spawn ambulances on the main N-S Achimota corridor
-# approaching from N (top) or S (bottom), or from side streets at J1.
-# approach → (incoming edge, route edges for through-movement)
-CORRIDOR_APPROACH_ROUTES = {
-    # N-S through corridor (enters J2 from north, exits J0 south)
-    "north": ("ACH_N2J2",     "ACH_N2J2 ACH_J2toJ1 ACH_J1toJ0 ACH_J0toS"),
-    # S-N through corridor (enters J0 from south, exits J2 north)
-    "south": ("ACH_S2J0",     "ACH_S2J0 ACH_J0toJ1 ACH_J1toJ2 ACH_J2toN"),
-    # E-W at J1 (enters from Asylum Down, exits to Ring Road)
-    "east":  ("ASD_E2J1",     "ASD_E2J1 RNG_J1toW"),
-    # W-E at J1 (enters from Ring Road, exits to Asylum Down)
-    "west":  ("RNG_W2J1",     "RNG_W2J1 ASD_J1toE"),
-}
-
-
-def _spawn_emergency_vehicles():
-    """Process pending emergency spawn requests for corridor simulation."""
-    global _emergency_spawn_counter
-
-    while pending_emergency_spawns:
-        req = pending_emergency_spawns.pop(0)
-        approach = req.get("approach", "north")
-        if approach not in CORRIDOR_APPROACH_ROUTES:
-            print(f"[SPAWN] Unknown approach '{approach}', defaulting to north")
-            approach = "north"
-
-        _emergency_spawn_counter += 1
-        vid = f"manual_ambulance_{_emergency_spawn_counter}"
-        edge, route_edges = CORRIDOR_APPROACH_ROUTES[approach]
-        route_id = f"emer_route_{_emergency_spawn_counter}"
-
-        try:
-            traci.route.add(route_id, route_edges.split())
-            traci.vehicle.add(
-                vehID=vid,
-                routeID=route_id,
-                typeID=EMERGENCY_TYPE,
-                depart="now",
-                departSpeed="max",
-            )
-            print(f"[SPAWN] Ambulance '{vid}' deployed from {approach} ({edge})")
-        except traci.exceptions.TraCIException as e:
-            print(f"[SPAWN] Failed to spawn ambulance: {e}")
 
 
 # ── Simulation loop ─────────────────────────────────────────────────────────
@@ -449,12 +368,6 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
 
     # ── Load agents ──────────────────────────────────────────────────────
     agents: dict[str, DQNAgent | None] = {jid: None for jid in JUNCTION_IDS}
-
-    # One ActionSanitizer per junction — alternation state must be independent
-    # so J0's NS_ALL → NS_LEFT doesn't also flip J1's alternator.
-    sanitizers: dict[str, ActionSanitizer] = {
-        jid: ActionSanitizer() for jid in JUNCTION_IDS
-    }
 
     if mode == SimMode.AI:
         all_loaded = True
@@ -520,7 +433,6 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
             # Track per-step actions/rewards for broadcast
             last_actions = {jid: ACTION_HOLD for jid in JUNCTION_IDS}
             last_rewards = {jid: 0.0 for jid in JUNCTION_IDS}
-            last_preempted = {jid: False for jid in JUNCTION_IDS}
 
             while not done:
                 decision_start = time.time()
@@ -557,37 +469,23 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                         print(f"[SIM] {jid} override: {override['approach']} "
                               f"-> {ACTION_NAMES[action]}")
                     elif active_control_mode == SimMode.AI and agents[jid] is not None:
-                        # Alternate NS_ALL/EW_ALL between protected through and
-                        # left phases so both movements get served. Per-junction
-                        # alternation keeps state independent across J0/J1/J2.
-                        actions[jid] = sanitizers[jid](
-                            agents[jid].select_action(states[jid]))
+                        # Protected-left action space — no sanitizing needed.
+                        actions[jid] = agents[jid].select_action(states[jid])
                     elif active_control_mode == SimMode.BASELINE:
                         actions[jid] = baseline_timers[jid].get_action(
                             env._sim_step)
                     elif active_control_mode == SimMode.DEMO:
-                        # Random over the 4 protected phase actions only
-                        # (exclude NS_ALL=5 / EW_ALL=6 permissive-left phases).
+                        # Random over the 4 protected phase actions.
                         actions[jid] = (0 if random.random() < 0.6
                                         else random.randint(1, 4))
                     else:
                         actions[jid] = ACTION_HOLD
 
-                # ── Spawn any manually-requested emergency vehicles ───────
-                _spawn_emergency_vehicles()
-
                 # ── Apply actions (same as env.step start) ─────────────────
                 for jid in JUNCTION_IDS:
                     action = actions[jid]
                     js = env._jstate[jid]
-
-                    preempted, forced_phase = env._check_emergency(jid)
-                    last_preempted[jid] = preempted
-
-                    if preempted:
-                        if forced_phase != js.phase and env._can_switch(jid):
-                            env._initiate_switch(jid, forced_phase)
-                    elif action != ACTION_HOLD and env._can_switch(jid):
+                    if action != ACTION_HOLD and env._can_switch(jid):
                         target = ACTION_TO_PHASE.get(action)
                         if target is not None and target != js.phase:
                             env._initiate_switch(jid, target)
@@ -614,7 +512,6 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                         env._jstate[jid].phase_timer += 1
 
                     block_arrived += traci.simulation.getArrivedNumber()
-                    env._track_emergency_vehicles()
 
                     # Broadcast vehicle + pedestrian positions every sim-second
                     vehicle_data = _collect_vehicle_data()
@@ -652,7 +549,6 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                     ped_counts = env._get_ped_counts(jid)
                     total_ped = int(sum(ped_counts))
 
-                    preempted = last_preempted[jid]
                     min_g = (MIN_GREEN_LEFT if js.phase in (NS_LEFT, EW_LEFT)
                              else MIN_GREEN_THROUGH)
 
@@ -660,8 +556,7 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                         total_queue=total_q,
                         prev_total_queue=js.prev_total_queue,
                         n_arrived=block_arrived // len(JUNCTION_IDS),
-                        n_emerg_waiting=0,
-                        switched_too_soon=(action != ACTION_HOLD and not preempted
+                        switched_too_soon=(action != ACTION_HOLD
                                            and js.phase_timer < min_g),
                         queue_distribution=queues,
                         wait_distribution=waits,
@@ -686,8 +581,7 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                 junction_states = {}
                 for jid in JUNCTION_IDS:
                     junction_states[jid] = _build_junction_packet(
-                        env, jid, last_actions[jid],
-                        last_rewards[jid], last_preempted[jid]
+                        env, jid, last_actions[jid], last_rewards[jid]
                     )
 
                 corridor_avg_wait = env.corridor_avg_wait()
@@ -726,12 +620,10 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                     # Legacy fields for J0 (backwards compat with single-junction UI)
                     "queues": junction_states["J0"]["queues"],
                     "wait_times": junction_states["J0"]["wait_times"],
-                    "emergency": junction_states["J0"]["emergency"],
                     "ai_decision": junction_states["J0"]["ai_decision"],
                     "reward": junction_states["J0"]["reward"],
                     "crossing_green": junction_states["J0"]["crossing_green"],
                     "lane_data": junction_states["J0"]["lane_data"],
-                    "preempted": junction_states["J0"]["preempted"],
 
                     "done": done,
                 }

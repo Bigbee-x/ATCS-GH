@@ -40,6 +40,9 @@ data/training_log.csv
 .idea/
 *.swp
 
+# Claude Code local session/config (per-machine)
+.claude/
+
 # Godot editor cache (regenerated on open)
 visualizer/.godot/editor/
 visualizer/.godot/uid_cache.bin
@@ -58,8 +61,11 @@ ai/_confirm/
 ai/_pre_retrain_backup/
 ai/_smoke_backup_*/
 ai/_smoke_artifacts_*/
+ai/_v1_shipped_*/
+ai/_v3_day_only/
 data/smoke_*.log
 data/baseline_c*.csv
+data/baseline_protected_results.csv
 data/confirm_reward_log.csv
 data/validation_log.csv
 

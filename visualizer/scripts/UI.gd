@@ -25,8 +25,6 @@ extends Control
 signal override_requested(approach: String)
 ## Emitted when the user toggles between ATCS and Fixed Timer modes
 signal mode_switch_requested(mode: String)
-## Emitted when the user clicks the Deploy Ambulance button
-signal emergency_spawn_requested(approach: String)
 ## Emitted when the user toggles pedestrians on/off
 signal pedestrian_toggled(enabled: bool)
 ## Emitted when the user changes the time-of-day slider
@@ -68,10 +66,8 @@ var _btn_force_north: Button
 var _btn_force_south: Button
 var _btn_force_east: Button
 var _btn_force_west: Button
-var _btn_deploy_ambulance: Button            # Deploy Ambulance button
 var _btn_toggle_pedestrians: Button          # Pedestrian on/off toggle
 var _pedestrians_on: bool = true             # Current pedestrian toggle state
-var _ambulance_counter: int = 0              # Unique ID counter for spawned ambulances
 var _bottom_panel: PanelContainer           # Reference to bottom bar panel
 
 # Time-of-day controls
@@ -545,45 +541,6 @@ func _build_bottom_bar() -> void:
 	_btn_mode_toggle.pressed.connect(_on_mode_toggle_pressed)
 	hbox.add_child(_btn_mode_toggle)
 
-	# ── Deploy Ambulance button ──────────────────────────────────────────
-	_btn_deploy_ambulance = Button.new()
-	_btn_deploy_ambulance.text = "🚑 Deploy Ambulance"
-	_btn_deploy_ambulance.custom_minimum_size = Vector2(180, 34)
-	_btn_deploy_ambulance.add_theme_font_size_override("font_size", 12)
-	_btn_deploy_ambulance.add_theme_color_override("font_color", Color.WHITE)
-	_btn_deploy_ambulance.add_theme_color_override("font_hover_color", Color.WHITE)
-	_btn_deploy_ambulance.add_theme_color_override("font_pressed_color", Color(0.9, 0.85, 0.85))
-	_btn_deploy_ambulance.add_theme_color_override("font_focus_color", Color.WHITE)
-	# Red background
-	var amb_style := StyleBoxFlat.new()
-	amb_style.bg_color = Color(0.7, 0.08, 0.08, 0.95)
-	amb_style.border_color = Color(1.0, 0.3, 0.3, 0.8)
-	amb_style.border_width_left = 2
-	amb_style.border_width_right = 2
-	amb_style.border_width_top = 2
-	amb_style.border_width_bottom = 2
-	amb_style.corner_radius_top_left = 6
-	amb_style.corner_radius_top_right = 6
-	amb_style.corner_radius_bottom_left = 6
-	amb_style.corner_radius_bottom_right = 6
-	amb_style.content_margin_left = 12
-	amb_style.content_margin_right = 12
-	amb_style.content_margin_top = 6
-	amb_style.content_margin_bottom = 6
-	_btn_deploy_ambulance.add_theme_stylebox_override("normal", amb_style)
-	var amb_hover := amb_style.duplicate()
-	amb_hover.bg_color = Color(0.85, 0.12, 0.12, 0.98)
-	amb_hover.border_color = Color(1.0, 0.4, 0.4, 1.0)
-	_btn_deploy_ambulance.add_theme_stylebox_override("hover", amb_hover)
-	var amb_pressed := amb_style.duplicate()
-	amb_pressed.bg_color = Color(0.5, 0.04, 0.04, 0.95)
-	_btn_deploy_ambulance.add_theme_stylebox_override("pressed", amb_pressed)
-	var amb_focus := amb_style.duplicate()
-	amb_focus.border_color = Color(1.0, 0.4, 0.4, 1.0)
-	_btn_deploy_ambulance.add_theme_stylebox_override("focus", amb_focus)
-	_btn_deploy_ambulance.pressed.connect(_on_deploy_ambulance_pressed)
-	hbox.add_child(_btn_deploy_ambulance)
-
 	# ── Pedestrian toggle button ────────────────────────────────────────
 	_btn_toggle_pedestrians = Button.new()
 	_btn_toggle_pedestrians.text = "🚶 Pedestrians: ON"
@@ -859,20 +816,6 @@ func _on_mode_toggle_pressed() -> void:
 		mode_switch_requested.emit("ai")
 
 
-func _on_deploy_ambulance_pressed() -> void:
-	## Deploy an ambulance from a random approach (or user can specify).
-	_ambulance_counter += 1
-	# Pick a random approach for variety
-	var approaches := ["north", "south", "east", "west"]
-	var approach: String = approaches[_ambulance_counter % approaches.size()]
-	emergency_spawn_requested.emit(approach)
-	# Brief visual feedback: disable button temporarily
-	_btn_deploy_ambulance.disabled = true
-	_btn_deploy_ambulance.text = "🚑 Deploying..."
-	get_tree().create_timer(2.0).timeout.connect(func():
-		_btn_deploy_ambulance.disabled = false
-		_btn_deploy_ambulance.text = "🚑 Deploy Ambulance"
-	)
 
 
 func _on_toggle_pedestrians_pressed() -> void:
@@ -1033,20 +976,8 @@ func update_display(data: Dictionary) -> void:
 			var stats_lbl: Label = ap["stats"]
 			stats_lbl.text = "Q: %d  W: %.0fs" % [int(q), w]
 
-	# Emergency banner
-	var emergency: Dictionary = data.get("emergency", {})
-	var emerg_active: bool = emergency.get("active", false)
-	_emergency_banner.visible = emerg_active
-
-	if emerg_active:
-		var emerg_approach: String = str(emergency.get("approach", "—")).to_upper()
-		var emerg_vid: String = str(emergency.get("vehicle_id", ""))
-		_lbl_emergency.text = "EMERGENCY VEHICLE — %s — %s" % [emerg_approach, emerg_vid]
-
-	# Preempted indicator
-	if data.get("preempted", false):
-		_lbl_ai_decision.text = "AI: PREEMPTED"
-		_lbl_ai_decision.add_theme_color_override("font_color", ACCENT_RED)
+	# (Ambulance feature removed 2026-06-13 — no emergency banner on the single
+	#  junction. The banner node is retained for the wrong-server warning.)
 
 	# ── Feed charts with new data points ──────────────────────────────────
 	if _chart_queue:
@@ -1164,25 +1095,8 @@ func _update_corridor_display(data: Dictionary) -> void:
 		if _chart_queue:
 			_chart_queue.add_point(chart_keys[i], total_q)
 
-	# ── Emergency banner (check any junction) ─────────────────────────────
-	var any_emergency: bool = false
-	var emerg_jid: String = ""
-	var emerg_approach: String = ""
-	var emerg_vid: String = ""
-
-	for jid in ["J0", "J1", "J2"]:
-		if junctions_data.has(jid):
-			var emerg: Dictionary = junctions_data[jid].get("emergency", {})
-			if emerg.get("active", false):
-				any_emergency = true
-				emerg_jid = jid
-				emerg_approach = str(emerg.get("approach", "")).to_upper()
-				emerg_vid = str(emerg.get("vehicle_id", ""))
-				break
-
-	_emergency_banner.visible = any_emergency
-	if any_emergency:
-		_lbl_emergency.text = "EMERGENCY — %s %s — %s" % [emerg_jid, emerg_approach, emerg_vid]
+	# (Ambulance feature removed 2026-06-13 — no per-junction emergency banner.
+	#  The banner node is retained for the wrong-server warning.)
 
 
 func reset_charts() -> void:

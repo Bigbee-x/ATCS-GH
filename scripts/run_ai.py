@@ -69,11 +69,11 @@ from dqn_agent     import DQNAgent
 from metrics_logger import MetricsLogger
 
 from traffic_env import (
-    TL_ID, INCOMING_EDGES, INCOMING_LANES, EMERGENCY_TYPE,
+    TL_ID, INCOMING_EDGES, INCOMING_LANES,
     NS_THROUGH, NS_LEFT, NS_YELLOW, EW_THROUGH, EW_LEFT, EW_YELLOW,
     NS_ALL, EW_ALL,
     PHASE_NAMES, PHASE_SIGNALS, GREEN_PHASES,
-    EDGE_TO_GREENS, ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
+    ACTION_TO_PHASE, ACTION_NAMES, ACTION_HOLD,
     STATE_SIZE, ACTION_SIZE,
     DECISION_INTERVAL, MIN_GREEN_THROUGH, MIN_GREEN_LEFT, YELLOW_DURATION,
     MAX_QUEUE, MAX_QUEUE_LANE, MAX_SPEED, MAX_WAIT, MAX_PHASE_T,
@@ -159,17 +159,6 @@ def build_state(phase: int,
 
     t_norm = np.float32(min(phase_timer / MAX_PHASE_T, 1.0))
 
-    # Emergency flags (4 dims)
-    emerg = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-    for i, edge in enumerate(INCOMING_EDGES):
-        try:
-            for vid in traci.edge.getLastStepVehicleIDs(edge):
-                if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                    emerg[i] = 1.0
-                    break
-        except traci.exceptions.TraCIException:
-            pass
-
     # Pedestrian waiting counts (4 dims)
     ped_counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
     for i, wa in enumerate(WALKING_AREAS):
@@ -179,39 +168,15 @@ def build_state(phase: int,
             pass
 
     state = np.concatenate([
-        lane_queues / MAX_QUEUE_LANE,   # 7
-        lane_speeds / MAX_SPEED,         # 7
-        lane_waits  / MAX_WAIT,          # 7
-        approach_queues / MAX_QUEUE,     # 4
-        phase_vec,                       # 8
-        [t_norm],                        # 1
-        emerg,                           # 4
-        ped_counts / MAX_PED_QUEUE,      # 4
-    ])                                   # = 42
+        lane_queues / MAX_QUEUE_LANE,   # 8 per-lane queues
+        lane_speeds / MAX_SPEED,         # 8 per-lane speeds
+        lane_waits  / MAX_WAIT,          # 8 per-lane waits
+        approach_queues / MAX_QUEUE,     # 4 approach queue totals
+        phase_vec,                       # 8 phase one-hot
+        [t_norm],                        # 1 phase timer
+        ped_counts / MAX_PED_QUEUE,      # 4 pedestrian waits
+    ])                                   # = 41
     return state.astype(np.float32)
-
-
-# -- Helper: emergency preemption ---------------------------------------------
-
-def check_emergency_preemption(phase: int,
-                                in_yellow: bool,
-                                next_green: int | None) -> tuple[bool, int | None]:
-    """Mirror of TrafficEnv._check_emergency_preemption()."""
-    for edge in INCOMING_EDGES:
-        try:
-            for vid in traci.edge.getLastStepVehicleIDs(edge):
-                if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                    continue
-                green_options = EDGE_TO_GREENS[edge]
-                already_serving = (
-                    phase in green_options
-                    or (in_yellow and next_green in green_options)
-                )
-                if not already_serving:
-                    return True, green_options[0]
-        except traci.exceptions.TraCIException:
-            pass
-    return False, None
 
 
 # -- Binary detection ----------------------------------------------------------
@@ -311,35 +276,18 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
             # -- Agent decision (every DECISION_INTERVAL seconds) ------
             if steps_in_block == 0:
                 state = build_state(phase, phase_timer, in_yellow)
+                action = agent.select_action(state)
 
-                preempt, target_green = check_emergency_preemption(
-                    phase, in_yellow, next_green if in_yellow else None
-                )
-                if preempt and target_green is not None:
-                    if target_green != phase and not in_yellow:
+                if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
+                    target = ACTION_TO_PHASE[action]
+                    if target != phase:
                         yellow_phase = _get_yellow_for_phase(phase)
-                        next_green = target_green
+                        next_green = target
                         traci.trafficlight.setRedYellowGreenState(
                             TL_ID, PHASE_SIGNALS[yellow_phase])
                         phase     = yellow_phase
                         in_yellow = True
                         yellow_cd = YELLOW_DURATION
-                else:
-                    # Suppress permissive-left actions (NS_ALL/EW_ALL) — the
-                    # baseline uses a dedicated protected-left phase, so we
-                    # force the AI to do the same for a fair comparison.
-                    action = agent.select_action(state)
-
-                    if action != ACTION_HOLD and _can_switch(phase, phase_timer, in_yellow):
-                        target = ACTION_TO_PHASE[action]
-                        if target != phase:
-                            yellow_phase = _get_yellow_for_phase(phase)
-                            next_green = target
-                            traci.trafficlight.setRedYellowGreenState(
-                                TL_ID, PHASE_SIGNALS[yellow_phase])
-                            phase     = yellow_phase
-                            in_yellow = True
-                            yellow_cd = YELLOW_DURATION
 
             # -- Yellow transition handling ----------------------------
             if in_yellow:

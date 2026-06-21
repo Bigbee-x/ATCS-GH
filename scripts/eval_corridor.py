@@ -24,7 +24,6 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from corridor_env import (
     CorridorEnv, JUNCTION_IDS, STATE_SIZE, ACTION_SIZE,
     ACTION_HOLD, ACTION_NAMES,
-    sanitize_action,
 )
 from dqn_agent import DQNAgent
 
@@ -64,10 +63,9 @@ def evaluate_model(model_dir: Path, seed: int = 42, gui: bool = False,
     step_count = 0
 
     while not done:
-        # Collapse permissive-left actions (NS_ALL/EW_ALL) to protected-through
-        # so eval mirrors the baseline's protected-left phasing.
+        # Protected-left action space — no sanitizing needed.
         actions = {
-            jid: sanitize_action(agents[jid].select_action(states[jid]))
+            jid: agents[jid].select_action(states[jid])
             for jid in JUNCTION_IDS
         }
         states, rewards, done, infos = env.step(actions)

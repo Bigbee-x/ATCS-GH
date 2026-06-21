@@ -12,18 +12,17 @@ Design principles:
     SUMO still runs at 1-second resolution internally.
   - A custom "ai_control" TL program (1M-second phase durations) prevents
     SUMO from ever auto-advancing phases. The agent is the sole controller.
-  - Emergency preemption is a HARD SAFETY LAYER inside step().
   - SUMO seed is parameterised for varied training episodes.
 
-State vector (42 dims):
-  [lq_0..lq_6,                  7  per-lane queue counts      (/ MAX_QUEUE_LANE)
-   ls_0..ls_6,                  7  per-lane mean speeds       (/ MAX_SPEED)
-   lw_0..lw_6,                  7  per-lane wait times        (/ MAX_WAIT)
+State vector (41 dims):
+  [lq_0..lq_7,                  8  per-lane queue counts      (/ MAX_QUEUE_LANE)
+   ls_0..ls_7,                  8  per-lane mean speeds       (/ MAX_SPEED)
+   lw_0..lw_7,                  8  per-lane wait times        (/ MAX_WAIT)
    q_N, q_S, q_E, q_W,         4  approach queue totals      (/ MAX_QUEUE)
    ph_0..ph_7,                  8  one-hot phase encoding (8 phases)
    t_phase,                     1  normalised time in phase   (/ MAX_PHASE_T)
-   em_N, em_S, em_E, em_W,     4  emergency vehicle flags (binary)
    pw_0..pw_3]                  4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
+  (Emergency-presence dims removed 2026-06-13 — ambulance feature torn out.)
 
   Lanes: ACH_N2J_1/2, ACH_S2J_1/2, AGG_E2J_1/2, GUG_W2J_1/2
   (Lane 0 on each edge is the pedestrian sidewalk)
@@ -106,7 +105,6 @@ INCOMING_LANES = [
     "GUG_W2J_1", "GUG_W2J_2",   # Guggisberg Street from west    (vehicle lanes)
 ]
 # Note: lane index 0 on each edge is the pedestrian sidewalk
-EMERGENCY_TYPE = "emergency"
 
 # Pedestrian crossing infrastructure (from rebuilt network with sidewalks)
 CROSSING_EDGES = [":J0_c0", ":J0_c1", ":J0_c2", ":J0_c3"]
@@ -267,8 +265,10 @@ _THRU_LANES_EW  = ("AGG_E2J_1", "GUG_W2J_1")
                             # veh/hr at ~21s; demand-matched split, not 50/50.
 
 # Exported constants for use by train_agent.py / run_ai.py
-STATE_SIZE  = 45   # 8*3 + 4 + 8(phases) + 1 + 4(emergency) + 4(ped_wait)
-ACTION_SIZE = 5   # was 7 — NS_ALL/EW_ALL removed (protected-left realism fix)
+STATE_SIZE  = 41   # 8*3 + 4(approach) + 8(phases) + 1(timer) + 4(ped_wait)
+                   # was 45 — the 4 emergency-presence dims were removed when the
+                   # ambulance-priority feature was torn out (2026-06-13).
+ACTION_SIZE = 5    # was 7 — NS_ALL/EW_ALL removed (protected-left realism fix)
 
 # ── Reward weights (redesigned 2026-06-09 — gridlock-trap fix) ────────────────
 # Diagnosis: the previous reward used ABSOLUTE queue (-0.2·queue) and ABSOLUTE
@@ -293,7 +293,6 @@ REWARD_CLIP   = 40.0   # per-decision-block reward saturates at ±this
 W_QUEUE_ABS   = 4.0    # congestion penalty     × (total_queue / QUEUE_REF)
 W_QUEUE_DELTA = 2.0    # queue-growth penalty    × (growth / QUEUE_REF)
 W_ARRIVED     = 1.0    # throughput reward       × n_arrived (~0-15 per block)
-W_EMERGENCY   = 8.0    # emergency-wait penalty  × n_emerg_waiting (bounded, strong)
 W_FLICKER     = 2.0    # anti-flicker penalty
 W_BALANCE     = 2.0    # fairness bonus          × balance∈[0,1]
 W_MAX_WAIT    = 4.0    # worst-approach penalty  × min(excess / WAIT_REF, 3)
@@ -345,7 +344,6 @@ class TrafficEnv:
         self.episode_rewards: list[float] = []
         self.episode_queues:  list[float] = []
         self.episode_waits:   list[float] = []
-        self.emergency_log:   dict[str, float] = {}  # vid → max_wait_s
 
     # ── Gym Interface ─────────────────────────────────────────────────────────
 
@@ -375,7 +373,6 @@ class TrafficEnv:
         self.episode_rewards  = []
         self.episode_queues   = []
         self.episode_waits    = []
-        self.emergency_log    = {}
 
         # Advance one step to populate TraCI state
         traci.simulationStep()
@@ -390,30 +387,22 @@ class TrafficEnv:
 
         The inner loop runs DECISION_INTERVAL SUMO steps. During this time:
           • Yellow transitions are handled automatically (no agent involvement).
-          • Emergency preemption may override the requested action.
           • Per-step metrics are accumulated for reward computation.
 
         Args:
-            action: 0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT,
-                    5=NS_ALL, 6=EW_ALL
+            action: 0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT
 
         Returns:
-            next_state  — 38-dim normalised state vector
+            next_state  — 41-dim normalised state vector
             reward      — scalar reward for this decision block
             done        — True if episode has ended
-            info        — diagnostic dict (phase, arrived, queues, preempted, ...)
+            info        — diagnostic dict (phase, arrived, queues, ...)
         """
         if not self._connected:
             raise RuntimeError("Call env.reset() before env.step()")
 
-        # ── Safety layer: emergency preemption ───────────────────────────────
-        preempted, forced_phase = self._check_emergency_preemption()
-        if preempted:
-            if forced_phase != self._phase and self._can_switch():
-                self._initiate_switch(target_green=forced_phase)
-
         # ── Initiate switch if agent chose a target phase ────────────────────
-        elif action != ACTION_HOLD and self._can_switch():
+        if action != ACTION_HOLD and self._can_switch():
             target = ACTION_TO_PHASE.get(action)
             if target is not None and target != self._phase:
                 self._initiate_switch(target_green=target)
@@ -421,7 +410,6 @@ class TrafficEnv:
         # ── Advance DECISION_INTERVAL simulation steps ────────────────────────
         # Metrics accumulated over all steps in this block
         block_arrived   = 0
-        block_emerg_max = 0
         final_queues    = [0.0] * len(INCOMING_EDGES)
         final_waits     = [0.0] * len(INCOMING_EDGES)
 
@@ -438,17 +426,6 @@ class TrafficEnv:
 
             # Collect per-step arrivals
             block_arrived += traci.simulation.getArrivedNumber()
-
-            # Emergency vehicles stopped at red this step
-            n_emerg = sum(
-                1 for vid in traci.vehicle.getIDList()
-                if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE
-                and traci.vehicle.getSpeed(vid) < 0.1
-            )
-            block_emerg_max = max(block_emerg_max, n_emerg)
-
-            # Track emergency vehicle max wait (for episode log)
-            self._track_emergency_vehicles()
 
             # Check if simulation ran out of vehicles early
             if traci.simulation.getMinExpectedNumber() == 0:
@@ -474,8 +451,7 @@ class TrafficEnv:
             total_queue        = total_queue,
             prev_total_queue   = self._prev_total_queue,
             n_arrived          = block_arrived,
-            n_emerg_waiting    = block_emerg_max,
-            switched_too_soon  = (action != ACTION_HOLD and not preempted
+            switched_too_soon  = (action != ACTION_HOLD
                                   and self._phase_timer < min_g),
             queue_distribution = final_queues,
             wait_distribution  = final_waits,
@@ -505,7 +481,6 @@ class TrafficEnv:
             "total_arrived": self.total_arrived,
             "queues":        final_queues,
             "avg_wait":      avg_wait,
-            "preempted":     preempted,
             "reward":        reward,
         }
 
@@ -556,22 +531,18 @@ class TrafficEnv:
         # Normalised time in current phase
         t_norm = np.float32(min(self._phase_timer / MAX_PHASE_T, 1.0))
 
-        # Emergency vehicle presence per approach (binary, 4 dims)
-        emerg_flags = self._get_emergency_flags()
-
         # Pedestrian waiting counts per walking area (4 dims)
         ped_counts = self._get_pedestrian_counts()
 
         state = np.concatenate([
-            lane_queues / MAX_QUEUE_LANE,   # 7 values
-            lane_speeds / MAX_SPEED,         # 7 values
-            lane_waits  / MAX_WAIT,          # 7 values
-            approach_queues / MAX_QUEUE,     # 4 values
-            phase_vec,                       # 8 values
-            [t_norm],                        # 1 value
-            emerg_flags,                     # 4 values
-            ped_counts / MAX_PED_QUEUE,      # 4 values
-        ])                                   # = 42 total
+            lane_queues / MAX_QUEUE_LANE,   # 8 per-lane queues
+            lane_speeds / MAX_SPEED,         # 8 per-lane speeds
+            lane_waits  / MAX_WAIT,          # 8 per-lane waits
+            approach_queues / MAX_QUEUE,     # 4 approach queue totals
+            phase_vec,                       # 8 phase one-hot
+            [t_norm],                        # 1 phase timer
+            ped_counts / MAX_PED_QUEUE,      # 4 pedestrian waits
+        ])                                   # = 41 total (emergency dims removed)
         return state.astype(np.float32)
 
     # ── Reward Computation ────────────────────────────────────────────────────
@@ -580,7 +551,6 @@ class TrafficEnv:
                         total_queue:       float,
                         prev_total_queue:  float,
                         n_arrived:         int,
-                        n_emerg_waiting:   int,
                         switched_too_soon: bool,
                         queue_distribution: list[float],
                         wait_distribution:  list[float] | None = None,
@@ -591,12 +561,11 @@ class TrafficEnv:
         1. Absolute queue penalty  — penalises sustained congestion
         2. Queue growth penalty    — penalises net queue increase (asymmetric)
         3. Throughput bonus        — rewards vehicles completing journeys
-        4. Emergency penalty       — large negative when ambulance waits at red
-        5. Flicker penalty         — discourages rapid phase switching
-        6. Balance bonus           — rewards equal queue distribution across approaches
-        7. Max-wait penalty        — penalises any single approach waiting too long
+        4. Flicker penalty         — discourages rapid phase switching
+        5. Balance bonus           — rewards equal queue distribution across approaches
+        6. Max-wait penalty        — penalises any single approach waiting too long
                                      (prevents E/W starvation from N/S throughput bias)
-        8. Pedestrian wait penalty — penalises waiting pedestrians at crossings
+        7. Pedestrian wait penalty — penalises waiting pedestrians at crossings
         """
         # All penalties are NORMALISED to a reference scale so heavy traffic
         # produces a finite, discriminative gradient (see weight-block note).
@@ -613,10 +582,7 @@ class TrafficEnv:
         # 3. Throughput (accumulated over the DECISION_INTERVAL steps)
         r_thru  = W_ARRIVED * n_arrived
 
-        # 4. Emergency vehicle waiting (strong, bounded signal)
-        r_emerg = -W_EMERGENCY * n_emerg_waiting
-
-        # 5. Flicker penalty
+        # 4. Flicker penalty
         r_flick = -W_FLICKER if switched_too_soon else 0.0
 
         # 6. Balance: lower variance in queue distribution = higher bonus
@@ -640,7 +606,7 @@ class TrafficEnv:
         # 8. Pedestrian waiting penalty — normalised + capped
         r_ped = -W_PED_WAIT * min(n_ped_waiting / PED_REF, 2.0)
 
-        total = (r_abs + r_delta + r_thru + r_emerg
+        total = (r_abs + r_delta + r_thru
                  + r_flick + r_balance + r_max_wait + r_ped)
 
         # Clip so cross-scenario Q-targets stay well-conditioned and no single
@@ -671,7 +637,6 @@ class TrafficEnv:
         max-pressure thrashing (gridlock from short greens) and all-green
         phases (left-turners blocking the junction box against oncoming
         through). This one holds long greens AND keeps conflicts protected.
-        Emergency preemption is handled by the env's safety layer, not here.
         """
         ns_thru = self._lane_halts(_THRU_LANES_NS)
         ew_thru = self._lane_halts(_THRU_LANES_EW)
@@ -894,19 +859,6 @@ class TrafficEnv:
             }
         return result
 
-    def _get_emergency_flags(self) -> np.ndarray:
-        """Return binary array: 1.0 if any emergency vehicle is on each approach."""
-        flags = np.zeros(len(INCOMING_EDGES), dtype=np.float32)
-        for i, edge in enumerate(INCOMING_EDGES):
-            try:
-                for vid in traci.edge.getLastStepVehicleIDs(edge):
-                    if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE:
-                        flags[i] = 1.0
-                        break
-            except traci.exceptions.TraCIException:
-                pass
-        return flags
-
     def _get_pedestrian_counts(self) -> np.ndarray:
         """Return pedestrian count at each of the 4 junction walking areas."""
         counts = np.zeros(len(WALKING_AREAS), dtype=np.float32)
@@ -917,41 +869,3 @@ class TrafficEnv:
                 pass
         return counts
 
-    def _check_emergency_preemption(self) -> tuple[bool, int | None]:
-        """
-        Check whether an emergency vehicle is approaching on a currently-red
-        approach. If so, return (True, target_green_phase).
-
-        Only preempts if the emergency vehicle is on an INCOMING edge AND
-        none of the green phases for that edge are currently active.
-        Prefers NS_THROUGH / EW_THROUGH for emergency vehicles.
-        """
-        for edge in INCOMING_EDGES:
-            try:
-                for vid in traci.edge.getLastStepVehicleIDs(edge):
-                    if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                        continue
-
-                    greens_for_edge = EDGE_TO_GREENS[edge]
-                    already_serving = (
-                        self._phase in greens_for_edge
-                        or (self._in_yellow and self._next_green in greens_for_edge)
-                    )
-                    if not already_serving:
-                        # Prefer the THROUGH phase for emergency vehicles
-                        return True, greens_for_edge[0]
-
-            except traci.exceptions.TraCIException:
-                pass
-
-        return False, None
-
-    def _track_emergency_vehicles(self) -> None:
-        """Update the per-vehicle max accumulated wait time in emergency_log."""
-        for vid in traci.vehicle.getIDList():
-            if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                continue
-            wait = traci.vehicle.getAccumulatedWaitingTime(vid)
-            prev = self.emergency_log.get(vid, 0.0)
-            if wait > prev:
-                self.emergency_log[vid] = wait
