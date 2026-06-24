@@ -45,7 +45,7 @@ const PITCH_MIN: float = -0.4    # Don't go below ground
 const PITCH_MAX: float = 0.8     # Don't go too overhead
 
 # Camera pivot — center of the corridor
-var _camera_pivot: Vector3 = Vector3(0, 0, 18.0)  # Center on J1
+var _camera_pivot: Vector3 = Vector3(0, 0, 30.0)  # Center on J1
 
 # ── Packet counter ────────────────────────────────────────────────────────────
 var _packets_received: int = 0
@@ -345,7 +345,7 @@ func _apply_camera() -> void:
 
 
 func _reset_camera() -> void:
-	_camera_pivot = Vector3(0, 0, 18.0)  # Center on J1
+	_camera_pivot = Vector3(0, 0, 30.0)  # Center on J1
 	_orbit_yaw = 0.0
 	_orbit_pitch = 0.0
 	_zoom_level = 1.0

@@ -88,11 +88,11 @@ const C_CROSS_ROAD: float = 1489.6 # Junction edge to E/W boundary
 
 ## ── Corridor Godot geometry (must match CorridorBuilder.gd) ────────────────
 const C_GD_J0_Z: float = 0.0
-const C_GD_J1_Z: float = 18.0
-const C_GD_J2_Z: float = 36.0
+const C_GD_J1_Z: float = 30.0
+const C_GD_J2_Z: float = 60.0
 const C_GD_JUNC_HALF: float = 3.0   # JUNCTION_SIZE / 2
-const C_GD_ROAD_J0J1: float = 12.0  # 15.0 - 3.0
-const C_GD_ROAD_J1J2: float = 12.0  # 33.0 - 21.0
+const C_GD_ROAD_J0J1: float = 24.0  # 27.0 - 3.0
+const C_GD_ROAD_J1J2: float = 24.0  # 57.0 - 33.0
 const C_GD_BOUNDARY: float = 30.0   # Boundary road length in Godot
 const C_GD_CROSS_ARM: float = 30.0  # Cross-street arm length in Godot
 
@@ -109,7 +109,7 @@ const SJ_BOUND: float = 93.5          # 3.5 + 90
 const SJ_FADE_DIST: float = 15.0      # Start fading 15 units before edge
 ## Corridor bounds
 const CR_Z_MIN: float = -33.0         # J0_Z - junc_half - boundary_road
-const CR_Z_MAX: float = 69.0          # J2_Z + junc_half + boundary_road
+const CR_Z_MAX: float = 93.0          # J2_Z + junc_half + boundary_road
 const CR_X_BOUND: float = 33.0        # junc_half + cross_arm
 const CR_FADE_DIST: float = 12.0      # Start fading 12 units before edge
 

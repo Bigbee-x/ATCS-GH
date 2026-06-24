@@ -33,7 +33,7 @@ const SIDEWALK_HEIGHT   := 0.15
 const SIDEWALK_WIDTH    := 0.5
 
 # NS corridor road (2 lanes each direction = 4 lanes total)
-const NS_ROAD_WIDTH     := 5.0
+const NS_ROAD_WIDTH     := 6.0
 
 # Cross-street profiles per junction
 # J0: E=Aggrey(2lane), W=Guggisberg(1lane)
@@ -42,9 +42,9 @@ const NS_ROAD_WIDTH     := 5.0
 
 # Junction centers (Godot Z)
 const J0_Z := 0.0
-const J1_Z := 18.0
-const J2_Z := 36.0
-const JUNCTION_CENTERS: Array = [0.0, 18.0, 36.0]
+const J1_Z := 30.0
+const J2_Z := 60.0
+const JUNCTION_CENTERS: Array = [0.0, 30.0, 60.0]
 
 # Road arm lengths
 const BOUNDARY_ARM      := 30.0   # Boundary road arms
@@ -253,7 +253,7 @@ func _create_materials() -> void:
 
 func _build_ground() -> void:
 	var ground := CSGBox3D.new()
-	ground.size = Vector3(80.0, 0.02, 110.0)
+	ground.size = Vector3(90.0, 0.02, 150.0)
 	ground.position = Vector3(0, -0.06, J1_Z)  # Center on corridor midpoint
 	ground.material = _mat_grass
 	ground.name = "Ground"
@@ -577,12 +577,19 @@ func _build_traffic_lights(jid: String, center_z: float) -> void:
 	var e_offset: float = widths["east"] / 2.0 + 0.3
 	var w_offset: float = widths["west"] / 2.0 + 0.3
 
+	const POLE_HEIGHT: float = 5.5
+	const ARM_LEN: float = 3.7
+
 	# X positions mirrored (negated) for right-hand traffic visual mapping.
+	# "arm" = local-X sign so the mast arm reaches OVER the correct road:
+	#   N/S poles sit beside the corridor (centre x=0) → arm toward local -X;
+	#   E/W poles sit beside the cross-street (centre z=center_z), and the
+	#   corridor's E/W rotations are mirrored vs the single junction → arm +X.
 	var configs: Dictionary = {
-		"north": {"pos": Vector3(ns_offset, 0, center_z + half_j), "rot_y": 0.0},
-		"south": {"pos": Vector3(-ns_offset, 0, center_z - half_j), "rot_y": PI},
-		"east":  {"pos": Vector3(-half_j, 0, center_z + e_offset), "rot_y": PI / 2.0},
-		"west":  {"pos": Vector3(half_j, 0, center_z - w_offset), "rot_y": -PI / 2.0},
+		"north": {"pos": Vector3(ns_offset, 0, center_z + half_j), "rot_y": 0.0, "arm": -1.0},
+		"south": {"pos": Vector3(-ns_offset, 0, center_z - half_j), "rot_y": PI, "arm": -1.0},
+		"east":  {"pos": Vector3(-half_j, 0, center_z + e_offset), "rot_y": PI / 2.0, "arm": 1.0},
+		"west":  {"pos": Vector3(half_j, 0, center_z - w_offset), "rot_y": -PI / 2.0, "arm": 1.0},
 	}
 
 	if not _lights.has(jid):
@@ -596,75 +603,187 @@ func _build_traffic_lights(jid: String, center_z: float) -> void:
 		pole_root.name = "TL_%s_%s" % [jid, approach]
 		add_child(pole_root)
 
-		# Pole
+		var s: float = cfg["arm"]
+
+		# Vertical pole (5.5 m)
 		var pole := CSGCylinder3D.new()
-		pole.radius = 0.04
-		pole.height = 2.5
-		pole.position = Vector3(0, 1.25, 0)
+		pole.radius = 0.1
+		pole.height = POLE_HEIGHT
+		pole.position = Vector3(0, POLE_HEIGHT / 2.0, 0)
 		pole.material = _mat_pole
+		pole.name = "Pole"
 		pole_root.add_child(pole)
 
-		# Housing
-		var housing := CSGBox3D.new()
-		housing.size = Vector3(0.25, 0.8, 0.16)
-		housing.position = Vector3(0, 2.3, 0.09)
-		housing.material = _mat_pole
-		pole_root.add_child(housing)
+		# Horizontal mast arm — reaches OVER the road in local s·X
+		var arm := CSGBox3D.new()
+		arm.size = Vector3(ARM_LEN, 0.14, 0.14)
+		arm.position = Vector3(s * ARM_LEN / 2.0, POLE_HEIGHT, 0)
+		arm.material = _mat_pole
+		arm.name = "MastArm"
+		pole_root.add_child(arm)
 
-		# Bulbs
-		var bulb_data: Array = [
-			{"name": "red",    "y": 2.55},
-			{"name": "yellow", "y": 2.30},
-			{"name": "green",  "y": 2.05},
-		]
+		# Diagonal brace
+		var brace_h: float = ARM_LEN * 0.55
+		var brace_v: float = 1.6
+		var brace_len: float = sqrt(brace_h * brace_h + brace_v * brace_v)
+		var brace := CSGBox3D.new()
+		brace.size = Vector3(brace_len, 0.06, 0.06)
+		brace.rotation.z = s * atan2(brace_v, brace_h)
+		brace.position = Vector3(s * brace_h / 2.0, POLE_HEIGHT - brace_v / 2.0, 0)
+		brace.material = _mat_pole
+		brace.name = "Brace"
+		pole_root.add_child(brace)
 
-		var approach_lights: Dictionary = {}
-		for bd in bulb_data:
-			var bulb := CSGSphere3D.new()
-			bulb.radius = 0.07
-			bulb.radial_segments = 10
-			bulb.rings = 5
-			bulb.position = Vector3(0, bd["y"], 0.18)
-			bulb.material = _mat_light_off
-			bulb.name = "Bulb_%s" % bd["name"]
-			pole_root.add_child(bulb)
+		# Dual signal heads: overhead 3-aspect + left-arrow doghouse hung from the
+		# mast arm, plus a compact 2-aspect head on the pole at driver height.
+		var head_over: Dictionary = _build_overhead_head(pole_root, s * (ARM_LEN - 0.45), POLE_HEIGHT)
+		var head_pole: Dictionary = _build_pole_head(pole_root, 3.5)
+		head_over["pole"] = head_pole
+		_lights[jid][approach] = head_over
 
-			var glow := OmniLight3D.new()
-			glow.position = Vector3(0, bd["y"], 0.18)
-			glow.light_energy = 0.0
-			glow.light_color = Color(1, 1, 1)
-			glow.omni_range = 2.0
-			glow.omni_attenuation = 2.0
-			glow.shadow_enabled = false
-			glow.name = "Glow_%s" % bd["name"]
-			pole_root.add_child(glow)
 
-			approach_lights[bd["name"]] = {"mesh": bulb, "glow": glow}
+func _build_overhead_head(pole_root: Node3D, cx: float, arm_y: float) -> Dictionary:
+	## Horizontal 3-aspect signal head hung under the mast arm at local x = cx,
+	## bulbs side-by-side plus the left-arrow "doghouse" unit below. Bulbs face
+	## local +Z (the approach). Ported from the single-junction Intersection.gd.
+	var head: Dictionary = {}
+	var hub_y: float = arm_y - 0.32
 
-		# Arrow
-		var arrow_housing := CSGBox3D.new()
-		arrow_housing.size = Vector3(0.25, 0.3, 0.16)
-		arrow_housing.position = Vector3(0, 1.7, 0.09)
-		arrow_housing.material = _mat_pole
-		pole_root.add_child(arrow_housing)
+	var housing := CSGBox3D.new()
+	housing.size = Vector3(1.30, 0.45, 0.30)
+	housing.position = Vector3(cx, hub_y, 0)
+	housing.material = _mat_pole
+	housing.name = "Housing_Over"
+	pole_root.add_child(housing)
 
-		var arrow_mesh := CSGBox3D.new()
-		arrow_mesh.size = Vector3(0.13, 0.13, 0.03)
-		arrow_mesh.position = Vector3(0, 1.7, 0.19)
-		arrow_mesh.material = _mat_arrow_off
-		arrow_mesh.name = "Arrow"
-		pole_root.add_child(arrow_mesh)
+	var visor := CSGBox3D.new()
+	visor.size = Vector3(1.40, 0.06, 0.40)
+	visor.position = Vector3(cx, hub_y + 0.26, 0.15)
+	visor.material = _mat_pole
+	visor.name = "Visor_Over"
+	pole_root.add_child(visor)
 
-		var arrow_glow := OmniLight3D.new()
-		arrow_glow.position = Vector3(0, 1.7, 0.19)
-		arrow_glow.light_energy = 0.0
-		arrow_glow.light_color = Color(0, 1, 0.3)
-		arrow_glow.omni_range = 1.5
-		arrow_glow.shadow_enabled = false
-		pole_root.add_child(arrow_glow)
+	var bulb_data: Array = [
+		{"name": "red",    "x": cx + 0.40, "color": Color(1, 0, 0)},
+		{"name": "yellow", "x": cx,        "color": Color(1, 0.85, 0)},
+		{"name": "green",  "x": cx - 0.40, "color": Color(0, 1, 0.2)},
+	]
+	for bd in bulb_data:
+		var bulb := CSGSphere3D.new()
+		bulb.radius = 0.13
+		bulb.radial_segments = 12
+		bulb.rings = 6
+		bulb.position = Vector3(bd["x"], hub_y, 0.18)
+		bulb.material = _mat_light_off
+		bulb.name = "Bulb_%s_Over" % bd["name"]
+		pole_root.add_child(bulb)
 
-		approach_lights["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
-		_lights[jid][approach] = approach_lights
+		var glow := OmniLight3D.new()
+		glow.position = Vector3(bd["x"], hub_y, 0.18)
+		glow.light_energy = 0.0
+		glow.light_color = bd["color"]
+		glow.omni_range = 5.0
+		glow.omni_attenuation = 1.5
+		glow.shadow_enabled = false
+		glow.name = "Glow_%s_Over" % bd["name"]
+		pole_root.add_child(glow)
+
+		head[bd["name"]] = {"mesh": bulb, "glow": glow}
+
+	# Left-turn arrow doghouse below the horizontal head.
+	var arrow_y: float = hub_y - 0.48
+
+	var arrow_housing := CSGBox3D.new()
+	arrow_housing.size = Vector3(0.38, 0.38, 0.28)
+	arrow_housing.position = Vector3(cx, arrow_y, 0)
+	arrow_housing.material = _mat_pole
+	arrow_housing.name = "ArrowHousing_Over"
+	pole_root.add_child(arrow_housing)
+
+	var arrow_visor := CSGBox3D.new()
+	arrow_visor.size = Vector3(0.46, 0.04, 0.34)
+	arrow_visor.position = Vector3(cx, arrow_y + 0.20, 0.13)
+	arrow_visor.material = _mat_pole
+	arrow_visor.name = "ArrowVisor_Over"
+	pole_root.add_child(arrow_visor)
+
+	var arrow_mesh := CSGPolygon3D.new()
+	arrow_mesh.polygon = PackedVector2Array([
+		Vector2(-0.11,  0.028),
+		Vector2( 0.02,  0.028),
+		Vector2( 0.02,  0.085),
+		Vector2( 0.14,  0.000),
+		Vector2( 0.02, -0.085),
+		Vector2( 0.02, -0.028),
+		Vector2(-0.11, -0.028),
+	])
+	arrow_mesh.depth = 0.04
+	arrow_mesh.position = Vector3(cx, arrow_y, 0.14)
+	arrow_mesh.material = _mat_arrow_off
+	arrow_mesh.name = "Arrow_Over"
+	pole_root.add_child(arrow_mesh)
+
+	var arrow_glow := OmniLight3D.new()
+	arrow_glow.position = Vector3(cx, arrow_y, 0.16)
+	arrow_glow.light_energy = 0.0
+	arrow_glow.light_color = Color(0, 1, 0.3)
+	arrow_glow.omni_range = 3.5
+	arrow_glow.omni_attenuation = 1.5
+	arrow_glow.shadow_enabled = false
+	arrow_glow.name = "ArrowGlow_Over"
+	pole_root.add_child(arrow_glow)
+
+	head["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
+	return head
+
+
+func _build_pole_head(pole_root: Node3D, top_y: float) -> Dictionary:
+	## Compact 2-aspect head (red over green) on the pole at driver height.
+	## Serves through/right traffic only — no yellow, no arrow (left-turners read
+	## the overhead arrow). Ported from the single-junction Intersection.gd.
+	var head: Dictionary = {}
+
+	var housing := CSGBox3D.new()
+	housing.size = Vector3(0.30, 0.72, 0.24)
+	housing.position = Vector3(0, top_y - 0.36, 0.12)
+	housing.material = _mat_pole
+	housing.name = "Housing_Pole"
+	pole_root.add_child(housing)
+
+	var visor := CSGBox3D.new()
+	visor.size = Vector3(0.36, 0.04, 0.28)
+	visor.position = Vector3(0, top_y + 0.02, 0.20)
+	visor.material = _mat_pole
+	visor.name = "Visor_Pole"
+	pole_root.add_child(visor)
+
+	var bulb_data: Array = [
+		{"name": "red",   "y": top_y - 0.19, "color": Color(1, 0, 0)},
+		{"name": "green", "y": top_y - 0.53, "color": Color(0, 1, 0.2)},
+	]
+	for bd in bulb_data:
+		var bulb := CSGSphere3D.new()
+		bulb.radius = 0.10
+		bulb.radial_segments = 12
+		bulb.rings = 6
+		bulb.position = Vector3(0, bd["y"], 0.27)
+		bulb.material = _mat_light_off
+		bulb.name = "Bulb_%s_Pole" % bd["name"]
+		pole_root.add_child(bulb)
+
+		var glow := OmniLight3D.new()
+		glow.position = Vector3(0, bd["y"], 0.27)
+		glow.light_energy = 0.0
+		glow.light_color = bd["color"]
+		glow.omni_range = 3.5
+		glow.omni_attenuation = 1.5
+		glow.shadow_enabled = false
+		glow.name = "Glow_%s_Pole" % bd["name"]
+		pole_root.add_child(glow)
+
+		head[bd["name"]] = {"mesh": bulb, "glow": glow}
+
+	return head
 
 
 func _update_junction_lights(jid: String, phase: int) -> void:
@@ -714,6 +833,8 @@ func _set_light(jid: String, approach: String, active_color: String) -> void:
 	if not _lights.has(jid) or not _lights[jid].has(approach):
 		return
 	var bulbs: Dictionary = _lights[jid][approach]
+
+	# ── Overhead horizontal head (3 aspects) ─────────────────────────────
 	for color_name in ["red", "yellow", "green"]:
 		var is_on: bool = (color_name == active_color)
 		var mesh = bulbs[color_name]["mesh"]
@@ -722,19 +843,37 @@ func _set_light(jid: String, approach: String, active_color: String) -> void:
 			match color_name:
 				"red":
 					mesh.material = _mat_red_on
-					glow.light_energy = 2.0
+					glow.light_energy = 3.5
 					glow.light_color = Color(1, 0, 0)
 				"yellow":
 					mesh.material = _mat_yellow_on
-					glow.light_energy = 2.0
+					glow.light_energy = 3.5
 					glow.light_color = Color(1, 0.85, 0)
 				"green":
 					mesh.material = _mat_green_on
-					glow.light_energy = 2.0
+					glow.light_energy = 3.5
 					glow.light_color = Color(0, 1, 0.2)
 		else:
 			mesh.material = _mat_light_off
 			glow.light_energy = 0.0
+
+	# ── Pole-mounted 2-aspect head (through/right traffic only) ──────────
+	# Green only on a through-green; red on red AND during yellow clearance
+	# (a 2-aspect head has no yellow). Left-arrow phase shows red here.
+	if bulbs.has("pole"):
+		var pole: Dictionary = bulbs["pole"]
+		var p_green_on: bool = (active_color == "green")
+		var p_red_on: bool = not p_green_on
+
+		var pr_mesh = pole["red"]["mesh"]
+		var pr_glow: OmniLight3D = pole["red"]["glow"]
+		pr_mesh.material = _mat_red_on if p_red_on else _mat_light_off
+		pr_glow.light_energy = 2.5 if p_red_on else 0.0
+
+		var pg_mesh = pole["green"]["mesh"]
+		var pg_glow: OmniLight3D = pole["green"]["glow"]
+		pg_mesh.material = _mat_green_on if p_green_on else _mat_light_off
+		pg_glow.light_energy = 2.5 if p_green_on else 0.0
 
 
 func _set_arrow(jid: String, approach: String, is_on: bool) -> void:
