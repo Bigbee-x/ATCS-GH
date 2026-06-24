@@ -78,9 +78,9 @@ selection fixed v3's evening gridlock (1084s → 239s greedy). Committed on
 branch `feat/emergency-removal-continuous-day`. Re-run anytime with
 `python scripts/_eval_best.py`.
 
-## Corridor (3-junction, `ai/corridor_env.py`) — code-modernized, NOT trained
+## Corridor (3-junction, `ai/corridor_env.py`) — TRAINED 2026-06-23 (PR #9)
 Brought in line 2026-06-13 (protected-left 5 actions, emergency removed,
-STATE_SIZE 46, per-junction `expert_action`). **Has no trained models.**
+STATE_SIZE 46, per-junction `expert_action`). **Now TRAINED (PR #9).**
 **Phase 0–3 done (2026-06-21, PR #4–#7):** (0) local reward ported to the
 bounded/normalised + clipped form (MAX_QUEUE 150/lane 75/wait 1200, REWARD_CLIP
 ±40); (1) `run_corridor_baseline.py` → protected-left (NS 40/15, EW 25/10,
@@ -90,12 +90,14 @@ pristine in git history + gitignored `simulation/_pre_recal_corridor/`); (3)
 `train_corridor.py` ported to the v4 methodology — per-junction `expert_action`
 warm-start (EXPERT_FRAC 0.70), maximin best-model selection over JUNCTIONS
 (worst-junction rolling wait ÷ baseline, floored 60s, ε-gated ≤0.10), scenario
-rotation (1 today). Smoke-verified (2 eps, ~28s/ep on MPS; best-selection needs
-~91+ eps for ε≤0.10). **ONLY Phase 4 left:** run the multi-agent training
-(~200 eps ≈ 1.5h) + `eval_corridor.py --compare` vs the protected baseline, ship
-if it wins. Corridor still has NO trained models. Optional: evening/off-peak
-scenarios for richer rotation. Separate, currently-unused module — the single
-junction is the flagship.
+rotation (1 today). **Phase 4 DONE (2026-06-23, PR #9):** trained 3 independent
+agents; official greedy eval on the morning scenario = corridor **13.6s vs
+143.1s** protected baseline (**−90.5%**; J0 18.5 / J1 11.1 / J2 11.1; throughput
+4150 vs 4034). Best saved at ep 122 (worst junction 0.144× baseline, ε≈0.045).
+Deployable models force-tracked at `ai/checkpoints/corridor/best_J{0,1,2}.pth`
+(re-eval: `python scripts/eval_corridor.py --compare`). Optional next:
+evening/off-peak scenarios for richer rotation. Separate module — the single
+junction is still the flagship.
 
 ## Git
 Default branch `main`; flagship merged via PR #1 (`5eff94f`); v4 (emergency
@@ -104,8 +106,7 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 `.pth` files mid-retrain (best_model.pth is written live during training).
 
 ## Queued / TODO
-- Corridor full revival — Phases 0–3 DONE (reward, protected baseline, demand
-  recal, v4 train-methodology); **only Phase 4 left** = run the multi-agent
-  training (~200 eps ≈ 1.5h) + eval + ship. Optional: evening/off-peak scenarios.
-  (See the corridor section.)
+- Corridor full revival — **DONE** (Phases 0–4 + visualizer): trained, official
+  greedy eval corridor 13.6s vs 143.1s baseline (−90.5%), models shipped (PR #9).
+  Optional follow-ups: evening/off-peak corridor scenarios for richer rotation.
 - `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
