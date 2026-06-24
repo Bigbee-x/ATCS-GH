@@ -41,7 +41,13 @@ hard-coded override, not learned — removing it makes the AI's results honest).
 - `visualizer/` — Godot 4.6.3 project (open + F5; binary at
   `~/Downloads/Godot.app/Contents/MacOS/Godot`). Kenney Car Kit vehicles,
   dual signal heads (horizontal overhead + 2-light pole head), township with
-  setbacks + gutters.
+  setbacks + gutters. The corridor scene (`CorridorMain`) now matches: dual
+  signal heads ported to `CorridorBuilder`, junctions stretched (spacing 18→30)
+  + road widened for clarity (PR #8). **Gotcha:** the corridor junction Z anchors
+  + road-segment lengths are TRIPLICATED across `CorridorBuilder` /
+  `VehicleManager` / `PedestrianManager` — change them in lockstep or vehicles/
+  pedestrians drift off the lanes. (No Godot automation here — parse-check with
+  `Godot --headless --check-only --script`, then verify visually.)
 
 ## Scenarios (`simulation/scenarios/`)
 `continuous_day` (the centerpiece — quiet→N-heavy morning→lull→S-heavy

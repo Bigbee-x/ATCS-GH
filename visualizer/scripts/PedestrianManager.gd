@@ -55,15 +55,15 @@ const SIDEWALK_WIDTH    := 1.5
 # ── Corridor mode ────────────────────────────────────────────────────────────
 var corridor_mode: bool = false
 # Corridor geometry constants (must match CorridorBuilder.gd)
-const C_NS_ROAD_WIDTH   := 5.0
+const C_NS_ROAD_WIDTH   := 6.0
 const C_JUNCTION_SIZE   := 6.0
 const C_JUNCTION_HALF   := 3.0
 const C_SIDEWALK_WIDTH  := 0.5
 const C_CROSS_ARM       := 30.0
 const C_BOUNDARY_ARM    := 30.0
 const C_J0_Z            := 0.0
-const C_J1_Z            := 18.0
-const C_J2_Z            := 36.0
+const C_J1_Z            := 30.0
+const C_J2_Z            := 60.0
 
 # ── Corridor SUMO piecewise mapping (from corridor.net.xml) ─────────────────
 # Raw junction Y positions (offset-subtracted)
@@ -83,8 +83,8 @@ const C_SUMO_NORTH_ROAD: float = 1492.8
 const C_SUMO_CROSS_ROAD: float = 1489.6
 # Godot corridor targets
 const C_GD_JUNC_HALF: float = 3.0
-const C_GD_ROAD_J0J1: float = 12.0
-const C_GD_ROAD_J1J2: float = 12.0
+const C_GD_ROAD_J0J1: float = 24.0
+const C_GD_ROAD_J1J2: float = 24.0
 const C_GD_BOUNDARY: float = 30.0
 
 # ── Appearance palettes ───────────────────────────────────────────────────────
