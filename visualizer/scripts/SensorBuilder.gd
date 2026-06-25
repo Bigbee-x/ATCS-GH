@@ -64,16 +64,18 @@ func _ready() -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func attach_to_intersection(intersection: Node3D) -> void:
-	## Walk each TrafficLight_<approach> child on Intersection and attach a
-	## sensor suite. Called by Main.gd in _ready() after Intersection has
-	## finished building (children's _ready runs before parent's, so by the
-	## time we're called the poles exist).
-	for approach in APPROACHES:
-		var pole: Node3D = intersection.get_node_or_null("TrafficLight_%s" % approach)
-		if pole == null:
-			push_warning("[SensorBuilder] missing TrafficLight_%s — skipping" % approach)
-			continue
-		_attach_sensors_to_pole(pole)
+	## Attach a sensor suite to every signal pole on `intersection`. Single-junction
+	## poles are named TrafficLight_<approach>; corridor poles TL_<jid>_<approach>.
+	## We walk all children (not a fixed approach list) so both layouts work.
+	## Called in _ready() after Intersection has built (child _ready runs first).
+	var n: int = 0
+	for child in intersection.get_children():
+		var nm: String = String(child.name)
+		if child is Node3D and (nm.begins_with("TrafficLight_") or nm.begins_with("TL_")):
+			_attach_sensors_to_pole(child as Node3D)
+			n += 1
+	if n == 0:
+		push_warning("[SensorBuilder] no signal poles found on %s" % intersection.name)
 
 
 func toggle_sightlines() -> void:

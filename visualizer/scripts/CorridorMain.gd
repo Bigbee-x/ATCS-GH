@@ -23,6 +23,7 @@ extends Node3D
 @onready var tod_manager: Node = $TimeOfDayManager
 @onready var weather_manager: Node = $WeatherManager
 @onready var cloud_manager: Node3D = $CloudManager
+@onready var sensor_builder: Node3D = $SensorBuilder
 
 # ── Camera state ─────────────────────────────────────────────────────────────
 var _camera_default_position: Vector3
@@ -111,6 +112,10 @@ func _ready() -> void:
 	cloud_manager.weather_manager = weather_manager
 	if cloud_manager.has_method("initialize"):
 		cloud_manager.initialize()
+
+	# ── Attach CCTV / radar / cabinet sensors to each of the 12 signal poles ──
+	if sensor_builder and sensor_builder.has_method("attach_to_intersection"):
+		sensor_builder.attach_to_intersection(intersection)
 
 	print("[CorridorMain] All signals connected. Corridor mode active.")
 	print("[CorridorMain] Waiting for corridor_visualizer_server.py data...")
