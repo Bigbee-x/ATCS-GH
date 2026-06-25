@@ -20,6 +20,9 @@ extends Node3D
 @onready var audio_manager: Node = $AudioManager
 @onready var ui: Control = $UI/UIRoot
 @onready var camera: Camera3D = $IsometricCamera
+@onready var tod_manager: Node = $TimeOfDayManager
+@onready var weather_manager: Node = $WeatherManager
+@onready var cloud_manager: Node3D = $CloudManager
 
 # ── Camera state ─────────────────────────────────────────────────────────────
 var _camera_default_position: Vector3
@@ -85,6 +88,29 @@ func _ready() -> void:
 	vehicle_manager.set_corridor_mode(true)
 	pedestrian_manager.set_corridor_mode(true)
 	ui.set_corridor_mode(true)
+
+	# ── Atmosphere: day/night + weather + clouds (mirrors Main.gd) ───────
+	tod_manager.sun = $DirectionalLight3D
+	tod_manager.world_env = $WorldEnvironment
+	tod_manager.time_changed.connect(_on_time_changed)
+	tod_manager.night_mode_changed.connect(_on_night_mode_changed)
+	if tod_manager.has_signal("dusk_mode_changed"):
+		tod_manager.dusk_mode_changed.connect(_on_dusk_mode_changed)
+	ui.time_of_day_changed.connect(_on_ui_time_changed)
+	ui.tod_mode_changed.connect(_on_ui_tod_mode_changed)
+	if tod_manager.has_method("force_reapply"):
+		tod_manager.force_reapply()
+
+	weather_manager.tod = tod_manager
+	weather_manager.sun = $DirectionalLight3D
+	weather_manager.world_env = $WorldEnvironment
+	weather_manager.camera_follow = camera
+	ui.weather_changed.connect(_on_ui_weather_changed)
+
+	cloud_manager.tod = tod_manager
+	cloud_manager.weather_manager = weather_manager
+	if cloud_manager.has_method("initialize"):
+		cloud_manager.initialize()
 
 	print("[CorridorMain] All signals connected. Corridor mode active.")
 	print("[CorridorMain] Waiting for corridor_visualizer_server.py data...")
@@ -168,6 +194,48 @@ func _on_mode_changed(data: Dictionary) -> void:
 	var new_mode: String = data.get("control_mode", "ai")
 	print("[CorridorMain] Server confirmed mode: %s" % new_mode.to_upper())
 	ui.update_control_mode(new_mode)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ATMOSPHERE (day/night + weather + clouds) — mirrors Main.gd
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _on_time_changed(hour: float) -> void:
+	ui.update_time_display(hour)
+
+
+func _on_night_mode_changed(is_night: bool) -> void:
+	if vehicle_manager.has_method("set_night_mode"):
+		vehicle_manager.set_night_mode(is_night)
+	if intersection.has_method("set_street_lights_night"):
+		intersection.set_street_lights_night(is_night)
+	print("[CorridorMain] Night mode: %s" % ("ON" if is_night else "OFF"))
+
+
+func _on_dusk_mode_changed(is_dusk: bool) -> void:
+	if vehicle_manager.has_method("set_dusk_mode"):
+		vehicle_manager.set_dusk_mode(is_dusk)
+	print("[CorridorMain] Dusk mode: %s" % ("ON" if is_dusk else "OFF"))
+
+
+func _on_ui_time_changed(hour: float) -> void:
+	tod_manager.set_time(hour)
+
+
+func _on_ui_tod_mode_changed(mode_idx: int) -> void:
+	tod_manager.set_mode(mode_idx)
+
+
+func _on_ui_weather_changed(weather_idx: int) -> void:
+	weather_manager.set_weather(weather_idx)
+	# Drive vehicle headlights from the weather (night still wins, composed in
+	# VehicleManager): Overcast → partial, Rain → all.
+	var lights_mode: int = 0
+	match weather_idx:
+		1: lights_mode = 1
+		3: lights_mode = 2
+	if vehicle_manager.has_method("set_weather_lights_mode"):
+		vehicle_manager.set_weather_lights_mode(lights_mode)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
