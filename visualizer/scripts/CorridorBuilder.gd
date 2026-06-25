@@ -86,6 +86,13 @@ var _mat_yellow_on: StandardMaterial3D
 var _mat_green_on: StandardMaterial3D
 var _mat_arrow_on: StandardMaterial3D
 var _mat_arrow_off: StandardMaterial3D
+var _mat_lamp_housing: StandardMaterial3D
+var _mat_util_pole: StandardMaterial3D
+var _mat_insulator: StandardMaterial3D
+var _mat_wire: StandardMaterial3D
+
+# Street-light OmniLights — off by day, toggled on at night
+var _street_lights: Array = []
 
 # ── Emergency state ──────────────────────────────────────────────────────────
 var _emergency_active: Dictionary = {"J0": false, "J1": false, "J2": false}
@@ -122,6 +129,10 @@ func _ready() -> void:
 		var jid: String = JUNCTION_IDS[i]
 		var center_z: float = JUNCTION_CENTERS[i]
 		_build_traffic_lights(jid, center_z)
+
+	# Street furniture: lamps along every road + utility poles down the corridor
+	_build_street_lights()
+	_build_utility_poles()
 
 	# Build lane congestion overlays
 	_build_lane_overlays()
@@ -245,6 +256,26 @@ func _create_materials() -> void:
 
 	_mat_arrow_off = StandardMaterial3D.new()
 	_mat_arrow_off.albedo_color = Color(0.08, 0.08, 0.08)
+
+	_mat_lamp_housing = StandardMaterial3D.new()
+	_mat_lamp_housing.albedo_color = Color(0.95, 0.82, 0.50)
+	_mat_lamp_housing.metallic = 0.2
+	_mat_lamp_housing.roughness = 0.4
+	_mat_lamp_housing.emission_enabled = true
+	_mat_lamp_housing.emission = Color(1.00, 0.85, 0.45)
+	_mat_lamp_housing.emission_energy_multiplier = 0.0
+
+	_mat_util_pole = StandardMaterial3D.new()
+	_mat_util_pole.albedo_color = Color(0.38, 0.28, 0.18)
+	_mat_util_pole.roughness = 0.9
+
+	_mat_insulator = StandardMaterial3D.new()
+	_mat_insulator.albedo_color = Color(0.88, 0.86, 0.82)
+	_mat_insulator.roughness = 0.4
+
+	_mat_wire = StandardMaterial3D.new()
+	_mat_wire.albedo_color = Color(0.05, 0.05, 0.05)
+	_mat_wire.roughness = 0.8
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -890,6 +921,165 @@ func _set_arrow(jid: String, approach: String, is_on: bool) -> void:
 	else:
 		arrow_mesh.material = _mat_arrow_off
 		arrow_glow.light_energy = 0.0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STREET FURNITURE — sodium lamps + utility poles (ported from Intersection.gd)
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _build_street_lights() -> void:
+	## Sodium lamps along both curbs of the NS corridor (skipping the junction
+	## boxes) and both curbs of every cross-street arm. Off by day; toggled on at
+	## night by set_street_lights_night().
+	var spacing: float = 14.0
+
+	# NS corridor: both curbs, full length, skipping junction boxes.
+	var ns_side: float = NS_ROAD_WIDTH / 2.0 + 0.6
+	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 4.0
+	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 4.0
+	for side in [-1.0, 1.0]:
+		var z: float = z_start
+		while z <= z_end:
+			if not _near_junction_z(z, JUNCTION_HALF + 1.5):
+				_add_street_lamp(Vector3(side * ns_side, 0, z), Vector3(-side, 0, 0))
+			z += spacing
+
+	# Cross-street arms at each junction: both curbs along each E/W arm.
+	for i in range(3):
+		var center_z: float = JUNCTION_CENTERS[i]
+		var widths: Dictionary = _cross_widths[JUNCTION_IDS[i]]
+		# East arm reaches -X (mirrored); west arm reaches +X.
+		for arm in [{"sign": -1.0, "w": widths["east"]}, {"sign": 1.0, "w": widths["west"]}]:
+			var cross_side: float = arm["w"] / 2.0 + 0.6
+			for side in [-1.0, 1.0]:
+				var d: float = JUNCTION_HALF + 4.0
+				while d <= JUNCTION_HALF + CROSS_ARM - 4.0:
+					_add_street_lamp(Vector3(arm["sign"] * d, 0, center_z + side * cross_side),
+						Vector3(0, 0, -side))
+					d += spacing
+
+
+func _add_street_lamp(base: Vector3, toward: Vector3) -> void:
+	## One sodium lamp: pole + short mast arm reaching `toward` the road centre +
+	## housing + a warm OmniLight3D (energy 0 by day).
+	var h: float = 4.0
+	var pole := CSGCylinder3D.new()
+	pole.radius = 0.04
+	pole.height = h
+	pole.position = base + Vector3(0, h / 2.0, 0)
+	pole.material = _mat_pole
+	add_child(pole)
+
+	var is_x: bool = absf(toward.x) > 0.0
+	var lamp_arm := CSGBox3D.new()
+	lamp_arm.size = Vector3(0.6, 0.05, 0.05) if is_x else Vector3(0.05, 0.05, 0.6)
+	lamp_arm.position = base + Vector3(0, h, 0) + toward * 0.3
+	lamp_arm.material = _mat_pole
+	add_child(lamp_arm)
+
+	var housing := CSGBox3D.new()
+	housing.size = Vector3(0.25, 0.08, 0.25)
+	housing.position = base + Vector3(0, h - 0.04, 0) + toward * 0.6
+	housing.material = _mat_lamp_housing
+	add_child(housing)
+
+	var light := OmniLight3D.new()
+	light.position = base + Vector3(0, h - 0.1, 0) + toward * 0.6
+	light.light_color = Color(1.0, 0.85, 0.5)
+	light.light_energy = 0.0
+	light.omni_range = 15.0
+	light.omni_attenuation = 1.6
+	light.shadow_enabled = false
+	light.name = "StreetLight"
+	add_child(light)
+	_street_lights.append(light)
+
+
+func set_street_lights_night(enabled: bool) -> void:
+	## Turn the corridor street lamps on (night) / off (day) and glow the housings.
+	var energy: float = 3.2 if enabled else 0.0
+	for light in _street_lights:
+		light.light_energy = energy
+	if _mat_lamp_housing:
+		_mat_lamp_housing.emission_energy_multiplier = 3.0 if enabled else 0.0
+
+
+func _build_utility_poles() -> void:
+	## Wooden utility poles down ONE curb of the NS corridor — each with a
+	## cross-arm, brace, 3 ceramic insulators, and 3 power lines strung to the
+	## previous pole (the wire run breaks across each junction box).
+	var spacing: float = 20.0
+	var h: float = 7.0
+	var crossbar_len: float = 1.8
+	var ins_spacing: float = crossbar_len * 0.38
+	var side_x: float = -(NS_ROAD_WIDTH / 2.0 + 1.9)   # set back on the west curb
+
+	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 6.0
+	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 6.0
+	var prev_ins: Array = []
+	var z: float = z_start
+	while z <= z_end:
+		if _near_junction_z(z, JUNCTION_HALF + 1.5):
+			prev_ins = []        # break the wire run across the junction box
+			z += spacing
+			continue
+		var pos := Vector3(side_x, 0, z)
+
+		var pole := CSGCylinder3D.new()
+		pole.radius = 0.12
+		pole.height = h
+		pole.position = pos + Vector3(0, h / 2.0, 0)
+		pole.material = _mat_util_pole
+		pole.name = "UtilityPole"
+		add_child(pole)
+
+		var crossbar := CSGBox3D.new()
+		crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
+		crossbar.position = pos + Vector3(0, h - 0.25, 0)
+		crossbar.material = _mat_util_pole
+		add_child(crossbar)
+
+		var brace := CSGBox3D.new()
+		brace.size = Vector3(0.55, 0.08, 0.08)
+		brace.position = pos + Vector3(0, h - 0.55, 0)
+		brace.rotation_degrees = Vector3(0, 0, 35)
+		brace.material = _mat_util_pole
+		add_child(brace)
+
+		var ins_positions: Array = []
+		for k in range(3):
+			var slot: float = (k - 1) * ins_spacing
+			var ins := CSGCylinder3D.new()
+			ins.radius = 0.07
+			ins.height = 0.20
+			ins.position = pos + Vector3(slot, h - 0.05, 0)
+			ins.material = _mat_insulator
+			add_child(ins)
+			ins_positions.append(ins.position + Vector3(0, 0.12, 0))
+
+		if prev_ins.size() == 3:
+			for k in range(3):
+				var a: Vector3 = prev_ins[k]
+				var b: Vector3 = ins_positions[k]
+				var span: float = (b - a).length()
+				var wire := CSGBox3D.new()
+				wire.size = Vector3(0.035, 0.035, span)
+				wire.position = (a + b) * 0.5 + Vector3(0, -0.15, 0)
+				wire.material = _mat_wire
+				wire.name = "PowerLine"
+				add_child(wire)
+
+		prev_ins = ins_positions
+		z += spacing
+
+
+func _near_junction_z(z: float, margin: float) -> bool:
+	## True if z is within `margin` of any junction centre (used to keep street
+	## furniture out of the intersection boxes).
+	for cz in JUNCTION_CENTERS:
+		if absf(z - cz) < margin:
+			return true
+	return false
 
 
 # ═════════════════════════════════════════════════════════════════════════════
