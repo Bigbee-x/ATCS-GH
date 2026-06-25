@@ -59,8 +59,8 @@ const C_NS_ROAD_WIDTH   := 6.0
 const C_JUNCTION_SIZE   := 6.0
 const C_JUNCTION_HALF   := 3.0
 const C_SIDEWALK_WIDTH  := 0.5
-const C_CROSS_ARM       := 30.0
-const C_BOUNDARY_ARM    := 30.0
+const C_CROSS_ARM       := 55.0
+const C_BOUNDARY_ARM    := 55.0
 const C_J0_Z            := 0.0
 const C_J1_Z            := 30.0
 const C_J2_Z            := 60.0
@@ -85,7 +85,7 @@ const C_SUMO_CROSS_ROAD: float = 1489.6
 const C_GD_JUNC_HALF: float = 3.0
 const C_GD_ROAD_J0J1: float = 24.0
 const C_GD_ROAD_J1J2: float = 24.0
-const C_GD_BOUNDARY: float = 30.0
+const C_GD_BOUNDARY: float = 55.0
 
 # ── Appearance palettes ───────────────────────────────────────────────────────
 const SHIRT_COLORS: Array = [
