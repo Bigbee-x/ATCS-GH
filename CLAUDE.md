@@ -41,15 +41,22 @@ hard-coded override, not learned — removing it makes the AI's results honest).
 - `visualizer/` — Godot 4.6.3 project (open + F5; binary at
   `~/Downloads/Godot.app/Contents/MacOS/Godot`). Kenney Car Kit vehicles,
   dual signal heads (horizontal overhead + 2-light pole head), township with
-  setbacks + gutters. The corridor scene (`CorridorMain`) now closely
-  matches the single junction (minus the township buildings): dual signal heads +
-  stretched/widened junctions (PR #8), day/night + weather + clouds (PR #10),
-  street lights + utility poles + pole sensors (PR #11), lengthened road arms
-  (PR #12). **Gotcha:** the corridor junction Z anchors + road-segment + arm
-  lengths are TRIPLICATED across `CorridorBuilder` / `VehicleManager` /
-  `PedestrianManager` — change them in lockstep or vehicles/pedestrians drift off
-  the lanes. (No Godot automation here — parse-check with `Godot --headless
-  --check-only --script` + a headless scene-load, then verify visually.)
+  setbacks + gutters. The corridor scene (`CorridorMain`) now
+  matches the single junction: dual signal heads + stretched/widened junctions
+  (PR #8), day/night + weather + clouds (PR #10), street lights + utility poles +
+  pole sensors (PR #11), lengthened road arms (PR #12), and a **zoned township**
+  (PR #13) — `EnvironmentBuilder._build_corridor` (gated by its `corridor_mode`
+  export) lays themed districts (homes / offices / industrial / schools /
+  hospital / market + a new `_place_airport`) across the flanking blocks, with
+  `ResidentialTrafficManager` corridor-mode ambient cars on the south suburb's
+  street grid. **Gotchas:** (1) the corridor junction Z anchors + road-segment +
+  arm lengths are TRIPLICATED across `CorridorBuilder` / `VehicleManager` /
+  `PedestrianManager` — change in lockstep or vehicles/pedestrians drift off the
+  lanes; (2) the south-suburb street grid is duplicated in
+  `EnvironmentBuilder._corridor_residential` and `ResidentialTrafficManager.
+  _configure_corridor` — keep their coords matched or cars drive off the asphalt.
+  (No Godot automation here — parse-check with `Godot --headless --check-only
+  --script` + a headless scene-load, then verify visually.)
 
 ## Scenarios (`simulation/scenarios/`)
 `continuous_day` (the centerpiece — quiet→N-heavy morning→lull→S-heavy

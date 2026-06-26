@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://corridor_main"]
+[gd_scene load_steps=16 format=3 uid="uid://corridor_main"]
 
 [ext_resource type="Script" path="res://scripts/CorridorMain.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/WebSocketClient.gd" id="2_ws"]
@@ -11,6 +11,8 @@
 [ext_resource type="Script" path="res://scripts/WeatherManager.gd" id="10_weather"]
 [ext_resource type="Script" path="res://scripts/CloudManager.gd" id="12_clouds"]
 [ext_resource type="Script" path="res://scripts/SensorBuilder.gd" id="14_sensors"]
+[ext_resource type="Script" path="res://scripts/EnvironmentBuilder.gd" id="9_env"]
+[ext_resource type="Script" path="res://scripts/ResidentialTrafficManager.gd" id="11_restraffic"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.55, 0.85, 1)
@@ -76,6 +78,14 @@ script = ExtResource("10_weather")
 
 [node name="CloudManager" type="Node3D" parent="."]
 script = ExtResource("12_clouds")
+
+[node name="EnvironmentBuilder" type="Node3D" parent="."]
+script = ExtResource("9_env")
+corridor_mode = true
+
+[node name="ResidentialTrafficManager" type="Node3D" parent="."]
+script = ExtResource("11_restraffic")
+corridor_mode = true
 
 [node name="SensorBuilder" type="Node3D" parent="."]
 script = ExtResource("14_sensors")
