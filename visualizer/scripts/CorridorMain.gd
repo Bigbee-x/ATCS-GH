@@ -24,6 +24,11 @@ extends Node3D
 @onready var weather_manager: Node = $WeatherManager
 @onready var cloud_manager: Node3D = $CloudManager
 @onready var sensor_builder: Node3D = $SensorBuilder
+@onready var drone: Node3D = $DroneController
+
+# ── Drone/chopper flight mode ────────────────────────────────────────────────
+var _drone_mode_active: bool = false
+var _drone_hint_label: Label = null
 
 # ── Camera state ─────────────────────────────────────────────────────────────
 var _camera_default_position: Vector3
@@ -117,11 +122,19 @@ func _ready() -> void:
 	if sensor_builder and sensor_builder.has_method("attach_to_intersection"):
 		sensor_builder.attach_to_intersection(intersection)
 
+	# ── Drone/chopper flight mode (dormant until H pressed) ──────────────
+	_setup_drone_hint()
+	if drone.has_signal("mode_changed"):
+		drone.mode_changed.connect(_on_drone_mode_changed)
+
 	print("[CorridorMain] All signals connected. Corridor mode active.")
+	print("[CorridorMain] Tip: press H to fly the drone (mouse look + WASD).")
 	print("[CorridorMain] Waiting for corridor_visualizer_server.py data...")
 
 
 func _process(delta: float) -> void:
+	if _drone_mode_active:
+		return  # the drone owns WASD / mouse while flying
 	_process_camera_keys(delta)
 
 
@@ -259,9 +272,29 @@ func _on_ui_weather_changed(weather_idx: int) -> void:
 #   R key or Home        — Reset camera to default
 
 func _unhandled_input(event: InputEvent) -> void:
-	# ── Escape: return to launcher menu ──────────────────────────────────
+	# ── K: toggle sensor sightline cones (works in any mode) ─────────────
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_K:
+		if sensor_builder and sensor_builder.has_method("toggle_sightlines"):
+			sensor_builder.toggle_sightlines()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── H: toggle drone/chopper flight mode ─────────────────────────────
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_H:
+		_toggle_drone_mode()
+		get_viewport().set_input_as_handled()
+		return
+
+	# ── Escape: exit drone first, else return to launcher menu ──────────
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
+		if _drone_mode_active:
+			_toggle_drone_mode()
+		else:
+			get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
+		return
+
+	# ── While flying, the drone owns input — skip the top-down camera controls ─
+	if _drone_mode_active:
 		return
 
 	# ── Trackpad pinch-to-zoom ─────────────────────────────────────────
@@ -425,3 +458,60 @@ func _reset_camera() -> void:
 	camera.size = _camera_default_size
 	_apply_camera()
 	print("[Camera] Reset to default position")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DRONE / CHOPPER FLIGHT MODE (press H) — mirrors Main.gd
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _setup_drone_hint() -> void:
+	## Bottom-centered overlay shown while the drone is flying.
+	_drone_hint_label = Label.new()
+	_drone_hint_label.name = "DroneModeHint"
+	_drone_hint_label.anchor_left = 0.5
+	_drone_hint_label.anchor_right = 0.5
+	_drone_hint_label.anchor_top = 1.0
+	_drone_hint_label.anchor_bottom = 1.0
+	_drone_hint_label.offset_left = -340.0
+	_drone_hint_label.offset_right = 340.0
+	_drone_hint_label.offset_top = -60.0
+	_drone_hint_label.offset_bottom = -20.0
+	_drone_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drone_hint_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	_drone_hint_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	_drone_hint_label.add_theme_constant_override("shadow_offset_x", 1)
+	_drone_hint_label.add_theme_constant_override("shadow_offset_y", 1)
+	_drone_hint_label.add_theme_font_size_override("font_size", 14)
+	_drone_hint_label.text = "DRONE MODE  —  Mouse look  •  WASD fly  •  Space/Ctrl up/down  •  Shift boost  •  K sensor FOV  •  H / Esc exit"
+	_drone_hint_label.visible = false
+	_drone_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ui:
+		ui.add_child(_drone_hint_label)
+
+
+func _toggle_drone_mode() -> void:
+	_drone_mode_active = not _drone_mode_active
+	if _drone_mode_active:
+		_is_panning = false
+		_is_rotating = false
+		if drone and drone.has_method("activate"):
+			drone.activate()
+		if _drone_hint_label:
+			_drone_hint_label.visible = true
+		print("[CorridorMain] Drone mode: ON")
+	else:
+		if drone and drone.has_method("deactivate"):
+			drone.deactivate()
+		camera.current = true   # restore the isometric camera
+		if _drone_hint_label:
+			_drone_hint_label.visible = false
+		print("[CorridorMain] Drone mode: OFF")
+
+
+func _on_drone_mode_changed(active: bool) -> void:
+	## Fired by DroneController on activate/deactivate — keep our flag honest.
+	_drone_mode_active = active
+	if _drone_hint_label:
+		_drone_hint_label.visible = active
+	if not active:
+		camera.current = true

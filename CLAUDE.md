@@ -1,9 +1,10 @@
 # CLAUDE.md — ATCS-GH project brief (authoritative current state)
 
-> Read this first. It reflects the project as of **2026-06-21** and supersedes
+> Read this first. It reflects the project as of **2026-06-26** and supersedes
 > `README.md` / `plan.md`, which are from April and are now **stale/misleading**
-> (they describe emergency priority, all-procedural visuals, and a trained
-> corridor — none of which is current).
+> (they describe emergency priority + all-procedural visuals — neither current).
+> NOTE: the corridor IS now trained AND fully visualized (see the Corridor +
+> visualizer sections); only the README/plan wording is stale, not this file.
 
 ## What this is
 Adaptive Traffic Control System for the **Achimota/Neoplan Junction, Accra**
@@ -49,7 +50,9 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   export) lays themed districts (homes / offices / industrial / schools /
   hospital / market + a new `_place_airport`) across the flanking blocks, with
   `ResidentialTrafficManager` corridor-mode ambient cars on the south suburb's
-  street grid. **Gotchas:** (1) the corridor junction Z anchors + road-segment +
+  street grid. A free-fly **drone** (press **H**: mouse-look + WASD + Space/Ctrl
+  + Shift boost, the single junction's chopper via `DroneController`), roadside
+  concrete gutters, and both-curb utility poles were added (PR #14). **Gotchas:** (1) the corridor junction Z anchors + road-segment +
   arm lengths are TRIPLICATED across `CorridorBuilder` / `VehicleManager` /
   `PedestrianManager` — change in lockstep or vehicles/pedestrians drift off the
   lanes; (2) the south-suburb street grid is duplicated in
