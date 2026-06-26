@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://corridor_main"]
+[gd_scene load_steps=17 format=3 uid="uid://corridor_main"]
 
 [ext_resource type="Script" path="res://scripts/CorridorMain.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/WebSocketClient.gd" id="2_ws"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/SensorBuilder.gd" id="14_sensors"]
 [ext_resource type="Script" path="res://scripts/EnvironmentBuilder.gd" id="9_env"]
 [ext_resource type="Script" path="res://scripts/ResidentialTrafficManager.gd" id="11_restraffic"]
+[ext_resource type="Script" path="res://scripts/DroneController.gd" id="13_drone"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.55, 0.85, 1)
@@ -89,6 +90,9 @@ corridor_mode = true
 
 [node name="SensorBuilder" type="Node3D" parent="."]
 script = ExtResource("14_sensors")
+
+[node name="DroneController" type="Node3D" parent="."]
+script = ExtResource("13_drone")
 
 [node name="UI" type="CanvasLayer" parent="."]
 layer = 10

@@ -90,6 +90,8 @@ var _mat_lamp_housing: StandardMaterial3D
 var _mat_util_pole: StandardMaterial3D
 var _mat_insulator: StandardMaterial3D
 var _mat_wire: StandardMaterial3D
+var _mat_gutter_floor: StandardMaterial3D
+var _mat_gutter_concrete: StandardMaterial3D
 
 # Street-light OmniLights — off by day, toggled on at night
 var _street_lights: Array = []
@@ -277,6 +279,11 @@ func _create_materials() -> void:
 	_mat_wire.albedo_color = Color(0.05, 0.05, 0.05)
 	_mat_wire.roughness = 0.8
 
+	_mat_gutter_floor = StandardMaterial3D.new()
+	_mat_gutter_floor.albedo_color = Color(0.10, 0.11, 0.12)    # dark recessed drain
+	_mat_gutter_concrete = StandardMaterial3D.new()
+	_mat_gutter_concrete.albedo_color = Color(0.62, 0.60, 0.56)  # weathered concrete rim
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # GEOMETRY BUILDING
@@ -346,7 +353,7 @@ func _build_corridor_roads() -> void:
 
 
 func _build_corridor_sidewalks(center_z: float, length: float, road_width: float) -> void:
-	## Build sidewalks along a corridor road segment.
+	## Build sidewalks + an open concrete U-gutter along a corridor road segment.
 	var half_w: float = road_width / 2.0
 	for side in [-1.0, 1.0]:
 		var sw := CSGBox3D.new()
@@ -358,6 +365,30 @@ func _build_corridor_sidewalks(center_z: float, length: float, road_width: float
 		)
 		sw.material = _mat_sidewalk
 		add_child(sw)
+		# Open gutter just outside the sidewalk (classic Accra roadside drain)
+		_build_gutter(Vector3(side * (half_w + SIDEWALK_WIDTH + 0.45), 0, center_z), length, true)
+
+
+func _build_gutter(center: Vector3, length: float, is_ns: bool) -> void:
+	## Open concrete U-gutter: a dark recessed channel flanked by two raised
+	## concrete rims. Oriented along Z (is_ns) or X.
+	var gw: float = 0.55     # channel width
+	var rw: float = 0.12     # rim width
+	var rh: float = 0.16     # rim height
+	var channel := CSGBox3D.new()
+	channel.size = Vector3(gw, 0.05, length) if is_ns else Vector3(length, 0.05, gw)
+	channel.position = center + Vector3(0, 0.025, 0)
+	channel.material = _mat_gutter_floor
+	channel.name = "Gutter"
+	add_child(channel)
+	for s in [-1.0, 1.0]:
+		var rim := CSGBox3D.new()
+		rim.size = Vector3(rw, rh, length) if is_ns else Vector3(length, rh, rw)
+		var off: float = s * (gw / 2.0 + rw / 2.0)
+		rim.position = center + (Vector3(off, rh / 2.0, 0) if is_ns else Vector3(0, rh / 2.0, off))
+		rim.material = _mat_gutter_concrete
+		rim.name = "GutterRim"
+		add_child(rim)
 
 
 func _build_boundary_roads() -> void:
@@ -1005,72 +1036,73 @@ func set_street_lights_night(enabled: bool) -> void:
 
 
 func _build_utility_poles() -> void:
-	## Wooden utility poles down ONE curb of the NS corridor — each with a
+	## Wooden utility poles down BOTH curbs of the NS corridor — each with a
 	## cross-arm, brace, 3 ceramic insulators, and 3 power lines strung to the
 	## previous pole (the wire run breaks across each junction box).
-	var spacing: float = 20.0
+	var spacing: float = 16.0
 	var h: float = 7.0
 	var crossbar_len: float = 1.8
 	var ins_spacing: float = crossbar_len * 0.38
-	var side_x: float = -(NS_ROAD_WIDTH / 2.0 + 1.9)   # set back on the west curb
-
 	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 6.0
 	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 6.0
-	var prev_ins: Array = []
-	var z: float = z_start
-	while z <= z_end:
-		if _near_junction_z(z, JUNCTION_HALF + 1.5):
-			prev_ins = []        # break the wire run across the junction box
-			z += spacing
-			continue
-		var pos := Vector3(side_x, 0, z)
 
-		var pole := CSGCylinder3D.new()
-		pole.radius = 0.12
-		pole.height = h
-		pole.position = pos + Vector3(0, h / 2.0, 0)
-		pole.material = _mat_util_pole
-		pole.name = "UtilityPole"
-		add_child(pole)
+	for curb in [-1.0, 1.0]:
+		var side_x: float = curb * (NS_ROAD_WIDTH / 2.0 + 1.9)   # both curbs
+		var prev_ins: Array = []
+		var z: float = z_start + (8.0 if curb > 0.0 else 0.0)   # stagger the two sides
+		while z <= z_end:
+			if _near_junction_z(z, JUNCTION_HALF + 1.5):
+				prev_ins = []        # break the wire run across the junction box
+				z += spacing
+				continue
+			var pos := Vector3(side_x, 0, z)
 
-		var crossbar := CSGBox3D.new()
-		crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
-		crossbar.position = pos + Vector3(0, h - 0.25, 0)
-		crossbar.material = _mat_util_pole
-		add_child(crossbar)
+			var pole := CSGCylinder3D.new()
+			pole.radius = 0.12
+			pole.height = h
+			pole.position = pos + Vector3(0, h / 2.0, 0)
+			pole.material = _mat_util_pole
+			pole.name = "UtilityPole"
+			add_child(pole)
 
-		var brace := CSGBox3D.new()
-		brace.size = Vector3(0.55, 0.08, 0.08)
-		brace.position = pos + Vector3(0, h - 0.55, 0)
-		brace.rotation_degrees = Vector3(0, 0, 35)
-		brace.material = _mat_util_pole
-		add_child(brace)
+			var crossbar := CSGBox3D.new()
+			crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
+			crossbar.position = pos + Vector3(0, h - 0.25, 0)
+			crossbar.material = _mat_util_pole
+			add_child(crossbar)
 
-		var ins_positions: Array = []
-		for k in range(3):
-			var slot: float = (k - 1) * ins_spacing
-			var ins := CSGCylinder3D.new()
-			ins.radius = 0.07
-			ins.height = 0.20
-			ins.position = pos + Vector3(slot, h - 0.05, 0)
-			ins.material = _mat_insulator
-			add_child(ins)
-			ins_positions.append(ins.position + Vector3(0, 0.12, 0))
+			var brace := CSGBox3D.new()
+			brace.size = Vector3(0.55, 0.08, 0.08)
+			brace.position = pos + Vector3(0, h - 0.55, 0)
+			brace.rotation_degrees = Vector3(0, 0, 35)
+			brace.material = _mat_util_pole
+			add_child(brace)
 
-		if prev_ins.size() == 3:
+			var ins_positions: Array = []
 			for k in range(3):
-				var a: Vector3 = prev_ins[k]
-				var b: Vector3 = ins_positions[k]
-				var span: float = (b - a).length()
-				var wire := CSGBox3D.new()
-				wire.size = Vector3(0.035, 0.035, span)
-				wire.position = (a + b) * 0.5 + Vector3(0, -0.15, 0)
-				wire.material = _mat_wire
-				wire.name = "PowerLine"
-				add_child(wire)
+				var slot: float = (k - 1) * ins_spacing
+				var ins := CSGCylinder3D.new()
+				ins.radius = 0.07
+				ins.height = 0.20
+				ins.position = pos + Vector3(slot, h - 0.05, 0)
+				ins.material = _mat_insulator
+				add_child(ins)
+				ins_positions.append(ins.position + Vector3(0, 0.12, 0))
 
-		prev_ins = ins_positions
-		z += spacing
+			if prev_ins.size() == 3:
+				for k in range(3):
+					var a: Vector3 = prev_ins[k]
+					var b: Vector3 = ins_positions[k]
+					var span: float = (b - a).length()
+					var wire := CSGBox3D.new()
+					wire.size = Vector3(0.035, 0.035, span)
+					wire.position = (a + b) * 0.5 + Vector3(0, -0.15, 0)
+					wire.material = _mat_wire
+					wire.name = "PowerLine"
+					add_child(wire)
+
+			prev_ins = ins_positions
+			z += spacing
 
 
 func _near_junction_z(z: float, margin: float) -> bool:
