@@ -1,11 +1,11 @@
 extends Node3D
-## Cinematic helicopter/drone flight mode for the ATCS-GH visualizer.
+## Cinematic camera-drone flight mode for the ATCS-GH visualizer.
 ##
-## Press H to toggle. A procedural helicopter (CSG fuselage, tail boom,
-## translucent spinning rotor disc, tail rotor, skids, canopy, nav lights)
-## spawns above the junction. The user flies it with FPS-style controls
-## while a chase camera follows behind-and-above with a bit of lag for
-## a cinematic feel.
+## Press H to toggle. A procedural DJI-style quadcopter (flat CSG shell, four
+## arms with counter-rotating two-blade props + translucent motion-blur discs,
+## landing legs, an under-slung gimbal camera, GPS puck + nav LEDs) spawns above
+## the junction. The user flies it with FPS-style controls while a chase camera
+## follows behind-and-above with a bit of lag for a cinematic feel.
 ##
 ## Controls
 ##   Mouse X         Yaw (turn left/right)
@@ -24,7 +24,7 @@ extends Node3D
 ## Architecture
 ##   Main.gd owns the toggle and restores the isometric camera on exit.
 ##   This controller owns the chase camera; it becomes `current = true`
-##   while active. The chopper mesh is built once in _ready() and re-used
+##   while active. The drone mesh is built once in _ready() and re-used
 ##   across toggles.
 
 signal mode_changed(active: bool)
@@ -43,7 +43,7 @@ const DRAG: float            = 1.6           # velocity decay when no input
 const VERT_THRUST: float     = 22.0
 const MOUSE_YAW_SENS: float  = 0.0038
 const MOUSE_PITCH_SENS: float = 0.0030
-const CAM_PITCH_MIN: float   = -0.95         # ~-54° (looking up at chopper belly)
+const CAM_PITCH_MIN: float   = -0.95         # ~-54° (looking up at the drone belly)
 const CAM_PITCH_MAX: float   =  0.55         # ~ 31° (looking down past it)
 
 # ── Motion state ────────────────────────────────────────────────────────────
@@ -62,19 +62,18 @@ var _light_blink_t: float  = 0.0             # time accumulator for tail light
 # ── Nodes ───────────────────────────────────────────────────────────────────
 var _yaw_pivot: Node3D          # rotates on Y with heading
 var _tilt_pivot: Node3D         # rolls/pitches for bank/pitch (camera does NOT inherit)
-var _main_rotor: Node3D         # spins on Y
-var _tail_rotor: Node3D         # spins on X
-var _tail_light: MeshInstance3D # blinking nav light
+var _props: Array[Node3D] = []  # 4 prop pivots; adjacent ones counter-rotate
+var _tail_light: MeshInstance3D # blinking rear status beacon
 var _tail_light_mat: StandardMaterial3D
-var _rotor_mat: StandardMaterial3D   # translucent disc material
+var _rotor_mat: StandardMaterial3D   # shared translucent prop-disc material
 
 # ── Camera ──────────────────────────────────────────────────────────────────
 var _camera: Camera3D           # chase cam — scene-root sibling, smooth follow
-const CHASE_DIST: float    = 8.5
-const CHASE_HEIGHT: float  = 3.2
+const CHASE_DIST: float    = 3.4
+const CHASE_HEIGHT: float  = 1.5
 const CAM_LERP: float      = 6.0
 
-# ── Audio — procedural chopper loop (blade thump + turbine + air) ──────────
+# ── Audio — procedural quad-buzz loop (prop buzz + motor whine + air) ──────
 var _sound_player: AudioStreamPlayer
 var _sound_stream: AudioStreamWAV
 const SOUND_BASE_VOLUME_DB: float = -6.0
@@ -121,7 +120,7 @@ func activate() -> void:
 	_camera.look_at(SPAWN_POS, Vector3.UP)
 	_camera.current = true
 
-	# Start the chopper-sound loop with a short fade-in so the buffer
+	# Start the drone-sound loop with a short fade-in so the buffer
 	# doesn't click on the first sample. Tweens run independent of this
 	# node's process flag, so they keep going even if we're stopped.
 	if _sound_player:
@@ -220,7 +219,7 @@ func _physics_process(delta: float) -> void:
 
 	# ── Move ───────────────────────────────────────────────────────────
 	global_position += _velocity * delta
-	# Keep the chopper above the ground
+	# Keep the drone above the ground
 	if global_position.y < 2.0:
 		global_position.y = 2.0
 		_velocity.y = maxf(_velocity.y, 0.0)
@@ -241,12 +240,12 @@ func _physics_process(delta: float) -> void:
 	var bob: float = sin(_hover_t * 1.8) * 0.06 * stillness
 	_tilt_pivot.position.y = bob
 
-	# ── Rotors ─────────────────────────────────────────────────────────
+	# ── Props ──────────────────────────────────────────────────────────
+	# Four rotors spin fast; adjacent ones counter-rotate like a real quad.
 	_rotor_spin += _rotor_speed * delta
-	if _main_rotor:
-		_main_rotor.rotation.y = _rotor_spin
-	if _tail_rotor:
-		_tail_rotor.rotation.x = _rotor_spin * 2.6
+	for i in range(_props.size()):
+		var spin_dir: float = 1.0 if (i % 2 == 0) else -1.0
+		_props[i].rotation.y = _rotor_spin * spin_dir
 
 	# ── Blinking tail nav light ────────────────────────────────────────
 	_light_blink_t += delta
@@ -267,34 +266,37 @@ func _apply_axis(vel: float, thrust_axis: float, delta: float) -> float:
 
 
 func _update_chase_camera(delta: float) -> void:
-	## Camera sits at a fixed chase offset behind+above the chopper (in its
+	## Camera sits at a fixed chase offset behind+above the drone (in its
 	## yaw frame) and smooth-follows it with a bit of lag. Mouse Y pitches
 	## WHERE the camera looks, not where it sits — that's way less motion-sicky
-	## than orbiting the camera around the chopper per pixel of mouse input.
+	## than orbiting the camera around the drone per pixel of mouse input.
 	var heading: Basis = Basis(Vector3.UP, _yaw)
 	var offset: Vector3 = heading * Vector3(0.0, CHASE_HEIGHT, CHASE_DIST)
 	var target_pos: Vector3 = global_position + offset
 	_camera.global_position = _camera.global_position.lerp(target_pos, CAM_LERP * delta)
 
-	# Look-at point: slightly ahead of the chopper so it doesn't sit dead-center,
+	# Look-at point: slightly ahead of the drone so it doesn't sit dead-center,
 	# then shifted up/down by the current camera pitch so mouse-up shows sky.
 	# cam_pitch > 0 (mouse dragged up) → look upward; < 0 → look downward.
 	var forward: Vector3 = -heading.z
-	var look_target: Vector3 = global_position + forward * 3.0
-	look_target.y += _cam_pitch * 7.0
+	var look_target: Vector3 = global_position + forward * 1.4
+	look_target.y += _cam_pitch * 3.5
 	_camera.look_at(look_target, Vector3.UP)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# RIG CONSTRUCTION — procedural chopper mesh
+# RIG CONSTRUCTION — procedural DJI-style quadcopter mesh
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Kenney-matched livery (flat matte, like the Car Kit colormap): white body,
-# red accents, dark trim — reads as the same family as the ambulance/taxi.
-const HELI_BODY   := Color(0.93, 0.93, 0.96)   # Kenney white
-const HELI_ACCENT := Color(0.85, 0.22, 0.18)   # Kenney red
-const HELI_TRIM   := Color(0.16, 0.16, 0.18)   # dark matte trim
-const HELI_MATTE  := 0.9                       # roughness for painted parts
+# DJI-style camera-drone livery (flat matte, same toy-matte family as the Car
+# Kit): light-grey shell, dark arms/gimbal, a small amber accent.
+const DRONE_BODY   := Color(0.86, 0.87, 0.90)   # light grey shell
+const DRONE_DARK   := Color(0.13, 0.13, 0.15)   # dark arms / motors / gimbal
+const DRONE_ACCENT := Color(0.92, 0.58, 0.10)   # amber accent stripe
+const DRONE_MATTE  := 0.85                       # roughness for shell parts
+const ARM_REACH    := 1.75                       # motor offset along each diagonal
+const PROP_RADIUS  := 1.25                       # spinning prop / blur-disc radius
+const DRONE_SCALE  := 0.16                       # shrink the whole rig to a small consumer-drone footprint (~1.2 m span)
 
 
 func _build_rig() -> void:
@@ -302,7 +304,7 @@ func _build_rig() -> void:
 	#   self (this Node3D)
 	#     _yaw_pivot (yaw heading)
 	#       _tilt_pivot (bank + pitch, bob)
-	#         Fuselage, tail boom, rotors, skids, canopy, nav lights
+	#         Body shell, arms + props, legs, gimbal, top details, nav lights
 	#     _camera (chase — NOT a child of yaw/tilt so it can smooth-follow)
 
 	_yaw_pivot = Node3D.new()
@@ -313,11 +315,16 @@ func _build_rig() -> void:
 	_tilt_pivot.name = "TiltPivot"
 	_yaw_pivot.add_child(_tilt_pivot)
 
+	# The mesh is modeled at a big (helicopter-era) scale; shrink the whole
+	# airframe down to a small consumer-drone footprint. Per-frame code only
+	# sets this pivot's rotation/position (never its scale), so this sticks.
+	_tilt_pivot.scale = Vector3.ONE * DRONE_SCALE
+
 	_build_body()
-	_build_tail()
-	_build_rotors()
-	_build_skids()
-	_build_canopy()
+	_build_arms_and_props()
+	_build_legs()
+	_build_gimbal()
+	_build_top_details()
 	_build_nav_lights()
 
 	_camera = Camera3D.new()
@@ -355,150 +362,166 @@ func _csg_cyl(radius: float, height: float, sides: int, color: Color, metallic: 
 
 
 func _build_body() -> void:
-	## Fuselage — main cabin + rounded nose, Kenney-style white with red livery.
-	# Main cabin — slightly wider than tall, elongated
-	var cabin: CSGBox3D = _csg_box(Vector3(1.45, 0.95, 2.4), HELI_BODY, 0.0, HELI_MATTE)
-	cabin.position = Vector3(0.0, 0.1, 0.0)
-	_tilt_pivot.add_child(cabin)
+	## Flat camera-drone shell — low, wide, two-tier, light grey with an amber
+	## nose stripe. Front faces -Z (the spawn heading), like the old nose did.
+	# Lower hull (wider) + upper shell (narrower) → a soft two-tier body.
+	var lower: CSGBox3D = _csg_box(Vector3(1.55, 0.26, 2.0), DRONE_BODY, 0.0, DRONE_MATTE)
+	lower.position = Vector3(0.0, 0.0, 0.0)
+	_tilt_pivot.add_child(lower)
 
-	# Livery stripes — red band along each cabin side (news/medic chopper read)
-	for side in [-1.0, 1.0]:
-		var stripe: CSGBox3D = _csg_box(Vector3(0.04, 0.22, 2.42), HELI_ACCENT, 0.0, HELI_MATTE)
-		stripe.position = Vector3(side * 0.735, 0.0, 0.0)
-		_tilt_pivot.add_child(stripe)
+	var upper: CSGBox3D = _csg_box(Vector3(1.15, 0.30, 1.5), DRONE_BODY, 0.0, DRONE_MATTE)
+	upper.position = Vector3(0.0, 0.26, -0.05)
+	_tilt_pivot.add_child(upper)
 
-	# Belly plate — dark trim strip
-	var belly: CSGBox3D = _csg_box(Vector3(1.50, 0.10, 2.30), HELI_TRIM, 0.0, HELI_MATTE)
-	belly.position = Vector3(0.0, -0.45, 0.0)
+	# Dark belly plate (battery / downward sensors)
+	var belly: CSGBox3D = _csg_box(Vector3(1.30, 0.10, 1.7), DRONE_DARK, 0.0, DRONE_MATTE)
+	belly.position = Vector3(0.0, -0.16, 0.0)
 	_tilt_pivot.add_child(belly)
 
-	# Nose — forward-tapering block so the silhouette has a "beak"
-	var nose: CSGBox3D = _csg_box(Vector3(1.10, 0.78, 0.8), HELI_BODY, 0.0, HELI_MATTE)
-	nose.position = Vector3(0.0, 0.0, -1.45)
-	_tilt_pivot.add_child(nose)
+	# Amber accent stripe across the nose (front = -Z) so heading is readable
+	var stripe: CSGBox3D = _csg_box(Vector3(1.16, 0.12, 0.18), DRONE_ACCENT, 0.0, DRONE_MATTE)
+	stripe.position = Vector3(0.0, 0.26, -0.78)
+	_tilt_pivot.add_child(stripe)
 
-	# Nose tip — red accent, adds readable detail
-	var tip: CSGBox3D = _csg_box(Vector3(0.8, 0.55, 0.35), HELI_ACCENT, 0.0, HELI_MATTE)
-	tip.position = Vector3(0.0, -0.05, -1.9)
-	_tilt_pivot.add_child(tip)
-
-
-func _build_tail() -> void:
-	## Tail boom + vertical fin + tail-rotor assembly.
-	var metal := Color(0.28, 0.28, 0.32)
-
-	# Tail boom — white like the body
-	var boom: CSGBox3D = _csg_box(Vector3(0.28, 0.30, 2.6), HELI_BODY, 0.0, HELI_MATTE)
-	boom.position = Vector3(0.0, 0.25, 2.4)
-	_tilt_pivot.add_child(boom)
-
-	# Vertical stabilizer / fin — red accent (livery tail flash)
-	var fin: CSGBox3D = _csg_box(Vector3(0.08, 0.80, 0.55), HELI_ACCENT, 0.0, HELI_MATTE)
-	fin.position = Vector3(0.0, 0.65, 3.55)
-	_tilt_pivot.add_child(fin)
-
-	# Horizontal stabilizer (small side wings) — red accent
-	var stab: CSGBox3D = _csg_box(Vector3(1.0, 0.06, 0.35), HELI_ACCENT, 0.0, HELI_MATTE)
-	stab.position = Vector3(0.0, 0.35, 3.4)
-	_tilt_pivot.add_child(stab)
-
-	# Tail rotor hub + disc (spins on X)
-	_tail_rotor = Node3D.new()
-	_tail_rotor.name = "TailRotor"
-	_tail_rotor.position = Vector3(0.22, 0.65, 3.55)
-	_tilt_pivot.add_child(_tail_rotor)
-
-	var hub: CSGCylinder3D = _csg_cyl(0.07, 0.14, 8, metal, 0.6)
-	hub.rotation.z = PI * 0.5
-	_tail_rotor.add_child(hub)
-
-	# Two thin blades crossing (so any angle shows something)
-	var blade_col := Color(0.05, 0.05, 0.06)
-	for i in range(2):
-		var blade: CSGBox3D = _csg_box(Vector3(0.02, 0.9, 0.08), blade_col, 0.05, 0.7)
-		blade.rotation.x = i * PI * 0.5
-		_tail_rotor.add_child(blade)
+	# Forward sensor nub — small dark block at the nose
+	var beak: CSGBox3D = _csg_box(Vector3(0.5, 0.16, 0.30), DRONE_DARK, 0.0, DRONE_MATTE)
+	beak.position = Vector3(0.0, 0.10, -1.04)
+	_tilt_pivot.add_child(beak)
 
 
-func _build_rotors() -> void:
-	## Main rotor mast + translucent spinning disc.
-	var mast_col := Color(0.22, 0.22, 0.26)
-	var mast: CSGCylinder3D = _csg_cyl(0.09, 0.45, 8, mast_col, 0.6)
-	mast.position = Vector3(0.0, 0.9, -0.15)
-	_tilt_pivot.add_child(mast)
+func _build_arms_and_props() -> void:
+	## Four arms in an X, each ending in a motor pod + a spinning two-blade prop
+	## with a translucent motion-blur disc. Adjacent props counter-rotate.
+	_props.clear()
 
-	# Rotor hub
-	var hub: CSGCylinder3D = _csg_cyl(0.22, 0.10, 10, mast_col, 0.7)
-	hub.position = Vector3(0.0, 1.15, -0.15)
-	_tilt_pivot.add_child(hub)
-
-	# Spinning pivot — everything below rotates on Y at high speed
-	_main_rotor = Node3D.new()
-	_main_rotor.name = "MainRotor"
-	_main_rotor.position = Vector3(0.0, 1.18, -0.15)
-	_tilt_pivot.add_child(_main_rotor)
-
-	# Thin visible blades (so stopped rotor is recognizable)
-	var blade_col := Color(0.08, 0.08, 0.09)
-	for i in range(2):
-		var blade: CSGBox3D = _csg_box(Vector3(7.0, 0.06, 0.18), blade_col, 0.1, 0.6)
-		blade.rotation.y = i * PI * 0.5
-		_main_rotor.add_child(blade)
-
-	# Translucent motion-blur disc — sits slightly above blades, spins with them
+	# Shared translucent blur-disc material (reused across all four props)
 	_rotor_mat = StandardMaterial3D.new()
-	_rotor_mat.albedo_color = Color(0.7, 0.7, 0.75, 0.18)
+	_rotor_mat.albedo_color = Color(0.72, 0.74, 0.80, 0.16)
 	_rotor_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_rotor_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_rotor_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	var disc := CSGCylinder3D.new()
-	disc.radius = 3.6
-	disc.height = 0.02
-	disc.sides = 24
-	disc.material = _rotor_mat
-	disc.position = Vector3(0.0, 0.04, 0.0)
-	_main_rotor.add_child(disc)
+	# Diagonal motor positions: front-left, front-right, back-left, back-right.
+	var corners := [
+		Vector3(-1, 0, -1),  # front-left
+		Vector3( 1, 0, -1),  # front-right
+		Vector3(-1, 0,  1),  # back-left
+		Vector3( 1, 0,  1),  # back-right
+	]
+	var blade_col := Color(0.07, 0.07, 0.08)
+	for c in corners:
+		var mx: float = c.x * ARM_REACH
+		var mz: float = c.z * ARM_REACH
+
+		# Arm — slim box from the body out to the motor, rotated so its long
+		# (local Z) axis points down the diagonal toward (mx, mz).
+		var reach: float = Vector2(mx, mz).length()
+		var arm: CSGBox3D = _csg_box(Vector3(0.16, 0.12, reach), DRONE_DARK, 0.1, 0.7)
+		arm.position = Vector3(mx * 0.5, 0.02, mz * 0.5)
+		arm.rotation.y = atan2(mx, mz)
+		_tilt_pivot.add_child(arm)
+
+		# Motor pod — short cylinder standing at the arm tip
+		var motor: CSGCylinder3D = _csg_cyl(0.16, 0.22, 12, DRONE_DARK, 0.4)
+		motor.position = Vector3(mx, 0.14, mz)
+		_tilt_pivot.add_child(motor)
+
+		# Spinning prop pivot
+		var prop := Node3D.new()
+		prop.name = "Prop"
+		prop.position = Vector3(mx, 0.28, mz)
+		_tilt_pivot.add_child(prop)
+		_props.append(prop)
+
+		# Two thin blades (a stopped prop is still recognizable)
+		for b in range(2):
+			var blade: CSGBox3D = _csg_box(Vector3(PROP_RADIUS * 2.0, 0.03, 0.12), blade_col, 0.1, 0.6)
+			blade.rotation.y = b * PI * 0.5
+			prop.add_child(blade)
+
+		# Translucent blur disc — sits just above the blades, spins with them
+		var disc := CSGCylinder3D.new()
+		disc.radius = PROP_RADIUS
+		disc.height = 0.02
+		disc.sides = 20
+		disc.material = _rotor_mat
+		disc.position = Vector3(0.0, 0.03, 0.0)
+		prop.add_child(disc)
 
 
-func _build_skids() -> void:
-	## Landing skids — two parallel bars below the cabin with 4 struts.
-	## Dark matte like the Kenney wheels/trim (no metallic sheen).
-	var metal := Color(0.22, 0.22, 0.26)
-	for side in [-1, 1]:
-		var skid: CSGBox3D = _csg_box(Vector3(0.09, 0.09, 2.0), metal, 0.1, 0.8)
-		skid.position = Vector3(side * 0.55, -0.75, 0.0)
-		_tilt_pivot.add_child(skid)
-		for z in [-0.7, 0.7]:
-			var strut: CSGBox3D = _csg_box(Vector3(0.06, 0.35, 0.06), metal, 0.1, 0.8)
-			strut.position = Vector3(side * 0.55, -0.55, z)
-			_tilt_pivot.add_child(strut)
+func _build_legs() -> void:
+	## Four short landing legs with little foot pads under the body corners.
+	for c in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(1, 0, 1)]:
+		var lx: float = c.x * 0.6
+		var lz: float = c.z * 0.7
+		var leg: CSGBox3D = _csg_box(Vector3(0.07, 0.42, 0.07), DRONE_DARK, 0.1, 0.8)
+		leg.position = Vector3(lx, -0.38, lz)
+		_tilt_pivot.add_child(leg)
+		# Foot pad
+		var foot: CSGBox3D = _csg_box(Vector3(0.14, 0.05, 0.22), DRONE_DARK, 0.1, 0.8)
+		foot.position = Vector3(lx, -0.58, lz)
+		_tilt_pivot.add_child(foot)
 
 
-func _build_canopy() -> void:
-	## Tinted cockpit glass — front half of the cabin, translucent dark blue.
-	var glass_mat := StandardMaterial3D.new()
-	# Same dark reflective glass as the building windows / car glazing
-	glass_mat.albedo_color = Color(0.14, 0.17, 0.22, 0.80)
-	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass_mat.metallic = 0.35
-	glass_mat.roughness = 0.15
+func _build_gimbal() -> void:
+	## Under-slung 3-axis gimbal camera at the nose — the DJI signature.
+	# Gimbal yoke (small dark bracket)
+	var yoke: CSGBox3D = _csg_box(Vector3(0.34, 0.18, 0.22), DRONE_DARK, 0.2, 0.5)
+	yoke.position = Vector3(0.0, -0.22, -0.85)
+	_tilt_pivot.add_child(yoke)
 
-	var canopy := CSGBox3D.new()
-	canopy.size = Vector3(1.30, 0.55, 1.2)
-	canopy.material = glass_mat
-	canopy.position = Vector3(0.0, 0.35, -0.85)
-	_tilt_pivot.add_child(canopy)
+	# Camera body — small dark cube
+	var cam_body: CSGBox3D = _csg_box(Vector3(0.26, 0.26, 0.30), DRONE_DARK, 0.2, 0.45)
+	cam_body.position = Vector3(0.0, -0.34, -0.88)
+	_tilt_pivot.add_child(cam_body)
+
+	# Lens — glossy black cylinder facing forward (-Z)
+	var lens: CSGCylinder3D = _csg_cyl(0.10, 0.14, 14, Color(0.02, 0.02, 0.03), 0.6)
+	lens.rotation.x = PI * 0.5
+	lens.position = Vector3(0.0, -0.34, -1.02)
+	_tilt_pivot.add_child(lens)
+
+	# Lens glass — tiny blue-tinted emissive front so the camera "looks" alive
+	var glint_mat := StandardMaterial3D.new()
+	glint_mat.albedo_color = Color(0.20, 0.45, 0.75, 0.85)
+	glint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glint_mat.metallic = 0.6
+	glint_mat.roughness = 0.1
+	glint_mat.emission_enabled = true
+	glint_mat.emission = Color(0.15, 0.35, 0.6)
+	glint_mat.emission_energy_multiplier = 0.6
+	var glint := CSGCylinder3D.new()
+	glint.radius = 0.07
+	glint.height = 0.03
+	glint.sides = 14
+	glint.material = glint_mat
+	glint.rotation.x = PI * 0.5
+	glint.position = Vector3(0.0, -0.34, -1.10)
+	_tilt_pivot.add_child(glint)
+
+
+func _build_top_details() -> void:
+	## Small top-deck details — a GPS/compass puck and two stub antennas.
+	var puck: CSGCylinder3D = _csg_cyl(0.22, 0.06, 16, Color(0.10, 0.10, 0.12), 0.3)
+	puck.position = Vector3(0.0, 0.43, 0.10)
+	_tilt_pivot.add_child(puck)
+
+	for sx in [-1.0, 1.0]:
+		var ant: CSGCylinder3D = _csg_cyl(0.02, 0.34, 6, DRONE_DARK, 0.3)
+		ant.position = Vector3(sx * 0.45, 0.46, 0.55)
+		ant.rotation.x = -0.5
+		_tilt_pivot.add_child(ant)
 
 
 func _build_nav_lights() -> void:
-	## Red port, green starboard, blinking white tail — classic aviation lights.
-	_tilt_pivot.add_child(_make_nav_light(Vector3(-0.78, -0.05, -1.3), Color(1.0, 0.08, 0.10)))   # port (red)
-	_tilt_pivot.add_child(_make_nav_light(Vector3( 0.78, -0.05, -1.3), Color(0.08, 1.0, 0.20)))   # starboard (green)
+	## Front arm LEDs (red port / green starboard) + a blinking rear status
+	## beacon — how a camera drone shows its orientation in low light.
+	_tilt_pivot.add_child(_make_nav_light(Vector3(-ARM_REACH, 0.30, -ARM_REACH), Color(1.0, 0.08, 0.10)))   # front-left (red)
+	_tilt_pivot.add_child(_make_nav_light(Vector3( ARM_REACH, 0.30, -ARM_REACH), Color(0.08, 1.0, 0.20)))   # front-right (green)
 
-	# Tail beacon — kept as a ref so it can blink. The material is the
+	# Rear status beacon — kept as a ref so it can blink. The material is the
 	# MeshInstance3D's material_override (not a surface material).
-	_tail_light = _make_nav_light(Vector3(0.0, 0.95, 3.75), Color(1.0, 1.0, 1.0))
+	_tail_light = _make_nav_light(Vector3(0.0, 0.34, 1.0), Color(1.0, 1.0, 1.0))
 	_tail_light_mat = _tail_light.material_override as StandardMaterial3D
 	_tilt_pivot.add_child(_tail_light)
 
@@ -527,35 +550,36 @@ func _make_nav_light(pos: Vector3, color: Color) -> MeshInstance3D:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# AUDIO — procedural chopper-loop generator
+# AUDIO — procedural quad-buzz loop generator
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_audio() -> void:
-	## Generate a short seamless loop on startup (blade thump + turbine
-	## whine + broadband air noise), then hand it to an AudioStreamPlayer.
-	## Non-positional so volume stays constant regardless of chase-cam distance.
-	_sound_stream = _generate_chopper_loop(2.0, 22050)
+	## Generate a short seamless loop on startup (high-pitched prop buzz +
+	## electric-motor whine + prop-wash hiss), then hand it to an
+	## AudioStreamPlayer. Non-positional so volume stays constant regardless of
+	## chase-cam distance.
+	_sound_stream = _generate_quad_loop(2.0, 22050)
 	_sound_stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	_sound_stream.loop_begin = 0
 	_sound_stream.loop_end = _sound_stream.data.size() / 2  # 16-bit PCM
 
 	_sound_player = AudioStreamPlayer.new()
-	_sound_player.name = "ChopperSound"
+	_sound_player.name = "DroneSound"
 	_sound_player.stream = _sound_stream
 	_sound_player.volume_db = SOUND_QUIET_DB
 	_sound_player.bus = "Master"
 	add_child(_sound_player)
 
 
-func _generate_chopper_loop(duration_sec: float, sample_rate: int) -> AudioStreamWAV:
-	## Procedurally build a 2-second chopper loop:
-	##   Blade thump   — sharp amplitude-modulated 80 Hz pulse at 18 Hz
-	##                   (main-rotor blade-pass frequency — 2 blades × 9 rev/s)
-	##   Turbine whine — two detuned sines (~420 / 380 Hz) producing a beat
-	##                   frequency that sounds like turbine shimmer
-	##   Bass rumble   — low 45 Hz sine for weight
-	##   Air noise     — broadband white noise, low-pass filtered
-	## 2-second length × 18 Hz thump = 36 cycles (integer) → seamless loop.
+func _generate_quad_loop(duration_sec: float, sample_rate: int) -> AudioStreamWAV:
+	## Procedurally build a 2-second quadcopter loop:
+	##   Prop buzz     — dense ~190 Hz blade-pass tone (four 2-blade props at
+	##                   high RPM), slightly detuned for a beating shimmer +
+	##                   two harmonics for the buzzy edge
+	##   Motor whine   — high ~1.2 kHz electric-motor sizzle
+	##   Body          — light 95 Hz low-end (no chopper chest-thump)
+	##   Air wash      — low-passed white noise for the prop-wash hiss
+	## All partials are integer multiples of 0.5 Hz → seamless 2-second loop.
 	var num_samples: int = int(sample_rate * duration_sec)
 	var bytes := PackedByteArray()
 	bytes.resize(num_samples * 2)
@@ -567,25 +591,26 @@ func _generate_chopper_loop(duration_sec: float, sample_rate: int) -> AudioStrea
 	for i in range(num_samples):
 		var t: float = float(i) / sample_rate
 
-		# Blade thump — a sharp "whomp" at the rotor blade-pass rate.
-		# pow(cos, 8) gives a narrow spike that reads as a thump, not a tone.
-		var thump_env: float = pow(cos(PI * 18.0 * t), 8.0)
-		var thump: float = sin(TAU * 80.0 * t) * thump_env * 0.55
+		# Prop buzz — dense high blade-pass tone (four 2-blade props). A pair of
+		# slightly detuned partials beat into a shimmer; two harmonics add edge.
+		var buzz: float = sin(TAU * 190.0 * t) * 0.22
+		buzz += sin(TAU * 192.5 * t) * 0.16   # detune → beating shimmer
+		buzz += sin(TAU * 380.0 * t) * 0.10   # 2nd harmonic
+		buzz += sin(TAU * 570.0 * t) * 0.05   # 3rd harmonic (buzzy edge)
 
-		# Turbine whine — two sines with close frequencies create a slow
-		# beat that sounds mechanical and alive.
-		var whine: float = sin(TAU * 420.0 * t) * 0.10
-		whine += sin(TAU * 380.0 * t) * 0.07
+		# Motor whine — high electric-motor sizzle on top.
+		var whine: float = sin(TAU * 1180.0 * t) * 0.04
+		whine += sin(TAU * 1240.0 * t) * 0.03
 
-		# Bass rumble — steady low sine for chest-thump weight.
-		var rumble: float = sin(TAU * 45.0 * t) * 0.18
+		# Body — light low-end weight (no chopper chest-thump).
+		var rumble: float = sin(TAU * 95.0 * t) * 0.06
 
-		# Air noise — low-passed white noise for the "wash" of the rotor
+		# Air wash — low-passed white noise for the prop-wash hiss.
 		var white: float = rng.randf() * 2.0 - 1.0
-		lp = lp * 0.88 + white * 0.12
-		var air: float = lp * 0.08
+		lp = lp * 0.80 + white * 0.20
+		var air: float = lp * 0.06
 
-		var sample: float = thump + whine + rumble + air
+		var sample: float = buzz + whine + rumble + air
 		sample = clampf(sample, -1.0, 1.0)
 		var s16: int = int(sample * 32000.0)
 		bytes[i * 2]     = s16 & 0xFF

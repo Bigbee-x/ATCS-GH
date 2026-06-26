@@ -51,8 +51,9 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   hospital / market + a new `_place_airport`) across the flanking blocks, with
   `ResidentialTrafficManager` corridor-mode ambient cars on the south suburb's
   street grid. A free-fly **drone** (press **H**: mouse-look + WASD + Space/Ctrl
-  + Shift boost, the single junction's chopper via `DroneController`), roadside
-  concrete gutters, and both-curb utility poles were added (PR #14). **Gotchas:** (1) the corridor junction Z anchors + road-segment +
+  + Shift boost — a small **DJI-style quadcopter** via `DroneController`),
+  roadside concrete gutters, and both-curb utility poles were added (PR #14;
+  the drone was reworked from a helicopter to the small quad in PR #15). **Gotchas:** (1) the corridor junction Z anchors + road-segment +
   arm lengths are TRIPLICATED across `CorridorBuilder` / `VehicleManager` /
   `PedestrianManager` — change in lockstep or vehicles/pedestrians drift off the
   lanes; (2) the south-suburb street grid is duplicated in
