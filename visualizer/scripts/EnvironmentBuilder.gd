@@ -179,6 +179,13 @@ var _petrol_light: OmniLight3D = null
 
 # ── Tree-exclusion zones (world-space rects: [x_min, z_min, x_max, z_max]) ──
 # Populated by things like the football pitch so trees don't spawn on the field.
+# Corridor mode: set true on the corridor scene's EnvironmentBuilder node so
+# _ready() builds the 3-junction streetscape instead of the single-junction one.
+@export var corridor_mode: bool = false
+# Added to every _compute_position result so building rows can be offset to each
+# corridor junction. Stays Vector3.ZERO for the single junction (no-op).
+var _placement_origin: Vector3 = Vector3.ZERO
+
 var _exclusion_zones: Array = []
 
 # ── RNG ─────────────────────────────────────────────────────────────────────
@@ -196,29 +203,27 @@ func _ready() -> void:
 	# Create shared emissive materials BEFORE any buildings reference them
 	_create_glow_materials()
 
-	# Build along each of the 4 road arms
-	# Direction vectors: which axis the road runs along, and the perpendicular offset axis
-	# format: [arm_name, road_axis (0=X, 1=Z), dir_sign (+1/-1), road_width]
-	var arms: Array = [
-		["north", 1,  1.0, NS_ROAD_WIDTH],
-		["south", 1, -1.0, NS_ROAD_WIDTH],
-		["east",  0, -1.0, E_ROAD_WIDTH],   # Negated because Godot X is mirrored
-		["west",  0,  1.0, W_ROAD_WIDTH],
-	]
-
-	for arm in arms:
-		var arm_name: String = arm[0]
-		var axis: int = arm[1]
-		var dir_sign: float = arm[2]
-		var road_w: float = arm[3]
-		_build_arm_buildings(arm_name, axis, dir_sign, road_w)
-		_build_arm_gutters(axis, dir_sign, road_w)
-
-	# Build junction corner anchor buildings
-	_build_junction_corners()
-
-	# Fill the four quadrants between road arms with themed districts
-	_build_quadrants()
+	if corridor_mode:
+		_build_corridor()
+	else:
+		# Build along each of the 4 road arms of the single junction
+		# format: [arm_name, road_axis (0=X, 1=Z), dir_sign (+1/-1), road_width]
+		var arms: Array = [
+			["north", 1,  1.0, NS_ROAD_WIDTH],
+			["south", 1, -1.0, NS_ROAD_WIDTH],
+			["east",  0, -1.0, E_ROAD_WIDTH],   # Negated because Godot X is mirrored
+			["west",  0,  1.0, W_ROAD_WIDTH],
+		]
+		for arm in arms:
+			var arm_name: String = arm[0]
+			var axis: int = arm[1]
+			var dir_sign: float = arm[2]
+			var road_w: float = arm[3]
+			_build_arm_buildings(arm_name, axis, dir_sign, road_w)
+			_build_arm_gutters(axis, dir_sign, road_w)
+		# Junction corner anchors + quadrant districts (single junction only)
+		_build_junction_corners()
+		_build_quadrants()
 
 	# Hook into day/night cycle so emissive materials + OmniLights toggle correctly
 	_wire_day_night()
@@ -648,6 +653,290 @@ func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# CORRIDOR STREETSCAPE (3-junction) — reuses the single-junction primitives
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _build_corridor() -> void:
+	## Accra streetscape along the 3-junction corridor: building rows down both
+	## curbs of the N/S corridor + both curbs of every cross-street arm, plus a
+	## few landmark structures in the open blocks. Mirrors CorridorBuilder.gd
+	## geometry (junctions at Z 0/30/60, NS road half 3, cross/boundary arms 55).
+	var junctions: Array = [0.0, 30.0, 60.0]
+	var junc_half: float = 3.0
+	var ns_half: float = 3.0
+	var cross_arm: float = 55.0
+	var boundary: float = 55.0
+	var z_min: float = junctions[0] - junc_half - boundary    # -58
+	var z_max: float = junctions[2] + junc_half + boundary    # 118
+	var face_off: float = ns_half + SIDEWALK_WIDTH + BUILDING_OFFSET   # curb → building face
+
+	# ── Building rows down both curbs of the N/S corridor ──────────────────
+	_placement_origin = Vector3(0, 0, z_min)
+	var span: float = z_max - z_min
+	for side_sign in [-1.0, 1.0]:
+		for row in range(2):                       # 2 frontage rows (districts fill behind)
+			var perp: float = side_sign * (face_off + row * 9.0)
+			var along: float = 4.0 + row * 3.0     # stagger so rows don't line up
+			while along < span - 4.0:
+				if _near_corridor_junction(z_min + along, junctions, junc_half + 6.0):
+					along += 5.0
+					continue
+				along += _place_corridor_building(1, 1.0, along, perp, side_sign) \
+						+ _rng.randf_range(MIN_GAP, MAX_GAP)
+	_placement_origin = Vector3.ZERO
+
+	# ── Building rows along each junction's E/W cross-street arms ───────────
+	for cz in junctions:
+		_placement_origin = Vector3(0, 0, cz)
+		for dir_sign in [-1.0, 1.0]:   # east reaches -X, west reaches +X (mirrored)
+			for side_sign in [-1.0, 1.0]:
+				for row in range(1):
+					var perp2: float = side_sign * (face_off + row * 9.0)
+					var d: float = junc_half + JUNCTION_MARGIN + row * 3.0
+					var d_end: float = junc_half + cross_arm - ROAD_END_MARGIN
+					while d < d_end:
+						d += _place_corridor_building(0, dir_sign, d, perp2, side_sign) \
+								+ _rng.randf_range(MIN_GAP, MAX_GAP)
+	_placement_origin = Vector3.ZERO
+
+	# ── Zoned districts — one themed district per flanking block, placed beyond
+	#    the frontage rows (mirrors the single-junction quadrants). Easy to
+	#    rearrange: just swap which helper goes at which block centre. ─────────
+	_placement_origin = Vector3.ZERO
+	_place_airport(38.0, 90.0)                # north boundary +X — biggest flat area
+	_corridor_industrial(-38.0, 88.0)         # north boundary −X
+	_corridor_offices(38.0, 45.0)             # J1–J2 +X — commercial / skyscrapers
+	_corridor_residential(-38.0, 45.0, 3, 1)  # J1–J2 −X — homes
+	_corridor_institutional(38.0, 16.0)       # J0–J1 +X — school + pitch + church
+	_corridor_hospital(-38.0, 16.0)           # J0–J1 −X
+	_corridor_residential(38.0, -32.0, 3, 3)  # south boundary +X — suburb
+	_corridor_market(-38.0, -32.0)            # south boundary −X — market + trotro
+	_place_petrol_station(Vector3(24.0, 0, -10.0))
+	_place_petrol_station(Vector3(-24.0, 0, 70.0))
+
+
+func _place_corridor_building(axis: int, dir_sign: float, along: float,
+		perp: float, side_sign: float) -> float:
+	## Weighted random street building (mirrors _build_arm_buildings' picker).
+	var roll: float = _rng.randf()
+	if roll < 0.45:
+		return _place_block_building(axis, dir_sign, along, perp, side_sign)
+	elif roll < 0.75:
+		return _place_shop_front(axis, dir_sign, along, perp, side_sign)
+	elif roll < 0.85:
+		return _place_compound_wall(axis, dir_sign, along, perp, side_sign)
+	else:
+		return _place_market_stalls(axis, dir_sign, along, perp, side_sign)
+
+
+func _near_corridor_junction(z: float, junctions: Array, margin: float) -> bool:
+	for cz in junctions:
+		if absf(z - cz) < margin:
+			return true
+	return false
+
+
+## ── Corridor districts — compose existing primitives at offsets from a block
+##    centre (cx, cz). Offsets use cx+offset so the same formula works on the +X
+##    and −X flanks (cx already carries the side's sign). ──────────────────────
+
+func _corridor_offices(cx: float, cz: float) -> void:
+	## Commercial core: tall glassy towers + mid-rise + parking.
+	_place_office_tower(Vector3(cx - 12, 0, cz - 4), 8, 6.5, 6.5)
+	_place_office_tower(Vector3(cx + 2, 0, cz + 5), 6, 6.0, 6.0)
+	_place_midrise_office(Vector3(cx + 14, 0, cz - 5), 4, 5.0, 5.0)
+	_place_midrise_office(Vector3(cx - 4, 0, cz + 7), 3, 4.5, 4.5)
+	_place_parking_lot(Vector3(cx + 13, 0, cz + 6), 9.0, 5.0, 6)
+	_place_stadium_light(Vector3(cx + 6, 0, cz))
+	_add_exclusion_zone(cx - 20, cz - 12, cx + 20, cz + 12)
+
+
+func _corridor_residential(cx: float, cz: float, cols: int, rows: int) -> void:
+	## Homes — compound houses on a grid threaded by internal streets. The 3×3
+	## south suburb's street grid (x=cx±7, z=cz±7.5) is matched by
+	## ResidentialTrafficManager (corridor mode) so ambient cars drive it.
+	for i in range(cols):
+		for j in range(rows):
+			var x: float = cx + (float(i) - (cols - 1) / 2.0) * 14.0
+			var z: float = cz + (float(j) - (rows - 1) / 2.0) * 15.0
+			var st: int = 1 if _rng.randf() < 0.4 else 2
+			_place_house_compound(Vector3(x, 0, z), 11.0, st)
+	# Internal streets between the rows/columns of compounds.
+	var ns_len: float = (float(rows) - 1.0) * 15.0 + 14.0
+	if cols >= 2:
+		for sx in [cx - 7.0, cx + 7.0]:
+			_place_residential_street(Vector3(sx, 0, cz), ns_len, true)
+	if rows >= 2:
+		for sz in [cz - 7.5, cz + 7.5]:
+			_place_residential_street(Vector3(cx, 0, sz), 40.0, false)
+		for lx in [cx - 7.0, cx + 7.0]:
+			for lz in [cz - 7.5, cz + 7.5]:
+				_place_residential_lamp(Vector3(lx, 0, lz))
+	else:
+		_place_residential_lamp(Vector3(cx, 0, cz))
+
+
+func _corridor_institutional(cx: float, cz: float) -> void:
+	## Football pitch (kept clear of ALL buildings — field + stands stay open) on
+	## the corridor-side half of the block; school + church on the far-X strip
+	## beside it so nothing sits on the pitch.
+	_place_football_pitch(Vector3(cx - 8, 0, cz), 16.0, 8.0)
+	_place_school_building(Vector3(cx + 14, 0, cz + 3), 3, 11.0, 6.0)
+	_place_church(Vector3(cx + 15, 0, cz - 6))
+	_place_residential_lamp(Vector3(cx + 5, 0, cz))
+
+
+func _corridor_hospital(cx: float, cz: float) -> void:
+	## Hospital campus — clinic + a taller ward block + parking.
+	_place_midrise_office(Vector3(cx - 8, 0, cz), 5, 8.0, 7.0)   # ward tower
+	_place_clinic(Vector3(cx + 6, 0, cz - 4))
+	_place_clinic(Vector3(cx + 8, 0, cz + 6))
+	_place_parking_lot(Vector3(cx + 16, 0, cz + 2), 8.0, 5.0, 6)
+	_place_stadium_light(Vector3(cx, 0, cz))
+
+
+func _corridor_industrial(cx: float, cz: float) -> void:
+	## Industrial yard — factories, warehouse, tanks, container yard, trucks.
+	_place_factory(Vector3(cx, 0, cz - 14), 20.0, 6.0, 12.0)
+	_place_factory(Vector3(cx - 12, 0, cz + 14), 12.0, 4.5, 8.0)
+	_place_warehouse(Vector3(cx + 14, 0, cz + 14), 12.0, 5.0, 9.0)
+	_place_storage_tank(Vector3(cx + 14, 0, cz - 6), 2.4, 5.5)
+	_place_storage_tank(Vector3(cx + 18, 0, cz - 1), 2.0, 4.8)
+	_place_storage_tank(Vector3(cx + 13, 0, cz + 2), 1.8, 4.2)
+	_place_container_yard(Vector3(cx - 2, 0, cz + 2))
+	_place_tanker_truck(Vector3(cx - 16, 0, cz - 8))
+	_place_flatbed_truck(Vector3(cx - 8, 0, cz - 4))
+	_place_yard_light(Vector3(cx - 10, 0, cz + 6))
+	_place_yard_light(Vector3(cx + 12, 0, cz + 18))
+	_add_exclusion_zone(cx - 24, cz - 24, cx + 24, cz + 24)
+
+
+func _corridor_market(cx: float, cz: float) -> void:
+	## Market + transport — dense stalls, trotro station, a mall, parking.
+	_place_dense_market_stalls(Vector3(cx - 6, 0, cz + 8), 4, 5)
+	_place_dense_market_stalls(Vector3(cx + 12, 0, cz - 8), 3, 5)
+	_place_trotro_station(Vector3(cx - 10, 0, cz - 12))
+	_place_shopping_mall(Vector3(cx + 12, 0, cz + 12), 14.0, 5.0, 8.0)
+	_place_parking_lot(Vector3(cx + 2, 0, cz - 2), 9.0, 5.0, 6)
+	_place_stadium_light(Vector3(cx, 0, cz))
+
+
+func _place_airport(cx: float, cz: float) -> void:
+	## Airport district — runway + dashed centreline, glass terminal, control
+	## tower, hangar, and a parked plane on the apron.
+	var asphalt: StandardMaterial3D = _get_material(Color(0.16, 0.16, 0.18))
+	var paint: StandardMaterial3D = _get_material(Color(0.9, 0.9, 0.9))
+
+	var runway := CSGBox3D.new()
+	runway.size = Vector3(9.0, 0.1, 44.0)
+	runway.position = Vector3(cx, 0.05, cz)
+	runway.material = asphalt
+	runway.name = "Runway"
+	add_child(runway)
+
+	var z: float = cz - 20.0
+	while z < cz + 20.0:
+		var dash := CSGBox3D.new()
+		dash.size = Vector3(0.5, 0.04, 2.4)
+		dash.position = Vector3(cx, 0.12, z)
+		dash.material = paint
+		add_child(dash)
+		z += 5.5
+
+	# Terminal — wide low glass-fronted building
+	var term := CSGBox3D.new()
+	term.size = Vector3(18.0, 4.5, 8.0)
+	term.position = Vector3(cx + 16.0, 2.25, cz - 8.0)
+	term.material = _get_glass_material(GLASS_COLORS[0])
+	term.name = "AirportTerminal"
+	add_child(term)
+
+	# Control tower + glass cab
+	var tower := CSGCylinder3D.new()
+	tower.radius = 0.9
+	tower.height = 12.0
+	tower.position = Vector3(cx + 16.0, 6.0, cz + 2.0)
+	tower.material = _get_material(Color(0.82, 0.82, 0.85))
+	add_child(tower)
+	var cab := CSGBox3D.new()
+	cab.size = Vector3(2.8, 1.8, 2.8)
+	cab.position = Vector3(cx + 16.0, 12.2, cz + 2.0)
+	cab.material = _get_glass_material(GLASS_COLORS[1])
+	add_child(cab)
+
+	# Hangar — big shed
+	var hangar := CSGBox3D.new()
+	hangar.size = Vector3(15.0, 6.5, 13.0)
+	hangar.position = Vector3(cx + 17.0, 3.25, cz + 16.0)
+	hangar.material = _get_material(Color(0.55, 0.57, 0.6))
+	hangar.name = "Hangar"
+	add_child(hangar)
+
+	_place_plane(Vector3(cx + 7.0, 0, cz + 6.0))
+
+	# Apron / perimeter floods (bright sodium, on at night)
+	for fl in [Vector3(cx + 6.0, 0, cz - 22.0), Vector3(cx + 6.0, 0, cz + 20.0),
+			Vector3(cx + 20.0, 0, cz - 14.0), Vector3(cx + 20.0, 0, cz + 16.0),
+			Vector3(cx - 6.0, 0, cz), Vector3(cx + 20.0, 0, cz)]:
+		_place_yard_light(fl)
+
+	# Runway edge lights — bright always-on markers down both edges + a couple of
+	# real lights at the ends so the runway reads as lit day and night.
+	var rl_mat := StandardMaterial3D.new()
+	rl_mat.albedo_color = Color(0.80, 0.90, 1.0)
+	rl_mat.emission_enabled = true
+	rl_mat.emission = Color(0.70, 0.85, 1.0)
+	rl_mat.emission_energy_multiplier = 8.0
+	var rz: float = cz - 20.0
+	while rz <= cz + 20.0:
+		for ex in [-1.0, 1.0]:
+			var bulb := CSGSphere3D.new()
+			bulb.radius = 0.22
+			bulb.position = Vector3(cx + ex * 5.0, 0.4, rz)
+			bulb.material = rl_mat
+			bulb.name = "RunwayLight"
+			add_child(bulb)
+		rz += 4.0
+	for endz in [cz - 22.0, cz + 22.0]:
+		var rl := OmniLight3D.new()
+		rl.position = Vector3(cx, 1.2, endz)
+		rl.omni_range = 18.0
+		rl.light_energy = 6.0
+		rl.light_color = Color(0.80, 0.90, 1.0)
+		rl.shadow_enabled = false
+		add_child(rl)
+
+	_add_exclusion_zone(cx - 8, cz - 26, cx + 26, cz + 26)
+
+
+func _place_plane(center: Vector3) -> void:
+	var white: StandardMaterial3D = _get_material(Color(0.93, 0.93, 0.95))
+	var body := CSGCylinder3D.new()
+	body.radius = 0.85
+	body.height = 9.0
+	body.rotation_degrees = Vector3(90, 0, 0)   # lie the fuselage along Z
+	body.position = center + Vector3(0, 1.3, 0)
+	body.material = white
+	body.name = "Plane"
+	add_child(body)
+	var wing := CSGBox3D.new()
+	wing.size = Vector3(11.0, 0.25, 2.2)
+	wing.position = center + Vector3(0, 1.3, 0.5)
+	wing.material = white
+	add_child(wing)
+	var tailwing := CSGBox3D.new()
+	tailwing.size = Vector3(4.0, 0.2, 1.2)
+	tailwing.position = center + Vector3(0, 1.5, -3.8)
+	tailwing.material = white
+	add_child(tailwing)
+	var tailfin := CSGBox3D.new()
+	tailfin.size = Vector3(0.25, 2.2, 1.6)
+	tailfin.position = center + Vector3(0, 2.4, -3.8)
+	tailfin.material = _get_material(Color(0.85, 0.2, 0.2))
+	add_child(tailfin)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # BUILDING TYPES
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -900,9 +1189,9 @@ func _compute_position(axis: int, dir_sign: float, along: float,
 	## axis=1: road runs along Z, perp is X
 	var perp_total: float = perp + side_sign * depth / 2.0
 	if axis == 1:  # N/S road
-		return Vector3(perp_total, 0, dir_sign * along)
+		return Vector3(perp_total, 0, dir_sign * along) + _placement_origin
 	else:  # E/W road
-		return Vector3(dir_sign * along, 0, perp_total)
+		return Vector3(dir_sign * along, 0, perp_total) + _placement_origin
 
 
 func _orient_size(axis: int, width: float, height: float, depth: float) -> Vector3:

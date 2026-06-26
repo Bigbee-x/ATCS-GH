@@ -74,6 +74,14 @@ var ADJ: Dictionary = {
 var _cars: Array = []
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
+# Corridor mode: set true on the corridor scene's node to drive the corridor's
+# south +X residential suburb (world coords, no quadrant mirror) instead of the
+# single-junction SE quadrant.
+@export var corridor_mode: bool = false
+var _qx: float = QUAD_XS
+var _qz: float = QUAD_ZS
+var _num_cars: int = NUM_CARS
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LIFECYCLE
@@ -81,7 +89,34 @@ var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 func _ready() -> void:
 	_rng.seed = 7341   # deterministic palette / starting positions
+	if corridor_mode:
+		_configure_corridor()
 	_spawn_all()
+
+
+func _configure_corridor() -> void:
+	## Point the ambient cars at the corridor's south +X residential suburb
+	## (centre 38, −32). World coords, no quadrant mirror. Must match the street
+	## grid laid by EnvironmentBuilder._corridor_residential for that block.
+	_qx = 1.0
+	_qz = 1.0
+	_num_cars = 12
+	NODES = {
+		"ix1": Vector2(31, -39.5), "ix2": Vector2(45, -39.5),
+		"ix3": Vector2(31, -24.5), "ix4": Vector2(45, -24.5),
+		"n1": Vector2(31, -53), "n2": Vector2(45, -53),
+		"s1": Vector2(31, -11), "s2": Vector2(45, -11),
+		"w1": Vector2(18, -39.5), "w2": Vector2(18, -24.5),
+		"e1": Vector2(58, -39.5), "e2": Vector2(58, -24.5),
+	}
+	ADJ = {
+		"n1": ["ix1"], "n2": ["ix2"], "s1": ["ix3"], "s2": ["ix4"],
+		"w1": ["ix1"], "w2": ["ix3"], "e1": ["ix2"], "e2": ["ix4"],
+		"ix1": ["n1", "ix3", "w1", "ix2"],
+		"ix2": ["n2", "ix4", "ix1", "e1"],
+		"ix3": ["ix1", "s1", "w2", "ix4"],
+		"ix4": ["ix2", "s2", "ix3", "e2"],
+	}
 
 
 func _process(delta: float) -> void:
@@ -95,7 +130,7 @@ func _process(delta: float) -> void:
 
 func _spawn_all() -> void:
 	var edges: Array = _all_undirected_edges()
-	for i in range(NUM_CARS):
+	for i in range(_num_cars):
 		var e: Array = edges[_rng.randi() % edges.size()]
 		# Randomize direction along the edge
 		var from_key: String = e[0]
@@ -162,14 +197,14 @@ func _update_car_transform(car: Dictionary, snap_yaw: bool, delta: float = 0.0) 
 	var local_pos: Vector2 = a.lerp(b, clampf(car["progress"], 0.0, 1.0))
 
 	# World pos (apply quadrant mirror)
-	var world_pos := Vector3(local_pos.x * QUAD_XS, CAR_Y, local_pos.y * QUAD_ZS)
+	var world_pos := Vector3(local_pos.x * _qx, CAR_Y, local_pos.y * _qz)
 
 	# Edge direction in world space
 	var dir_local: Vector2 = (b - a)
 	if dir_local.length_squared() < 0.0001:
 		return
 	dir_local = dir_local.normalized()
-	var dir_world := Vector3(dir_local.x * QUAD_XS, 0.0, dir_local.y * QUAD_ZS)
+	var dir_world := Vector3(dir_local.x * _qx, 0.0, dir_local.y * _qz)
 
 	# Right-hand lane offset (perpendicular to direction, on the right)
 	# right = forward × up  →  (dx, 0, dz) × (0, 1, 0) = (-dz, 0, dx)
