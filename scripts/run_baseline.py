@@ -283,7 +283,7 @@ def run_simulation(gui: bool = False,
         preset: Timer preset name — "naive" (45/45) or "tuned" (55/35).
 
     Returns:
-        (records list, emergency_log dict)
+        records list
     """
     timer = TIMER_PRESETS[preset]
     ns_green = timer["ns_green"]
@@ -403,7 +403,7 @@ def run_simulation(gui: bool = False,
         output_csv    = output_csv,
     )
 
-    return logger.records, logger.emergency_log
+    return logger.records
 
 
 # ── Terminal Report ───────────────────────────────────────────────────────────
@@ -461,21 +461,6 @@ def print_report(sim_time: int, stats: dict, *,
     print(f"  └───────────────────────────────────────────────────┘")
     print()
 
-    emerg = stats.get("emergency_log", {})
-    if emerg:
-        print(f"  ┌── EMERGENCY VEHICLE PERFORMANCE ──────────────────┐")
-        print(f"  │  {'Vehicle':<15}  {'Route':<12}  {'Max Wait at Red':>16}  │")
-        print(f"  │  {'─'*15}  {'─'*12}  {'─'*16}  │")
-        for vid, info in sorted(emerg.items()):
-            print(f"  │  {vid:<15}  {info['route']:<12}  {info['max_wait']:>14.1f}s  │")
-        print(f"  └───────────────────────────────────────────────────┘")
-        print()
-        print(f"  NOTE: Fixed timer cannot preempt for emergencies.")
-        print(f"        Phase 2 AI will reduce emergency wait to ~0s.")
-    else:
-        print("  No emergency vehicles were tracked in this run.")
-
-    print()
     print(f"  ── Phase 2 Target ─────────────────────────────────────")
     print(f"     Avg wait: {avg_wait:.2f}s  →  target < {ai_target:.2f}s  (40% reduction)")
     print(f"     Results saved to: {output_csv.relative_to(PROJECT_ROOT)}")

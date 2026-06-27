@@ -31,9 +31,6 @@ import traci
 # Edges whose incoming lanes we measure (vehicles approaching the junction)
 INCOMING_EDGES  = ["ACH_N2J", "ACH_S2J", "AGG_E2J", "GUG_W2J"]
 
-# Vehicle type ID that identifies emergency vehicles (must match routes.rou.xml)
-EMERGENCY_TYPE  = "emergency"
-
 # Rolling window length for throughput calculation (seconds)
 THROUGHPUT_WINDOW_S = 60
 
@@ -47,11 +44,7 @@ class MetricsLogger:
       • total_queue_vehicles     — total halted vehicles across all incoming lanes
       • throughput_veh_per_min   — vehicles that completed journeys in last 60s
       • completed_vehicles       — cumulative total of arrived vehicles
-      • emergency_vehicles_waiting — emergency vehicles currently stopped
       • per-lane wait and queue  — one column pair per incoming lane
-
-    Emergency vehicle tracking:
-      • emergency_log dict maps vehicle_id → {max_wait, total_wait, ...}
     """
 
     def __init__(self, output_path: str | Path,
@@ -61,9 +54,6 @@ class MetricsLogger:
 
         # Collected rows — each element is one simulation step
         self.records: list[dict] = []
-
-        # Emergency vehicle state: vid → {max_wait, total_wait, first_seen, route}
-        self.emergency_log: dict[str, dict] = {}
 
         # Rolling arrivals buffer for throughput: list of (timestamp, count)
         self._recent_arrivals: list[tuple[float, int]] = []
@@ -114,23 +104,14 @@ class MetricsLogger:
         # Update edge-level aggregates (used in summary_stats)
         self._update_edge_stats(lane_metrics)
 
-        # Track emergency vehicles
-        self._track_emergency_vehicles(current_time)
-        n_emerg_waiting = sum(
-            1 for vid in traci.vehicle.getIDList()
-            if traci.vehicle.getTypeID(vid) == EMERGENCY_TYPE
-            and traci.vehicle.getSpeed(vid) < 0.1   # effectively stopped
-        )
-
         # Build the record for this step
         record: dict = {
-            "time_s":                    int(current_time),
-            "tl_phase":                  tl_phase_name,
-            "avg_wait_time_s":           avg_wait,
-            "total_queue_vehicles":      total_queue,
-            "throughput_veh_per_min":    throughput,
-            "completed_vehicles":        self.total_arrived,
-            "emergency_vehicles_waiting": n_emerg_waiting,
+            "time_s":                 int(current_time),
+            "tl_phase":               tl_phase_name,
+            "avg_wait_time_s":        avg_wait,
+            "total_queue_vehicles":   total_queue,
+            "throughput_veh_per_min": throughput,
+            "completed_vehicles":     self.total_arrived,
         }
 
         # Append one column pair per lane (sorted for consistent CSV column order)
@@ -164,7 +145,7 @@ class MetricsLogger:
 
         Returns a dict with keys:
             overall_avg_wait, peak_queue, avg_throughput, peak_throughput,
-            total_completed, edge_stats, emergency_log
+            total_completed, edge_stats
         """
         if not self.records:
             return {}
@@ -180,7 +161,6 @@ class MetricsLogger:
             "peak_throughput":   max(throughputs),
             "total_completed":   self.total_arrived,
             "edge_stats":        self.edge_stats,
-            "emergency_log":     self.emergency_log,
         }
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -225,27 +205,3 @@ class MetricsLogger:
             stats["total_wait"] += total_edge_wait
             stats["max_queue"]   = max(stats["max_queue"], max_edge_queue)
             stats["samples"]    += 1
-
-    def _track_emergency_vehicles(self, current_time: float) -> None:
-        """
-        Record accumulated waiting time for every emergency vehicle in the sim.
-        SUMO's accumulatedWaitingTime counts total seconds spent at speed < 0.1 m/s.
-        """
-        for vid in traci.vehicle.getIDList():
-            if traci.vehicle.getTypeID(vid) != EMERGENCY_TYPE:
-                continue
-
-            wait = traci.vehicle.getAccumulatedWaitingTime(vid)
-
-            if vid not in self.emergency_log:
-                self.emergency_log[vid] = {
-                    "max_wait":   0.0,
-                    "total_wait": 0.0,
-                    "first_seen": current_time,
-                    "route":      traci.vehicle.getRouteID(vid),
-                }
-
-            entry = self.emergency_log[vid]
-            entry["total_wait"] = wait
-            if wait > entry["max_wait"]:
-                entry["max_wait"] = wait

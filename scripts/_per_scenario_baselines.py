@@ -32,7 +32,7 @@ for name in SCENARIOS:
     route = str(ROOT / "simulation" / "scenarios" / f"{name}.rou.xml")
     print(f"\n{'#'*70}\n#  BASELINE: {name}\n{'#'*70}", flush=True)
     try:
-        records, _ = rb.run_simulation(gui=False, preset="protected", route_file=route)
+        records = rb.run_simulation(gui=False, preset="protected", route_file=route)
         aw   = [r["avg_wait_time_s"] for r in records]
         q    = [r["total_queue_vehicles"] for r in records]
         comp = records[-1]["completed_vehicles"]
