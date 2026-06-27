@@ -52,8 +52,18 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   `ResidentialTrafficManager` corridor-mode ambient cars on the south suburb's
   street grid. A free-fly **drone** (press **H**: mouse-look + WASD + Space/Ctrl
   + Shift boost — a small **DJI-style quadcopter** via `DroneController`),
-  roadside concrete gutters, and both-curb utility poles were added (PR #14;
-  the drone was reworked from a helicopter to the small quad in PR #15). **Gotchas:** (1) the corridor junction Z anchors + road-segment +
+  roadside concrete gutters, and utility poles were added (PR #14; the drone was
+  reworked from a helicopter to the small quad in PR #15; sensors mount on the
+  actual mast-arm side in PR #17; cars cast real headlight beams in PR #18).
+  **PR #19** added brand **billboards** (`BillboardBuilder` — Ghanaian brands +
+  Valiborn, emissive/night-glow, road-facing; a sign near a junction sits on the
+  cross-street, so place them between junctions), **rebuilt the airport** (KOTOKA
+  terminal + tower/beacon + hangar + jets, all clear of the runway), **rebuilt
+  the football pitch** (mown stripes + full markings), gave the institutional +
+  hospital blocks **keep-clear zones** (generic corridor frontage now skips any
+  registered exclusion zone — see `_place_corridor_building`) so they hold a car
+  park + trees / a hospital campus + GOIL gas station instead of clutter, and put
+  **utility poles on ONE curb** only. **Gotchas:** (1) the corridor junction Z anchors + road-segment +
   arm lengths are TRIPLICATED across `CorridorBuilder` / `VehicleManager` /
   `PedestrianManager` — change in lockstep or vehicles/pedestrians drift off the
   lanes; (2) the south-suburb street grid is duplicated in
