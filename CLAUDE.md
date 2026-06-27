@@ -122,4 +122,6 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 - Corridor full revival — **DONE** (Phases 0–4 + visualizer): trained, official
   greedy eval corridor 13.6s vs 143.1s baseline (−90.5%), models shipped (PR #9).
   Optional follow-ups: evening/off-peak corridor scenarios for richer rotation.
-- `metrics_logger.py` has self-contained (unused) emergency tracking to clean.
+- `metrics_logger.py` unused emergency tracking — **DONE** (PR #16): removed
+  `EMERGENCY_TYPE` / `emergency_log` / `_track_emergency_vehicles` + the dead
+  `run_baseline.py` emergency report block; all call sites updated.
