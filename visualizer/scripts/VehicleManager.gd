@@ -609,7 +609,9 @@ func _build_model_vehicle(node_name: String, model: PackedScene, is_trotro: bool
 
 func _add_vehicle_lights(root: Node3D) -> void:
 	## Front headlights (-Z) / rear taillights (+Z) — hidden by day, shown at
-	## night. Toggled by name via _set_lights_visible; -Z matches the vehicle's
+	## night. The L/R boxes are the visible lamp lenses; a single SpotLight3D
+	## ("Headlight_Beam") throws the actual light cone on the road ahead.
+	## All toggled by name via _set_lights_visible; -Z matches the vehicle's
 	## heading after _sumo_angle_to_godot.
 	for side in [-1.0, 1.0]:
 		var hl := CSGBox3D.new()
@@ -627,6 +629,29 @@ func _add_vehicle_lights(root: Node3D) -> void:
 		tl.name = "Taillight_L" if side < 0 else "Taillight_R"
 		tl.visible = _is_night
 		root.add_child(tl)
+
+	# Forward beam — an actual SpotLight3D that pools warm light on the road
+	# ahead (the boxes above are just the lamp lenses). ONE no-shadow light per
+	# car keeps the cost sane; because the name starts with "Headlight" it
+	# inherits the same night/dusk/rain gating as the lenses (hidden = ~zero
+	# render cost by day). distance_fade culls far beams, so even a 500-car
+	# corridor only lights the handful of cars near the camera.
+	var beam := SpotLight3D.new()
+	beam.name = "Headlight_Beam"
+	beam.position = Vector3(0.0, 0.10, -0.55)    # front centre, just above the road
+	beam.rotation.x = -deg_to_rad(13.0)          # aim -Z forward + slightly down onto the road
+	beam.light_color = Color(1.0, 0.95, 0.82)    # warm white, matches the lenses
+	beam.light_energy = 3.0
+	beam.spot_range = 9.0                         # ~a few car-lengths of throw
+	beam.spot_angle = 26.0
+	beam.spot_angle_attenuation = 1.3            # soft cone edge
+	beam.spot_attenuation = 1.2                  # falloff along the beam
+	beam.shadow_enabled = false                  # light the road, skip shadows (perf)
+	beam.distance_fade_enabled = true            # fade distant beams → bounded active-light count
+	beam.distance_fade_begin = 45.0
+	beam.distance_fade_length = 18.0
+	beam.visible = _is_night
+	root.add_child(beam)
 
 
 func _prepare_model_for_fade(model_root: Node3D) -> void:
