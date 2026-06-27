@@ -670,6 +670,14 @@ func _build_corridor() -> void:
 	var z_max: float = junctions[2] + junc_half + boundary    # 118
 	var face_off: float = ns_half + SIDEWALK_WIDTH + BUILDING_OFFSET   # curb → building face
 
+	# Keep the institutional block (around the football pitch, +X / J0–J1) clear
+	# of generic frontage — registered BEFORE the frontage loops so they skip it.
+	# _corridor_institutional() then fills it deliberately (car park + trees),
+	# keeping only the big buildings (school + church).
+	_add_exclusion_zone(12.0, 5.0, 46.0, 27.0)
+	# Same for the hospital campus on the −X flank — it owns its block too.
+	_add_exclusion_zone(-50.0, 4.0, -10.0, 28.0)
+
 	# ── Building rows down both curbs of the N/S corridor ──────────────────
 	_placement_origin = Vector3(0, 0, z_min)
 	var span: float = z_max - z_min
@@ -703,7 +711,7 @@ func _build_corridor() -> void:
 	#    the frontage rows (mirrors the single-junction quadrants). Easy to
 	#    rearrange: just swap which helper goes at which block centre. ─────────
 	_placement_origin = Vector3.ZERO
-	_place_airport(38.0, 90.0)                # north boundary +X — biggest flat area
+	_place_airport(38.0, 96.0)                # north boundary +X — shifted north so the runway clears the J2 cross-street frontage
 	_corridor_industrial(-38.0, 88.0)         # north boundary −X
 	_corridor_offices(38.0, 45.0)             # J1–J2 +X — commercial / skyscrapers
 	_corridor_residential(-38.0, 45.0, 3, 1)  # J1–J2 −X — homes
@@ -718,6 +726,11 @@ func _build_corridor() -> void:
 func _place_corridor_building(axis: int, dir_sign: float, along: float,
 		perp: float, side_sign: float) -> float:
 	## Weighted random street building (mirrors _build_arm_buildings' picker).
+	# Skip spots inside a registered keep-clear zone (e.g. the institutional
+	# block) so a district can own its land instead of generic frontage.
+	var probe: Vector3 = _compute_position(axis, dir_sign, along + 1.5, perp, side_sign, 3.0)
+	if _in_exclusion_zone(probe.x, probe.z):
+		return 3.0   # advance the cursor past this spot without building
 	var roll: float = _rng.randf()
 	if roll < 0.45:
 		return _place_block_building(axis, dir_sign, along, perp, side_sign)
@@ -777,22 +790,44 @@ func _corridor_residential(cx: float, cz: float, cols: int, rows: int) -> void:
 
 
 func _corridor_institutional(cx: float, cz: float) -> void:
-	## Football pitch (kept clear of ALL buildings — field + stands stay open) on
-	## the corridor-side half of the block; school + church on the far-X strip
-	## beside it so nothing sits on the pitch.
-	_place_football_pitch(Vector3(cx - 8, 0, cz), 16.0, 8.0)
-	_place_school_building(Vector3(cx + 14, 0, cz + 3), 3, 11.0, 6.0)
-	_place_church(Vector3(cx + 15, 0, cz - 6))
+	## A clean sports/school grounds: the football pitch + the two big buildings
+	## (school + church), with the rest of the block deliberately left open as a
+	## car park and trees. The keep-clear zone registered in _build_corridor stops
+	## generic frontage from cluttering this block.
+	_place_football_pitch(Vector3(cx - 8, 0, cz), 18.0, 11.0)
+	_place_school_building(Vector3(cx + 14, 0, cz + 3), 3, 11.0, 6.0)   # big — kept
+	_place_church(Vector3(cx + 15, 0, cz - 6))                          # big — kept
+
+	# Car park west of the pitch (serves the school + stadium)
+	_place_parking_lot(Vector3(cx - 22, 0, cz), 6.0, 14.0, 12)
+
+	# Trees dotted around the grounds (south edge, north edge, and the gap
+	# between the pitch and the school) — all clear of the pitch and buildings.
+	for t in [Vector3(cx - 14, 0, cz - 9), Vector3(cx - 4, 0, cz - 9),
+			Vector3(cx + 4, 0, cz - 9), Vector3(cx - 10, 0, cz + 9),
+			Vector3(cx, 0, cz + 9), Vector3(cx + 6, 0, cz + 8),
+			Vector3(cx + 9, 0, cz)]:
+		_place_tree(t)
+
 	_place_residential_lamp(Vector3(cx + 5, 0, cz))
 
 
 func _corridor_hospital(cx: float, cz: float) -> void:
-	## Hospital campus — clinic + a taller ward block + parking.
-	_place_midrise_office(Vector3(cx - 8, 0, cz), 5, 8.0, 7.0)   # ward tower
-	_place_clinic(Vector3(cx + 6, 0, cz - 4))
-	_place_clinic(Vector3(cx + 8, 0, cz + 6))
-	_place_parking_lot(Vector3(cx + 16, 0, cz + 2), 8.0, 5.0, 6)
-	_place_stadium_light(Vector3(cx, 0, cz))
+	## A planned hospital campus on the −X flank: one H-block hospital with a
+	## taller ward tower set back behind it, a patient car park, a roadside GOIL
+	## filling station (advertised by the relocated GOIL billboard), and trees.
+	## The keep-clear zone in _build_corridor keeps generic frontage out.
+	_place_clinic(Vector3(cx + 4, 0, cz + 2))                        # main hospital (H-block)
+	_place_midrise_office(Vector3(cx - 6, 0, cz + 2), 5, 8.0, 8.0)   # ward tower, set back
+	_place_parking_lot(Vector3(cx + 14, 0, cz + 4), 9.0, 10.0, 12)   # patient car park
+	_place_petrol_station(Vector3(cx + 21, 0, cz - 8))               # roadside GOIL station
+
+	for t in [Vector3(cx - 8, 0, cz - 7), Vector3(cx - 9, 0, cz + 9),
+			Vector3(cx + 6, 0, cz + 9), Vector3(cx - 2, 0, cz - 8),
+			Vector3(cx + 24, 0, cz + 8)]:
+		_place_tree(t)
+	_place_residential_lamp(Vector3(cx + 24, 0, cz + 2))
+	_place_residential_lamp(Vector3(cx + 1, 0, cz - 8))
 
 
 func _corridor_industrial(cx: float, cz: float) -> void:
@@ -822,66 +857,135 @@ func _corridor_market(cx: float, cz: float) -> void:
 
 
 func _place_airport(cx: float, cz: float) -> void:
-	## Airport district — runway + dashed centreline, glass terminal, control
-	## tower, hangar, and a parked plane on the apron.
-	var asphalt: StandardMaterial3D = _get_material(Color(0.16, 0.16, 0.18))
-	var paint: StandardMaterial3D = _get_material(Color(0.9, 0.9, 0.9))
+	## Airport district — a clean runway (centreline + threshold "piano keys"),
+	## a concrete apron set off on the +X side carrying a long glass terminal
+	## with a KOTOKA sign, a tall control tower with a red beacon, an arched
+	## hangar, and parked jets at the gates. ALL buildings sit on the apron, well
+	## clear of the runway (x ≥ ~50; runway right edge ≈ cx+4.5).
+	var asphalt: StandardMaterial3D = _get_material(Color(0.15, 0.15, 0.17))
+	var concrete: StandardMaterial3D = _get_material(Color(0.33, 0.33, 0.36))
+	var paint: StandardMaterial3D = _get_material(Color(0.92, 0.92, 0.92))
 
+	# ── Runway (long in Z) + centreline + threshold bars ──
 	var runway := CSGBox3D.new()
-	runway.size = Vector3(9.0, 0.1, 44.0)
-	runway.position = Vector3(cx, 0.05, cz)
+	runway.size = Vector3(9.0, 0.12, 44.0)
+	runway.position = Vector3(cx, 0.06, cz)
 	runway.material = asphalt
 	runway.name = "Runway"
 	add_child(runway)
-
-	var z: float = cz - 20.0
-	while z < cz + 20.0:
+	var z: float = cz - 18.0
+	while z <= cz + 18.0:
 		var dash := CSGBox3D.new()
-		dash.size = Vector3(0.5, 0.04, 2.4)
-		dash.position = Vector3(cx, 0.12, z)
+		dash.size = Vector3(0.5, 0.04, 2.6)
+		dash.position = Vector3(cx, 0.13, z)
 		dash.material = paint
 		add_child(dash)
-		z += 5.5
+		z += 5.6
+	for end_z in [cz - 20.5, cz + 20.5]:
+		for k in range(-2, 3):
+			var bar := CSGBox3D.new()
+			bar.size = Vector3(0.7, 0.04, 3.0)
+			bar.position = Vector3(cx + k * 1.5, 0.13, end_z)
+			bar.material = paint
+			add_child(bar)
 
-	# Terminal — wide low glass-fronted building
+	# ── Concrete apron on the +X side + taxiway link to the runway ──
+	var apron := CSGBox3D.new()
+	apron.size = Vector3(22.0, 0.08, 38.0)
+	apron.position = Vector3(cx + 17.0, 0.04, cz)
+	apron.material = concrete
+	apron.name = "Apron"
+	add_child(apron)
+	var taxi := CSGBox3D.new()
+	taxi.size = Vector3(8.0, 0.08, 8.0)
+	taxi.position = Vector3(cx + 7.0, 0.05, cz)
+	taxi.material = concrete
+	add_child(taxi)
+
+	# ── Terminal — long, low, glass curtain wall facing the runway (-X) ──
+	var tx: float = cx + 22.0    # 60
 	var term := CSGBox3D.new()
-	term.size = Vector3(18.0, 4.5, 8.0)
-	term.position = Vector3(cx + 16.0, 2.25, cz - 8.0)
-	term.material = _get_glass_material(GLASS_COLORS[0])
+	term.size = Vector3(8.0, 6.0, 24.0)
+	term.position = Vector3(tx, 3.0, cz)
+	term.material = _get_material(Color(0.82, 0.84, 0.88))
 	term.name = "AirportTerminal"
 	add_child(term)
+	var glassfront := CSGBox3D.new()           # glass curtain wall on the runway face
+	glassfront.size = Vector3(1.4, 5.0, 23.0)
+	glassfront.position = Vector3(tx - 4.4, 2.8, cz)
+	glassfront.material = _get_glass_material(GLASS_COLORS[0])
+	add_child(glassfront)
+	var fascia := CSGBox3D.new()               # roof overhang
+	fascia.size = Vector3(9.2, 0.6, 24.8)
+	fascia.position = Vector3(tx, 6.3, cz)
+	fascia.material = _get_material(Color(0.5, 0.52, 0.56))
+	add_child(fascia)
+	# KOTOKA rooftop sign facing the runway (Accra's real airport)
+	var sign := Label3D.new()
+	sign.text = "KOTOKA"
+	sign.font_size = 48
+	sign.pixel_size = 0.030
+	sign.modulate = Color(0.95, 0.22, 0.20)
+	sign.outline_size = 8
+	sign.outline_modulate = Color(0, 0, 0, 0.5)
+	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	sign.rotation.y = -PI / 2.0                # face -X (toward the runway/approach)
+	sign.position = Vector3(tx - 4.7, 7.5, cz)
+	sign.name = "AirportSign"
+	add_child(sign)
 
-	# Control tower + glass cab
+	# ── Control tower — tall, glass cab, red beacon ──
+	var ctx: float = cx + 13.0   # 51 — between runway and terminal, clear of both
+	var ctz: float = cz - 16.0
 	var tower := CSGCylinder3D.new()
-	tower.radius = 0.9
-	tower.height = 12.0
-	tower.position = Vector3(cx + 16.0, 6.0, cz + 2.0)
-	tower.material = _get_material(Color(0.82, 0.82, 0.85))
+	tower.radius = 1.0
+	tower.height = 17.0
+	tower.sides = 12
+	tower.position = Vector3(ctx, 8.5, ctz)
+	tower.material = _get_material(Color(0.86, 0.87, 0.90))
+	tower.name = "ControlTower"
 	add_child(tower)
 	var cab := CSGBox3D.new()
-	cab.size = Vector3(2.8, 1.8, 2.8)
-	cab.position = Vector3(cx + 16.0, 12.2, cz + 2.0)
+	cab.size = Vector3(3.4, 2.4, 3.4)
+	cab.position = Vector3(ctx, 17.6, ctz)
 	cab.material = _get_glass_material(GLASS_COLORS[1])
 	add_child(cab)
+	var cabroof := CSGCylinder3D.new()
+	cabroof.radius = 2.1
+	cabroof.height = 0.4
+	cabroof.sides = 12
+	cabroof.position = Vector3(ctx, 18.9, ctz)
+	cabroof.material = _get_material(Color(0.4, 0.42, 0.45))
+	add_child(cabroof)
+	var beacon := CSGSphere3D.new()
+	beacon.radius = 0.35
+	beacon.radial_segments = 8
+	beacon.rings = 5
+	beacon.position = Vector3(ctx, 19.5, ctz)
+	var beacon_mat := StandardMaterial3D.new()
+	beacon_mat.albedo_color = Color(1.0, 0.10, 0.10)
+	beacon_mat.emission_enabled = true
+	beacon_mat.emission = Color(1.0, 0.15, 0.12)
+	beacon_mat.emission_energy_multiplier = 6.0
+	beacon_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	beacon.material = beacon_mat
+	beacon.name = "TowerBeacon"
+	add_child(beacon)
 
-	# Hangar — big shed
-	var hangar := CSGBox3D.new()
-	hangar.size = Vector3(15.0, 6.5, 13.0)
-	hangar.position = Vector3(cx + 17.0, 3.25, cz + 16.0)
-	hangar.material = _get_material(Color(0.55, 0.57, 0.6))
-	hangar.name = "Hangar"
-	add_child(hangar)
+	# ── Arched hangar past the north end of the terminal ──
+	_place_hangar(Vector3(cx + 20.0, 0, cz + 17.0))
 
-	_place_plane(Vector3(cx + 7.0, 0, cz + 6.0))
+	# ── Parked jets at the gates (on the apron, wings clear of the runway) ──
+	_place_plane(Vector3(cx + 11.0, 0, cz - 3.0))
+	_place_plane(Vector3(cx + 11.0, 0, cz + 9.0))
 
-	# Apron / perimeter floods (bright sodium, on at night)
-	for fl in [Vector3(cx + 6.0, 0, cz - 22.0), Vector3(cx + 6.0, 0, cz + 20.0),
-			Vector3(cx + 20.0, 0, cz - 14.0), Vector3(cx + 20.0, 0, cz + 16.0),
-			Vector3(cx - 6.0, 0, cz), Vector3(cx + 20.0, 0, cz)]:
+	# ── Apron / perimeter floods (bright at night) ──
+	for fl in [Vector3(cx + 6.0, 0, cz - 20.0), Vector3(cx + 6.0, 0, cz + 20.0),
+			Vector3(cx + 20.0, 0, cz - 18.0), Vector3(cx + 20.0, 0, cz + 18.0),
+			Vector3(cx + 14.0, 0, cz)]:
 		_place_yard_light(fl)
 
-	# Runway edge lights — bright always-on markers down both edges + a couple of
-	# real lights at the ends so the runway reads as lit day and night.
+	# ── Runway edge lights (emissive, always-on) + end OmniLights ──
 	var rl_mat := StandardMaterial3D.new()
 	rl_mat.albedo_color = Color(0.80, 0.90, 1.0)
 	rl_mat.emission_enabled = true
@@ -906,10 +1010,39 @@ func _place_airport(cx: float, cz: float) -> void:
 		rl.shadow_enabled = false
 		add_child(rl)
 
-	_add_exclusion_zone(cx - 8, cz - 26, cx + 26, cz + 26)
+	_add_exclusion_zone(cx - 8, cz - 28, cx + 32, cz + 28)
+
+
+func _place_hangar(center: Vector3) -> void:
+	## Arched-roof (Quonset) aircraft hangar with a big dark door facing the
+	## runway (-X). Box body + half-cylinder roof reads clearly as a hangar.
+	var w: float = 13.0
+	var d: float = 10.0
+	var hh: float = 5.0
+	var body := CSGBox3D.new()
+	body.size = Vector3(w, hh, d)
+	body.position = center + Vector3(0, hh / 2.0, 0)
+	body.material = _get_material(Color(0.58, 0.60, 0.64))
+	body.name = "Hangar"
+	add_child(body)
+	var roof := CSGCylinder3D.new()             # arched roof, axis along Z
+	roof.radius = w / 2.0
+	roof.height = d
+	roof.sides = 18
+	roof.rotation = Vector3(deg_to_rad(90.0), 0, 0)
+	roof.position = center + Vector3(0, hh, 0)
+	roof.material = _get_material(Color(0.48, 0.50, 0.54))
+	add_child(roof)
+	var door := CSGBox3D.new()                  # big hangar door on the runway side
+	door.size = Vector3(0.3, hh * 0.85, d * 0.8)
+	door.position = center + Vector3(-w / 2.0, hh * 0.45, 0)
+	door.material = _get_material(Color(0.20, 0.21, 0.24))
+	add_child(door)
 
 
 func _place_plane(center: Vector3) -> void:
+	## A parked twin-engine jet — fuselage along Z, swept tail, engine nacelles
+	## under the wings. Wings are 10 wide so they clear the runway from the apron.
 	var white: StandardMaterial3D = _get_material(Color(0.93, 0.93, 0.95))
 	var body := CSGCylinder3D.new()
 	body.radius = 0.85
@@ -920,10 +1053,19 @@ func _place_plane(center: Vector3) -> void:
 	body.name = "Plane"
 	add_child(body)
 	var wing := CSGBox3D.new()
-	wing.size = Vector3(11.0, 0.25, 2.2)
+	wing.size = Vector3(10.0, 0.25, 2.2)
 	wing.position = center + Vector3(0, 1.3, 0.5)
 	wing.material = white
 	add_child(wing)
+	for ex in [-2.6, 2.6]:                       # under-wing engine nacelles
+		var eng := CSGCylinder3D.new()
+		eng.radius = 0.42
+		eng.height = 1.8
+		eng.sides = 12
+		eng.rotation_degrees = Vector3(90, 0, 0)
+		eng.position = center + Vector3(ex, 0.85, 0.9)
+		eng.material = _get_material(Color(0.5, 0.52, 0.55))
+		add_child(eng)
 	var tailwing := CSGBox3D.new()
 	tailwing.size = Vector3(4.0, 0.2, 1.2)
 	tailwing.position = center + Vector3(0, 1.5, -3.8)
@@ -1620,26 +1762,57 @@ func _place_school_building(center: Vector3, stories: int, w: float, d: float) -
 
 
 func _place_football_pitch(center: Vector3, w: float, d: float) -> void:
-	## Flat green rectangle with white boundary lines and center circle.
-	var pitch := CSGBox3D.new()
-	pitch.size = Vector3(w, 0.04, d)
-	pitch.position = center + Vector3(0, 0.02, 0)
-	pitch.material = _get_material(PITCH_GREEN)
-	pitch.name = "FootballPitch"
-	add_child(pitch)
+	## A proper football pitch: mown-stripe turf, full white markings (boundary,
+	## halfway line + centre circle/spot, penalty boxes, goal areas, penalty
+	## spots), goals, stadium floods and a bleacher. w = length (X), d = width (Z).
+	var turf_dark: Color = Color(0.18, 0.42, 0.16)
+	var turf_light: Color = Color(0.24, 0.50, 0.20)
 
-	# Boundary lines (4 thin strips)
-	var line_thick: float = 0.18
-	var line_h: float = 0.01
-	var positions: Array = [
-		[Vector3(0, 0.05, d / 2.0 - line_thick / 2.0), Vector3(w, line_h, line_thick)],
-		[Vector3(0, 0.05, -d / 2.0 + line_thick / 2.0), Vector3(w, line_h, line_thick)],
-		[Vector3(w / 2.0 - line_thick / 2.0, 0.05, 0), Vector3(line_thick, line_h, d)],
-		[Vector3(-w / 2.0 + line_thick / 2.0, 0.05, 0), Vector3(line_thick, line_h, d)],
-		# Center line
-		[Vector3(0, 0.05, 0), Vector3(line_thick, line_h, d)],
+	# Base slab (shows at the very edge) + alternating mown stripes on top so the
+	# pitch clearly reads as managed turf, not the surrounding lawn.
+	var base := CSGBox3D.new()
+	base.size = Vector3(w, 0.04, d)
+	base.position = center + Vector3(0, 0.02, 0)
+	base.material = _get_material(turf_dark)
+	base.name = "FootballPitch"
+	add_child(base)
+	var n_stripes: int = 7
+	var stripe_w: float = d / float(n_stripes)
+	for i in range(n_stripes):
+		var stripe := CSGBox3D.new()
+		stripe.size = Vector3(w, 0.03, stripe_w + 0.01)
+		stripe.position = center + Vector3(0, 0.035, -d / 2.0 + (i + 0.5) * stripe_w)
+		stripe.material = _get_material(turf_light if i % 2 == 0 else turf_dark)
+		stripe.name = "PitchStripe"
+		add_child(stripe)
+
+	# ── White markings ───────────────────────────────────────────────────
+	var lt: float = 0.18           # line thickness
+	var lh: float = 0.01           # line height
+	var ly: float = 0.06           # line top (sits above the stripes)
+	var pb_d: float = w * 0.16     # penalty-box depth (into the pitch, X)
+	var pb_w: float = d * 0.58     # penalty-box width (Z)
+	var ga_d: float = w * 0.07     # goal-area depth
+	var ga_w: float = d * 0.34     # goal-area width
+
+	var lines: Array = [
+		# Boundary
+		[Vector3(0, ly, d / 2.0 - lt / 2.0), Vector3(w, lh, lt)],
+		[Vector3(0, ly, -d / 2.0 + lt / 2.0), Vector3(w, lh, lt)],
+		[Vector3(w / 2.0 - lt / 2.0, ly, 0), Vector3(lt, lh, d)],
+		[Vector3(-w / 2.0 + lt / 2.0, ly, 0), Vector3(lt, lh, d)],
+		# Halfway line
+		[Vector3(0, ly, 0), Vector3(lt, lh, d)],
 	]
-	for p in positions:
+	# Penalty box + goal area at each end (s = -1 / +1 along the length)
+	for s in [-1.0, 1.0]:
+		lines.append([Vector3(s * (w / 2.0 - pb_d), ly, 0), Vector3(lt, lh, pb_w)])
+		lines.append([Vector3(s * (w / 2.0 - pb_d / 2.0), ly, pb_w / 2.0), Vector3(pb_d, lh, lt)])
+		lines.append([Vector3(s * (w / 2.0 - pb_d / 2.0), ly, -pb_w / 2.0), Vector3(pb_d, lh, lt)])
+		lines.append([Vector3(s * (w / 2.0 - ga_d), ly, 0), Vector3(lt, lh, ga_w)])
+		lines.append([Vector3(s * (w / 2.0 - ga_d / 2.0), ly, ga_w / 2.0), Vector3(ga_d, lh, lt)])
+		lines.append([Vector3(s * (w / 2.0 - ga_d / 2.0), ly, -ga_w / 2.0), Vector3(ga_d, lh, lt)])
+	for p in lines:
 		var line := CSGBox3D.new()
 		line.size = p[1]
 		line.position = center + p[0]
@@ -1647,22 +1820,34 @@ func _place_football_pitch(center: Vector3, w: float, d: float) -> void:
 		line.name = "PitchLine"
 		add_child(line)
 
-	# Center circle (CSGCylinder hollow-ish — just a short flat disc ring)
+	# Centre circle (round, 32-sided) with a turf fill so it reads as a ring
+	var cr: float = d * 0.17
 	var ring := CSGCylinder3D.new()
-	ring.radius = 1.8
+	ring.radius = cr
 	ring.height = 0.015
-	ring.position = center + Vector3(0, 0.055, 0)
+	ring.sides = 32
+	ring.position = center + Vector3(0, ly + 0.005, 0)
 	ring.material = _get_material(CROSS_WHITE)
 	ring.name = "PitchCircle"
 	add_child(ring)
-	# Inner green fill to make it a ring (smaller disc on top)
 	var inner := CSGCylinder3D.new()
-	inner.radius = 1.5
+	inner.radius = cr - lt
 	inner.height = 0.02
-	inner.position = center + Vector3(0, 0.065, 0)
-	inner.material = _get_material(PITCH_GREEN)
+	inner.sides = 32
+	inner.position = center + Vector3(0, ly + 0.01, 0)
+	inner.material = _get_material(turf_dark)   # centre sits on a dark stripe
 	inner.name = "PitchCircleInner"
 	add_child(inner)
+	# Spots — centre + the two penalty spots
+	for spot_x in [0.0, w / 2.0 - w * 0.11, -(w / 2.0 - w * 0.11)]:
+		var spot := CSGCylinder3D.new()
+		spot.radius = 0.13
+		spot.height = 0.02
+		spot.sides = 12
+		spot.position = center + Vector3(spot_x, ly + 0.012, 0)
+		spot.material = _get_material(CROSS_WHITE)
+		spot.name = "PitchSpot"
+		add_child(spot)
 
 	# Stadium flood-lights at the 4 corners (real OmniLights, on at night)
 	for sx in [-1.0, 1.0]:

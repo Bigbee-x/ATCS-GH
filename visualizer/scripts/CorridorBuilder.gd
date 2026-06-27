@@ -1036,73 +1036,72 @@ func set_street_lights_night(enabled: bool) -> void:
 
 
 func _build_utility_poles() -> void:
-	## Wooden utility poles down BOTH curbs of the NS corridor — each with a
+	## Wooden utility poles down ONE curb of the NS corridor — each with a
 	## cross-arm, brace, 3 ceramic insulators, and 3 power lines strung to the
 	## previous pole (the wire run breaks across each junction box).
-	var spacing: float = 16.0
+	var spacing: float = 20.0
 	var h: float = 7.0
 	var crossbar_len: float = 1.8
 	var ins_spacing: float = crossbar_len * 0.38
 	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 6.0
 	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 6.0
 
-	for curb in [-1.0, 1.0]:
-		var side_x: float = curb * (NS_ROAD_WIDTH / 2.0 + 1.9)   # both curbs
-		var prev_ins: Array = []
-		var z: float = z_start + (8.0 if curb > 0.0 else 0.0)   # stagger the two sides
-		while z <= z_end:
-			if _near_junction_z(z, JUNCTION_HALF + 1.5):
-				prev_ins = []        # break the wire run across the junction box
-				z += spacing
-				continue
-			var pos := Vector3(side_x, 0, z)
-
-			var pole := CSGCylinder3D.new()
-			pole.radius = 0.12
-			pole.height = h
-			pole.position = pos + Vector3(0, h / 2.0, 0)
-			pole.material = _mat_util_pole
-			pole.name = "UtilityPole"
-			add_child(pole)
-
-			var crossbar := CSGBox3D.new()
-			crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
-			crossbar.position = pos + Vector3(0, h - 0.25, 0)
-			crossbar.material = _mat_util_pole
-			add_child(crossbar)
-
-			var brace := CSGBox3D.new()
-			brace.size = Vector3(0.55, 0.08, 0.08)
-			brace.position = pos + Vector3(0, h - 0.55, 0)
-			brace.rotation_degrees = Vector3(0, 0, 35)
-			brace.material = _mat_util_pole
-			add_child(brace)
-
-			var ins_positions: Array = []
-			for k in range(3):
-				var slot: float = (k - 1) * ins_spacing
-				var ins := CSGCylinder3D.new()
-				ins.radius = 0.07
-				ins.height = 0.20
-				ins.position = pos + Vector3(slot, h - 0.05, 0)
-				ins.material = _mat_insulator
-				add_child(ins)
-				ins_positions.append(ins.position + Vector3(0, 0.12, 0))
-
-			if prev_ins.size() == 3:
-				for k in range(3):
-					var a: Vector3 = prev_ins[k]
-					var b: Vector3 = ins_positions[k]
-					var span: float = (b - a).length()
-					var wire := CSGBox3D.new()
-					wire.size = Vector3(0.035, 0.035, span)
-					wire.position = (a + b) * 0.5 + Vector3(0, -0.15, 0)
-					wire.material = _mat_wire
-					wire.name = "PowerLine"
-					add_child(wire)
-
-			prev_ins = ins_positions
+	var side_x: float = -(NS_ROAD_WIDTH / 2.0 + 1.9)   # one curb only (−X side)
+	var prev_ins: Array = []
+	var z: float = z_start
+	while z <= z_end:
+		if _near_junction_z(z, JUNCTION_HALF + 1.5):
+			prev_ins = []        # break the wire run across the junction box
 			z += spacing
+			continue
+		var pos := Vector3(side_x, 0, z)
+
+		var pole := CSGCylinder3D.new()
+		pole.radius = 0.12
+		pole.height = h
+		pole.position = pos + Vector3(0, h / 2.0, 0)
+		pole.material = _mat_util_pole
+		pole.name = "UtilityPole"
+		add_child(pole)
+
+		var crossbar := CSGBox3D.new()
+		crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
+		crossbar.position = pos + Vector3(0, h - 0.25, 0)
+		crossbar.material = _mat_util_pole
+		add_child(crossbar)
+
+		var brace := CSGBox3D.new()
+		brace.size = Vector3(0.55, 0.08, 0.08)
+		brace.position = pos + Vector3(0, h - 0.55, 0)
+		brace.rotation_degrees = Vector3(0, 0, 35)
+		brace.material = _mat_util_pole
+		add_child(brace)
+
+		var ins_positions: Array = []
+		for k in range(3):
+			var slot: float = (k - 1) * ins_spacing
+			var ins := CSGCylinder3D.new()
+			ins.radius = 0.07
+			ins.height = 0.20
+			ins.position = pos + Vector3(slot, h - 0.05, 0)
+			ins.material = _mat_insulator
+			add_child(ins)
+			ins_positions.append(ins.position + Vector3(0, 0.12, 0))
+
+		if prev_ins.size() == 3:
+			for k in range(3):
+				var a: Vector3 = prev_ins[k]
+				var b: Vector3 = ins_positions[k]
+				var span: float = (b - a).length()
+				var wire := CSGBox3D.new()
+				wire.size = Vector3(0.035, 0.035, span)
+				wire.position = (a + b) * 0.5 + Vector3(0, -0.15, 0)
+				wire.material = _mat_wire
+				wire.name = "PowerLine"
+				add_child(wire)
+
+		prev_ins = ins_positions
+		z += spacing
 
 
 func _near_junction_z(z: float, margin: float) -> bool:
