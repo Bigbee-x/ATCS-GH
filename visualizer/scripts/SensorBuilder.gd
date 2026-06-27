@@ -23,9 +23,11 @@ extends Node3D
 
 const APPROACHES: Array[String] = ["north", "south", "east", "west"]
 
-# ── Pole geometry — MUST mirror Intersection.gd's _build_traffic_lights() ──
-# If those constants drift, the sensors will float off into space. Keep
-# them in sync or centralize in a shared constants file.
+# ── Pole geometry — MUST mirror the signal builders' _build_traffic_lights() ──
+# (Intersection.gd for the single junction, CorridorBuilder.gd for the corridor.)
+# POLE_HEIGHT/ARM_LEN match both; but the mast arm's LEFT/RIGHT side differs per
+# pole — the corridor mirrors its E/W arms to +X — so we read the actual sign per
+# pole via _arm_sign() instead of assuming -X, or half the cameras float in space.
 const POLE_HEIGHT: float = 5.5
 const ARM_LEN: float     = 3.7
 
@@ -148,22 +150,38 @@ func _build_materials() -> void:
 
 func _attach_sensors_to_pole(pole: Node3D) -> void:
 	## In a pole's local frame:
-	##   local -X → over the road (toward the junction center)
+	##   local s·X → over the road (toward the junction center), where s is the
+	##               mast-arm side: -1 on most poles, +1 on the corridor's E/W
+	##               poles (their arms are mirrored). Read from the pole itself.
 	##   local +Z → the direction approaching traffic is coming FROM
 	##   local +Y → up
-	## So cameras & radar face local +Z to watch the approach.
-	_add_cctv(pole)
+	## So cameras mount on the s·X arm and face local +Z to watch the approach.
+	var s: float = _arm_sign(pole)
+	_add_cctv(pole, s)
 	_add_cabinet(pole)
-	_add_sightline_cone(pole)
+	_add_sightline_cone(pole, s)
 
 
-func _add_cctv(pole: Node3D) -> void:
+func _arm_sign(pole: Node3D) -> float:
+	## Which way the mast arm reaches in the pole's local frame (+1 or -1). Both
+	## signal builders name the horizontal arm "MastArm" and place it at local
+	## x = s·ARM_LEN/2, so its X sign IS the side the sensors must mount on.
+	## Falls back to -1 (the single-junction convention) if no arm is found.
+	var arm := pole.get_node_or_null("MastArm")
+	if arm is Node3D:
+		var ax: float = (arm as Node3D).position.x
+		if absf(ax) > 0.001:
+			return signf(ax)
+	return -1.0
+
+
+func _add_cctv(pole: Node3D, s: float) -> void:
 	## Bullet-style traffic cam mounted near the junction end of the mast arm.
 	## Root node handles the 20° downward tilt so lens, body, bracket and LED
-	## all rotate together as one unit.
+	## all rotate together as one unit. `s` = mast-arm side (+1/-1).
 	var root := Node3D.new()
 	root.name = "Sensor_CCTV"
-	root.position = Vector3(-ARM_LEN + 0.35, POLE_HEIGHT + 0.32, 0.0)
+	root.position = Vector3(s * (ARM_LEN - 0.35), POLE_HEIGHT + 0.32, 0.0)
 	# +rotation.x around +X sends the lens axis (+Z) toward −Y (down):
 	#   (0,0,1) · R_x(+20°) = (0, -sin20°, cos20°) → forward & down.
 	root.rotation.x = CAM_PITCH
@@ -253,9 +271,9 @@ func _add_cabinet(pole: Node3D) -> void:
 		pole.add_child(slat)
 
 
-func _add_sightline_cone(pole: Node3D) -> void:
+func _add_sightline_cone(pole: Node3D, s: float) -> void:
 	## Translucent FOV cone extending from each CCTV lens along the approach.
-	## Hidden by default — press K to show all four at once.
+	## Hidden by default — press K to show all four at once. `s` = arm side.
 	##
 	## Orientation math:
 	##   CSGCylinder3D with cone=true tapers to a point at +Y. We want the
@@ -270,7 +288,7 @@ func _add_sightline_cone(pole: Node3D) -> void:
 	##            → that's rotation.x = -(90° - 20°) = -70°
 	var pivot := Node3D.new()
 	pivot.name = "SightlinePivot"
-	pivot.position = Vector3(-ARM_LEN + 0.35, POLE_HEIGHT + 0.32, 0.0)
+	pivot.position = Vector3(s * (ARM_LEN - 0.35), POLE_HEIGHT + 0.32, 0.0)
 	pivot.rotation.x = deg_to_rad(-70.0)   # see derivation above
 	pivot.visible = false                   # hidden until toggle_sightlines()
 	pole.add_child(pivot)
