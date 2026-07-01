@@ -48,7 +48,7 @@ LOG_DIR     = PROJECT_ROOT / "logs"
 
 
 def run_baseline(gui: bool = False, offset: float = 0.0,
-                 seed: int = 42) -> dict:
+                 seed: int = 42, route: str | None = None) -> dict:
     """Run fixed-timer baseline for corridor.
 
     Args:
@@ -57,6 +57,8 @@ def run_baseline(gui: bool = False, offset: float = 0.0,
                 0 = all junctions switch simultaneously (no coordination).
                 ~22 = ideal green wave for 300m at 50 km/h.
         seed: SUMO random seed
+        route: optional route-file path; overrides the one in corridor.sumocfg
+               (so a single config can baseline morning / evening / off-peak).
     """
     # Start SUMO
     binary = "sumo-gui" if gui else "sumo"
@@ -70,6 +72,8 @@ def run_baseline(gui: bool = False, offset: float = 0.0,
         "--no-warnings", "--quit-on-end",
         "--seed", str(seed),
     ]
+    if route:
+        cmd += ["-r", str(route)]   # override the route-file in the .sumocfg
     traci.start(cmd)
 
     # Protected-left fixed-timing plan (mirrors run_baseline.py "protected"
@@ -187,6 +191,50 @@ def run_baseline(gui: bool = False, offset: float = 0.0,
     return results
 
 
+BASELINE_CSV = PROJECT_ROOT / "data" / "corridor_baselines.csv"
+CSV_FIELDS = ["label", "corridor_avg_wait_s", "J0_wait_s", "J1_wait_s", "J2_wait_s",
+              "J0_queue", "J1_queue", "J2_queue", "arrived", "demand_vehph",
+              "factor", "seed"]
+# Stable display order; unknown labels sort to the end.
+_CSV_ORDER = {"corridor_morning": 0, "corridor_evening": 1, "corridor_offpeak": 2}
+
+
+def _route_demand_vehph(route_path: Path) -> float:
+    """Sum of all vehsPerHour flows in a route file (excludes pedestrian perHour)."""
+    import re
+    txt = Path(route_path).read_text()
+    return sum(float(v) for v in re.findall(r'vehsPerHour="([\d.]+)"', txt))
+
+
+def _upsert_baseline_row(label: str, r: dict, demand: float, factor, seed: int) -> None:
+    """Insert/replace the row for `label` in corridor_baselines.csv (by label key)."""
+    row = {
+        "label": label,
+        "corridor_avg_wait_s": f"{r['corridor_avg_wait']:.1f}",
+        "J0_wait_s": f"{r['J0_avg_wait']:.1f}",
+        "J1_wait_s": f"{r['J1_avg_wait']:.1f}",
+        "J2_wait_s": f"{r['J2_avg_wait']:.1f}",
+        "J0_queue": f"{r['J0_avg_queue']:.1f}",
+        "J1_queue": f"{r['J1_avg_queue']:.1f}",
+        "J2_queue": f"{r['J2_avg_queue']:.1f}",
+        "arrived": int(round(r["total_arrived"])),
+        "demand_vehph": f"{demand:.0f}",
+        "factor": "" if factor is None else factor,
+        "seed": seed,
+    }
+    rows = []
+    if BASELINE_CSV.exists():
+        with open(BASELINE_CSV) as f:
+            rows = [x for x in csv.DictReader(f) if x.get("label") != label]
+    rows.append(row)
+    rows.sort(key=lambda x: _CSV_ORDER.get(x["label"], 99))
+    BASELINE_CSV.parent.mkdir(parents=True, exist_ok=True)
+    with open(BASELINE_CSV, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Corridor fixed-timer baseline")
     parser.add_argument("--gui", action="store_true", help="Use SUMO GUI")
@@ -195,6 +243,12 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--seeds", type=int, default=1,
                         help="Number of seeds to average over")
+    parser.add_argument("--route", type=str, default=None,
+                        help="Route file (overrides corridor.sumocfg; e.g. a scenario)")
+    parser.add_argument("--label", type=str, default=None,
+                        help="If set, upsert the result row into corridor_baselines.csv")
+    parser.add_argument("--factor", type=str, default=None,
+                        help="Demand factor to record in the CSV (provenance only)")
     args = parser.parse_args()
 
     print("=" * 65)
@@ -206,7 +260,8 @@ def main():
     for i in range(args.seeds):
         seed = args.seed + i * 100
         print(f"\n--- Seed {seed} ---")
-        r = run_baseline(gui=args.gui, offset=args.offset, seed=seed)
+        r = run_baseline(gui=args.gui, offset=args.offset, seed=seed,
+                         route=(str(Path(args.route).resolve()) if args.route else None))
         all_results.append(r)
 
         print(f"  Arrived: {r['total_arrived']}")
@@ -220,6 +275,16 @@ def main():
         std_wait = np.std([r["corridor_avg_wait"] for r in all_results])
         print(f"\n=== AVERAGE over {args.seeds} seeds ===")
         print(f"  Corridor avg wait: {avg_wait:.1f}s ± {std_wait:.1f}s")
+
+    if args.label:
+        keys = ("corridor_avg_wait", "J0_avg_wait", "J1_avg_wait", "J2_avg_wait",
+                "J0_avg_queue", "J1_avg_queue", "J2_avg_queue", "total_arrived")
+        ravg = {k: float(np.mean([x[k] for x in all_results])) for k in keys}
+        route_path = Path(args.route).resolve() if args.route else (SIM_DIR / "corridor_routes.rou.xml")
+        demand = _route_demand_vehph(route_path)
+        _upsert_baseline_row(args.label, ravg, demand, args.factor, args.seed)
+        print(f"\n  ✓ baseline row '{args.label}' written to {BASELINE_CSV.name} "
+              f"(demand {demand:.0f} veh/hr)")
 
 
 if __name__ == "__main__":
