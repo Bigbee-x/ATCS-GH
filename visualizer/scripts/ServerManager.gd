@@ -297,7 +297,7 @@ func _start_dashboard() -> void:
 		push_warning("[ServerManager] Failed to start dashboard")
 		return
 
-	print("[ServerManager] Dashboard started — PID %d (http://localhost:%d)" % [
+	print("[ServerManager] Dashboard started — PID %d (http://127.0.0.1:%d)" % [
 		_dashboard_pid, DASHBOARD_PORT])
 
 	# Brief delay for Flask to bind the port, then open browser
@@ -307,7 +307,11 @@ func _start_dashboard() -> void:
 
 func _open_dashboard_browser() -> void:
 	## Open the dashboard Live Simulation tab in the default browser.
-	var url: String = "http://localhost:%d?tab=live" % DASHBOARD_PORT
+	## Use 127.0.0.1, NOT "localhost": the Flask dashboard binds IPv4 (0.0.0.0),
+	## but macOS resolves "localhost" to IPv6 (::1) first. Chrome falls back to
+	## IPv4 automatically; Safari does not, so "localhost" fails to load there.
+	## 127.0.0.1 pins IPv4 and works in every browser.
+	var url: String = "http://127.0.0.1:%d?tab=live" % DASHBOARD_PORT
 	OS.shell_open(url)
 	print("[ServerManager] Opened dashboard in browser: %s" % url)
 

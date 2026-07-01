@@ -176,5 +176,7 @@ def api_sim_status():
 
 if __name__ == "__main__":
     print("\n  ATCS-GH Dashboard")
-    print(f"  http://localhost:5050\n")
+    # 127.0.0.1, not localhost: we bind IPv4 (0.0.0.0) and Safari resolves
+    # "localhost" to IPv6 (::1) first, which then fails to connect.
+    print(f"  http://127.0.0.1:5050\n")
     app.run(host="0.0.0.0", port=5050, debug=True)
