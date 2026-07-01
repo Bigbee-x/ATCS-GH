@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ATCS-GH | N6 Nsawam Road Corridor — Off-Peak (Midday) Demand
+  ═════════════════════════════════════════════════════════════
+  3-junction corridor: J0 (Aggrey/Guggisberg), J1 (Asylum Down/Ring),
+  J2 (Nima/Tesano) along Achimota Forest Road.
+
+  Simulates ~11:00-13:00 (7200 seconds) — light, balanced midday traffic.
+  All vehicle flows scaled to 45% of morning; corridor through-traffic levelled
+  N↔S. Teaches graceful low-demand behaviour (no over-serving empty approaches).
+  GENERATED from corridor_routes.rou.xml by scripts/build_corridor_scenarios.py
+-->
+<routes>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       VEHICLE TYPES (shared across all junctions)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <vType id="car"
+         accel="2.6" decel="4.5" emergencyDecel="9.0" sigma="0.5"
+         length="4.5" minGap="2.5" maxSpeed="19.44"
+         speedFactor="1.0" speedDev="0.2"
+         guiShape="passenger" color="0.6,0.6,0.9"
+         jmCrossingGap="3.0"/>
+
+  <vType id="trotro"
+         accel="1.8" decel="3.5" emergencyDecel="7.0" sigma="0.7"
+         length="7.0" minGap="3.0" maxSpeed="16.67"
+         speedFactor="0.9" speedDev="0.15"
+         guiShape="bus/city" color="1.0,0.8,0.0"
+         jmCrossingGap="3.0"/>
+
+  <!-- Pedestrian — faster walking speed (Ghanaian crossing behavior) -->
+  <vType id="ped_fast" vClass="pedestrian"
+         speed="3.80"
+         length="0.25" minGap="0.5" width="0.65"/>
+
+  <vType id="emergency" vClass="emergency"
+         accel="4.5" decel="7.0" emergencyDecel="9.0" sigma="0.0"
+         tau="0.3" length="5.5" minGap="1.0" maxSpeed="27.78"
+         guiShape="emergency" color="1.0,0.0,0.0" speedFactor="1.4" speedDev="0.1"
+         lcStrategic="100" lcPushy="1.0" lcAssertive="1.0"
+         jmDriveAfterRedTime="3" jmDriveAfterYellowTime="3"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES — Full Corridor (traverse all 3 junctions)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- S → N (southbound to northbound, full corridor) -->
+  <route id="rt_S2N" edges="ACH_S2J0 ACH_J0toJ1 ACH_J1toJ2 ACH_J2toN"/>
+  <!-- N → S (northbound to southbound, full corridor) -->
+  <route id="rt_N2S" edges="ACH_N2J2 ACH_J2toJ1 ACH_J1toJ0 ACH_J0toS"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES — Partial Corridor (enter/exit at mid-junctions)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- S → J1 cross streets -->
+  <route id="rt_S2E1" edges="ACH_S2J0 ACH_J0toJ1 ASD_J1toE"/>
+  <route id="rt_S2W1" edges="ACH_S2J0 ACH_J0toJ1 RNG_J1toW"/>
+  <!-- N → J1 cross streets -->
+  <route id="rt_N2E1" edges="ACH_N2J2 ACH_J2toJ1 ASD_J1toE"/>
+  <route id="rt_N2W1" edges="ACH_N2J2 ACH_J2toJ1 RNG_J1toW"/>
+
+  <!-- S → J0 exit east/west -->
+  <route id="rt_S2E0" edges="ACH_S2J0 AGG_J0toE"/>
+  <route id="rt_S2W0" edges="ACH_S2J0 GUG_J0toW"/>
+  <!-- N → J2 exit east/west -->
+  <route id="rt_N2E2" edges="ACH_N2J2 NMA_J2toE"/>
+  <route id="rt_N2W2" edges="ACH_N2J2 TSN_J2toW"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES — J0 Local Cross-Traffic (Aggrey St / Guggisberg St)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <route id="rt_E0W0" edges="AGG_E2J0 GUG_J0toW"/>
+  <route id="rt_W0E0" edges="GUG_W2J0 AGG_J0toE"/>
+  <route id="rt_E0N"  edges="AGG_E2J0 ACH_J0toJ1 ACH_J1toJ2 ACH_J2toN"/>
+  <route id="rt_E0S"  edges="AGG_E2J0 ACH_J0toS"/>
+  <route id="rt_W0N"  edges="GUG_W2J0 ACH_J0toJ1 ACH_J1toJ2 ACH_J2toN"/>
+  <route id="rt_W0S"  edges="GUG_W2J0 ACH_J0toS"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES — J1 Local Cross-Traffic (Asylum Down Rd / Ring Rd)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <route id="rt_E1W1" edges="ASD_E2J1 RNG_J1toW"/>
+  <route id="rt_W1E1" edges="RNG_W2J1 ASD_J1toE"/>
+  <route id="rt_E1N"  edges="ASD_E2J1 ACH_J1toJ2 ACH_J2toN"/>
+  <route id="rt_E1S"  edges="ASD_E2J1 ACH_J1toJ0 ACH_J0toS"/>
+  <route id="rt_W1N"  edges="RNG_W2J1 ACH_J1toJ2 ACH_J2toN"/>
+  <route id="rt_W1S"  edges="RNG_W2J1 ACH_J1toJ0 ACH_J0toS"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ROUTES — J2 Local Cross-Traffic (Nima Bypass / Tesano Rd)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <route id="rt_E2W2" edges="NMA_E2J2 TSN_J2toW"/>
+  <route id="rt_W2E2" edges="TSN_W2J2 NMA_J2toE"/>
+  <route id="rt_E2N"  edges="NMA_E2J2 ACH_J2toN"/>
+  <route id="rt_E2S"  edges="NMA_E2J2 ACH_J2toJ1 ACH_J1toJ0 ACH_J0toS"/>
+  <route id="rt_W2N"  edges="TSN_W2J2 ACH_J2toN"/>
+  <route id="rt_W2S"  edges="TSN_W2J2 ACH_J2toJ1 ACH_J1toJ0 ACH_J0toS"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TRAFFIC FLOWS — Morning Rush 07:00-09:00 AM (t=0 to t=7200s)
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- ── CORRIDOR THROUGH-TRAFFIC (heaviest flows) ────────────────── -->
+  <!-- S→N inbound commute — N6 trunk road -->
+  <flow id="f_S2N"     type="car"    route="rt_S2N"
+        begin="0" end="7200" vehsPerHour="170.0" departLane="best" departSpeed="max"/>
+  <flow id="f_S2N_t"   type="trotro" route="rt_S2N"
+        begin="0" end="7200" vehsPerHour="20.0"  departLane="best" departSpeed="max"/>
+
+  <!-- N→S reverse flow (lighter) -->
+  <flow id="f_N2S"     type="car"    route="rt_N2S"
+        begin="0" end="7200" vehsPerHour="170.0" departLane="best" departSpeed="max"/>
+  <flow id="f_N2S_t"   type="trotro" route="rt_N2S"
+        begin="0" end="7200" vehsPerHour="20.0"  departLane="best" departSpeed="max"/>
+
+
+  <!-- ── PARTIAL CORRIDOR (enter/exit at mid-junctions) ───────────── -->
+  <flow id="f_S2E1"  type="car" route="rt_S2E1"
+        begin="0" end="7200" vehsPerHour="23.4"  departLane="best" departSpeed="max"/>
+  <flow id="f_S2W1"  type="car" route="rt_S2W1"
+        begin="0" end="7200" vehsPerHour="17.6"  departLane="best" departSpeed="max"/>
+  <flow id="f_N2E1"  type="car" route="rt_N2E1"
+        begin="0" end="7200" vehsPerHour="17.6"  departLane="best" departSpeed="max"/>
+  <flow id="f_N2W1"  type="car" route="rt_N2W1"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+  <flow id="f_S2E0"  type="car" route="rt_S2E0"
+        begin="0" end="7200" vehsPerHour="29.2" departLane="best" departSpeed="max"/>
+  <flow id="f_S2W0"  type="car" route="rt_S2W0"
+        begin="0" end="7200" vehsPerHour="20.5"  departLane="best" departSpeed="max"/>
+  <flow id="f_N2E2"  type="car" route="rt_N2E2"
+        begin="0" end="7200" vehsPerHour="14.6"  departLane="best" departSpeed="max"/>
+  <flow id="f_N2W2"  type="car" route="rt_N2W2"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+
+
+  <!-- ── J0 CROSS-TRAFFIC (Aggrey St + Guggisberg St) ─────────────── -->
+  <flow id="f_E0W0"    type="car"    route="rt_E0W0"
+        begin="0" end="7200" vehsPerHour="58.5" departLane="best" departSpeed="max"/>
+  <flow id="f_E0W0_t"  type="trotro" route="rt_E0W0"
+        begin="0" end="7200" vehsPerHour="8.8"  departLane="best" departSpeed="max"/>
+  <flow id="f_W0E0"    type="car"    route="rt_W0E0"
+        begin="0" end="7200" vehsPerHour="23.4"  departLane="best" departSpeed="max"/>
+  <flow id="f_E0N"     type="car"    route="rt_E0N"
+        begin="0" end="7200" vehsPerHour="35.1" departLane="best" departSpeed="max"/>
+  <flow id="f_E0S"     type="car"    route="rt_E0S"
+        begin="0" end="7200" vehsPerHour="23.4"  departLane="best" departSpeed="max"/>
+  <flow id="f_W0N"     type="car"    route="rt_W0N"
+        begin="0" end="7200" vehsPerHour="29.2" departLane="best" departSpeed="max"/>
+  <flow id="f_W0S"     type="car"    route="rt_W0S"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+
+
+  <!-- ── J1 CROSS-TRAFFIC (Asylum Down Rd + Ring Rd — busiest) ────── -->
+  <flow id="f_E1W1"    type="car"    route="rt_E1W1"
+        begin="0" end="7200" vehsPerHour="73.1" departLane="best" departSpeed="max"/>
+  <flow id="f_E1W1_t"  type="trotro" route="rt_E1W1"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+  <flow id="f_W1E1"    type="car"    route="rt_W1E1"
+        begin="0" end="7200" vehsPerHour="64.4" departLane="best" departSpeed="max"/>
+  <flow id="f_W1E1_t"  type="trotro" route="rt_W1E1"
+        begin="0" end="7200" vehsPerHour="8.8"  departLane="best" departSpeed="max"/>
+  <flow id="f_E1N"     type="car"    route="rt_E1N"
+        begin="0" end="7200" vehsPerHour="26.3"  departLane="best" departSpeed="max"/>
+  <flow id="f_E1S"     type="car"    route="rt_E1S"
+        begin="0" end="7200" vehsPerHour="20.5"  departLane="best" departSpeed="max"/>
+  <flow id="f_W1N"     type="car"    route="rt_W1N"
+        begin="0" end="7200" vehsPerHour="23.4"  departLane="best" departSpeed="max"/>
+  <flow id="f_W1S"     type="car"    route="rt_W1S"
+        begin="0" end="7200" vehsPerHour="14.6"  departLane="best" departSpeed="max"/>
+
+
+  <!-- ── J2 CROSS-TRAFFIC (Nima Bypass + Tesano Rd — lightest) ────── -->
+  <flow id="f_E2W2"    type="car"    route="rt_E2W2"
+        begin="0" end="7200" vehsPerHour="23.4"  departLane="best" departSpeed="max"/>
+  <flow id="f_W2E2"    type="car"    route="rt_W2E2"
+        begin="0" end="7200" vehsPerHour="17.6"  departLane="best" departSpeed="max"/>
+  <flow id="f_E2N"     type="car"    route="rt_E2N"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+  <flow id="f_E2S"     type="car"    route="rt_E2S"
+        begin="0" end="7200" vehsPerHour="14.6"  departLane="best" departSpeed="max"/>
+  <flow id="f_W2N"     type="car"    route="rt_W2N"
+        begin="0" end="7200" vehsPerHour="11.7"  departLane="best" departSpeed="max"/>
+  <flow id="f_W2S"     type="car"    route="rt_W2S"
+        begin="0" end="7200" vehsPerHour="8.8"  departLane="best" departSpeed="max"/>
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       EMERGENCY VEHICLES — Deployed manually from Godot UI
+       (No auto-spawned ambulances — click "Deploy Ambulance" button)
+  ═══════════════════════════════════════════════════════════════ -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       PEDESTRIAN FLOWS — Crossings at All 3 Junctions
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- ── J0 pedestrian crossings (reduced ~60%) ──────────────────── -->
+  <personFlow id="ped_J0_N_e2w" type="ped_fast" begin="0" end="7200" perHour="30">
+    <walk from="ACH_J0toJ1" to="ACH_J1toJ0"/>
+  </personFlow>
+  <personFlow id="ped_J0_N_w2e" type="ped_fast" begin="0" end="7200" perHour="30">
+    <walk from="ACH_J1toJ0" to="ACH_J0toJ1"/>
+  </personFlow>
+  <personFlow id="ped_J0_S_e2w" type="ped_fast" begin="0" end="7200" perHour="30">
+    <walk from="ACH_S2J0" to="ACH_J0toS"/>
+  </personFlow>
+  <personFlow id="ped_J0_S_w2e" type="ped_fast" begin="0" end="7200" perHour="30">
+    <walk from="ACH_J0toS" to="ACH_S2J0"/>
+  </personFlow>
+  <personFlow id="ped_J0_E_n2s" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="AGG_E2J0" to="AGG_J0toE"/>
+  </personFlow>
+  <personFlow id="ped_J0_E_s2n" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="AGG_J0toE" to="AGG_E2J0"/>
+  </personFlow>
+  <personFlow id="ped_J0_W_n2s" type="ped_fast" begin="0" end="7200" perHour="12">
+    <walk from="GUG_W2J0" to="GUG_J0toW"/>
+  </personFlow>
+  <personFlow id="ped_J0_W_s2n" type="ped_fast" begin="0" end="7200" perHour="12">
+    <walk from="GUG_J0toW" to="GUG_W2J0"/>
+  </personFlow>
+
+  <!-- ── J1 pedestrian crossings (busier — near market area, reduced ~60%) ── -->
+  <personFlow id="ped_J1_N_e2w" type="ped_fast" begin="0" end="7200" perHour="36">
+    <walk from="ACH_J1toJ2" to="ACH_J2toJ1"/>
+  </personFlow>
+  <personFlow id="ped_J1_N_w2e" type="ped_fast" begin="0" end="7200" perHour="36">
+    <walk from="ACH_J2toJ1" to="ACH_J1toJ2"/>
+  </personFlow>
+  <personFlow id="ped_J1_S_e2w" type="ped_fast" begin="0" end="7200" perHour="36">
+    <walk from="ACH_J0toJ1" to="ACH_J1toJ0"/>
+  </personFlow>
+  <personFlow id="ped_J1_S_w2e" type="ped_fast" begin="0" end="7200" perHour="36">
+    <walk from="ACH_J1toJ0" to="ACH_J0toJ1"/>
+  </personFlow>
+  <personFlow id="ped_J1_E_n2s" type="ped_fast" begin="0" end="7200" perHour="24">
+    <walk from="ASD_E2J1" to="ASD_J1toE"/>
+  </personFlow>
+  <personFlow id="ped_J1_E_s2n" type="ped_fast" begin="0" end="7200" perHour="24">
+    <walk from="ASD_J1toE" to="ASD_E2J1"/>
+  </personFlow>
+  <personFlow id="ped_J1_W_n2s" type="ped_fast" begin="0" end="7200" perHour="24">
+    <walk from="RNG_W2J1" to="RNG_J1toW"/>
+  </personFlow>
+  <personFlow id="ped_J1_W_s2n" type="ped_fast" begin="0" end="7200" perHour="24">
+    <walk from="RNG_J1toW" to="RNG_W2J1"/>
+  </personFlow>
+
+  <!-- ── J2 pedestrian crossings (lighter, reduced ~60%) ────────── -->
+  <personFlow id="ped_J2_N_e2w" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="ACH_N2J2" to="ACH_J2toN"/>
+  </personFlow>
+  <personFlow id="ped_J2_N_w2e" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="ACH_J2toN" to="ACH_N2J2"/>
+  </personFlow>
+  <personFlow id="ped_J2_S_e2w" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="ACH_J1toJ2" to="ACH_J2toJ1"/>
+  </personFlow>
+  <personFlow id="ped_J2_S_w2e" type="ped_fast" begin="0" end="7200" perHour="18">
+    <walk from="ACH_J2toJ1" to="ACH_J1toJ2"/>
+  </personFlow>
+  <personFlow id="ped_J2_E_n2s" type="ped_fast" begin="0" end="7200" perHour="9">
+    <walk from="NMA_E2J2" to="NMA_J2toE"/>
+  </personFlow>
+  <personFlow id="ped_J2_E_s2n" type="ped_fast" begin="0" end="7200" perHour="9">
+    <walk from="NMA_J2toE" to="NMA_E2J2"/>
+  </personFlow>
+  <personFlow id="ped_J2_W_n2s" type="ped_fast" begin="0" end="7200" perHour="9">
+    <walk from="TSN_W2J2" to="TSN_J2toW"/>
+  </personFlow>
+  <personFlow id="ped_J2_W_s2n" type="ped_fast" begin="0" end="7200" perHour="9">
+    <walk from="TSN_J2toW" to="TSN_W2J2"/>
+  </personFlow>
+
+</routes>

@@ -29,7 +29,7 @@ from dqn_agent import DQNAgent
 
 
 def evaluate_model(model_dir: Path, seed: int = 42, gui: bool = False,
-                   verbose: bool = True) -> dict:
+                   verbose: bool = True, route: str | None = None) -> dict:
     """Run one evaluation episode with trained corridor models.
 
     Args:
@@ -37,6 +37,7 @@ def evaluate_model(model_dir: Path, seed: int = 42, gui: bool = False,
         seed: Random seed
         gui: Use SUMO GUI
         verbose: Print per-step info
+        route: optional scenario route file (overrides corridor.sumocfg's default)
 
     Returns:
         Dict with evaluation metrics
@@ -57,7 +58,7 @@ def evaluate_model(model_dir: Path, seed: int = 42, gui: bool = False,
         agents[jid] = agent
 
     # Run evaluation episode
-    env = CorridorEnv(gui=gui, verbose=False)
+    env = CorridorEnv(gui=gui, verbose=False, route_file=route)
     states = env.reset(seed=seed)
     done = False
     step_count = 0

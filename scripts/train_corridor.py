@@ -52,12 +52,15 @@ SIM_DIR        = PROJECT_ROOT / "simulation"
 BASELINES_CSV  = PROJECT_ROOT / "data" / "corridor_baselines.csv"
 
 # ── Scenarios (rotated one per episode) ──────────────────────────────────────
-# (label, route_file). Only the recalibrated morning rush exists today; add
-# evening (N→S-heavy) / off_peak entries here for richer rotation. Each label
+# (label, route_file). The rotation hardens the agents across demand patterns
+# (the single junction only became robust once it trained on a mix). Each label
 # must match a row in data/corridor_baselines.csv so every junction is graded
-# against its own fixed-timer baseline.
+# against its own fixed-timer baseline. Scenarios built by
+# scripts/build_corridor_scenarios.py and baselined by run_corridor_baseline.py.
 SCENARIOS: list[tuple[str, Path]] = [
-    ("corridor_morning", SIM_DIR / "corridor_routes.rou.xml"),
+    ("corridor_morning", SIM_DIR / "corridor_routes.rou.xml"),          # S→N heavy
+    ("corridor_evening", SIM_DIR / "corridor_routes_evening.rou.xml"),  # N→S heavy (flip)
+    ("corridor_offpeak", SIM_DIR / "corridor_routes_offpeak.rou.xml"),  # light, balanced
 ]
 
 # ── Selection / warm-start knobs (mirror scripts/train_agent.py) ─────────────
