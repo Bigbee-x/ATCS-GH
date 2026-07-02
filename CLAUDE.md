@@ -39,6 +39,12 @@ hard-coded override, not learned — removing it makes the AI's results honest).
 - `scripts/visualizer_server.py` — SUMO↔Godot WebSocket bridge. `--baseline`
   for fixed-timer mode; default = AI (`ai/best_model.pth`); falls back to
   baseline if the model is missing/incompatible.
+- Launcher gotcha (PR #21–#22): the Flask dashboard is local **HTTP**; Osborn's
+  default browser is Safari with **HTTPS-Only on**, which refuses http:// URLs
+  (and resolves localhost→::1 while Flask binds IPv4). So `ServerManager.gd`
+  opens `http://127.0.0.1:5050?tab=live` via `open -a` (Chrome first, then
+  Brave/Edge/Chromium/Firefox), not the default browser. Keep local web UIs on
+  127.0.0.1 + a non-Safari browser.
 - `visualizer/` — Godot 4.6.3 project (open + F5; binary at
   `~/Downloads/Godot.app/Contents/MacOS/Godot`). Kenney Car Kit vehicles,
   dual signal heads (horizontal overhead + 2-light pole head), township with
