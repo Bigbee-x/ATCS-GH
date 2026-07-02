@@ -305,15 +305,31 @@ func _start_dashboard() -> void:
 	_open_dashboard_browser()
 
 
+## Chromium/Firefox browsers to try, in order, for the dashboard. Safari is
+## deliberately excluded: the dashboard is a local HTTP server, and Safari's
+## "HTTPS-Only" mode hard-refuses http:// URLs (WebKitErrorDomain:305). Opening
+## in Chrome keeps the user's default browser untouched for everything else.
+const DASHBOARD_BROWSERS: Array = [
+	"Google Chrome", "Brave Browser", "Microsoft Edge", "Chromium", "Firefox",
+]
+
+
 func _open_dashboard_browser() -> void:
-	## Open the dashboard Live Simulation tab in the default browser.
-	## Use 127.0.0.1, NOT "localhost": the Flask dashboard binds IPv4 (0.0.0.0),
-	## but macOS resolves "localhost" to IPv6 (::1) first. Chrome falls back to
-	## IPv4 automatically; Safari does not, so "localhost" fails to load there.
-	## 127.0.0.1 pins IPv4 and works in every browser.
+	## Open the dashboard Live Simulation tab in a browser that can load a local
+	## HTTP page. 127.0.0.1 (not "localhost") pins IPv4, matching the Flask bind.
 	var url: String = "http://127.0.0.1:%d?tab=live" % DASHBOARD_PORT
+	for app_name in DASHBOARD_BROWSERS:
+		# `open -a <app> <url>` exits 0 only if the app is installed + launched.
+		if OS.execute("/usr/bin/open", ["-a", app_name, url]) == 0:
+			print("[ServerManager] Opened dashboard in %s: %s" % [app_name, url])
+			return
+	# None installed — fall back to the default browser (may be Safari; if
+	# HTTPS-Only is on it will refuse the http:// dashboard).
+	push_warning("[ServerManager] No Chromium/Firefox browser found — opening the "
+		+ "default browser. If that's Safari with HTTPS-Only on, the HTTP dashboard "
+		+ "won't load; open %s in Chrome, or disable Safari's HTTPS-Only." % url)
 	OS.shell_open(url)
-	print("[ServerManager] Opened dashboard in browser: %s" % url)
+	print("[ServerManager] Opened dashboard in default browser: %s" % url)
 
 
 func _stop_dashboard() -> void:
