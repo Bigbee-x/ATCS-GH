@@ -75,7 +75,11 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   (165df1c) which failed by using client *arrival* times — don't retry that.
   Launcher now defaults to **1.5× sim speed** (`ServerManager.DEFAULT_SIM_SPEED`;
   real-time reads slow on the compressed roads); SnapClock auto-adapts to any
-  `--speed`.
+  `--speed`. **PR #26**: procedural **traffic soundscape** (`TrafficAudio.gd`,
+  auto-attached by VehicleManager in both scenes — 10 doppler-tracked engine
+  emitters pitch-following SUMO speeds w/ petrol + trotro-diesel voices,
+  congestion-driven stochastic horns, moving-traffic wash bed; drone buzz
+  lowered to −16 dB beneath it).
   **PR #19** added brand **billboards** (`BillboardBuilder` — Ghanaian brands +
   Valiborn, emissive/night-glow, road-facing; a sign near a junction sits on the
   cross-street, so place them between junctions), **rebuilt the airport** (KOTOKA
