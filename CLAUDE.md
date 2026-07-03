@@ -63,7 +63,11 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   actual mast-arm side in PR #17; cars cast real headlight beams in PR #18).
   **PR #23**: the corridor overview panel (UI.gd) shows per-approach N/E/S/W
   queue mini-bars per junction (severity-colored, wait tooltips) — fed from the
-  per-approach `queues`/`wait_times` the server always sent.
+  per-approach `queues`/`wait_times` the server always sent. **PR #24** added a
+  green-wave strip (J0—J1—J2 phase dots; links glow when adjacent greens align),
+  a live "vs fixed timer" badge (server tags `scenario` + `baseline_wait` in the
+  packet; `corridor_visualizer_server.py` gained `--route` for evening/off-peak),
+  per-junction phase hold timers, and a rolling veh/min throughput readout.
   **PR #19** added brand **billboards** (`BillboardBuilder` — Ghanaian brands +
   Valiborn, emissive/night-glow, road-facing; a sign near a junction sits on the
   cross-street, so place them between junctions), **rebuilt the airport** (KOTOKA

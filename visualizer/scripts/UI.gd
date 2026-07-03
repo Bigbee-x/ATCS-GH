@@ -56,6 +56,11 @@ var _corridor_panel: PanelContainer         # The scrollable right panel for cor
 var _junction_panels: Dictionary = {}       # { "J0": { lbl_phase, lbl_ai, lbl_stats, approach_bars, color }, ... }
 var _lbl_corridor_avg_wait: Label           # Corridor aggregate avg wait
 var _lbl_corridor_reward: Label             # Corridor aggregate reward
+var _lbl_vs_timer: Label                    # "vs fixed timer" performance badge
+var _lbl_throughput: Label                  # Corridor throughput (veh/min)
+var _wave_dots: Dictionary = {}             # { jid: ColorRect } — green-wave strip
+var _wave_links: Array = []                 # 2 ColorRects linking J0—J1—J2
+var _completed_history: Array = []          # [Vector2(sim_time, completed)] for veh/min
 var _right_panel_single: PanelContainer     # Reference to single-junction right panel
 
 # Bottom bar
@@ -317,10 +322,50 @@ func _build_corridor_right_panel() -> void:
 	vbox.add_child(header)
 	vbox.add_child(HSeparator.new())
 
+	# ── Green-wave strip: J0—J1—J2 dots live-colored by phase ────────────
+	# A link segment lights green when BOTH junctions it joins are running
+	# NS_THROUGH — the corridor "green wave" made visible.
+	var wave_center := CenterContainer.new()
+	vbox.add_child(wave_center)
+	var wave_row := HBoxContainer.new()
+	wave_row.add_theme_constant_override("separation", 4)
+	wave_center.add_child(wave_row)
+	for i in range(3):
+		var jid: String = ["J0", "J1", "J2"][i]
+		var tag := _make_label(jid, 9)
+		tag.add_theme_color_override("font_color", TEXT_DIM)
+		wave_row.add_child(tag)
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(12, 12)
+		dot.color = Color(0.3, 0.3, 0.35)
+		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		dot.mouse_filter = Control.MOUSE_FILTER_PASS   # enable tooltips
+		wave_row.add_child(dot)
+		_wave_dots[jid] = dot
+		if i < 2:
+			var link := ColorRect.new()
+			link.custom_minimum_size = Vector2(22, 3)
+			link.color = Color(0.25, 0.25, 0.3)
+			link.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			wave_row.add_child(link)
+			_wave_links.append(link)
+
 	# ── Corridor aggregate stats ──────────────────────────────────────────
 	_lbl_corridor_avg_wait = _make_label("Corridor Wait: 0.0s", 13)
 	_lbl_corridor_avg_wait.add_theme_color_override("font_color", ACCENT_GREEN)
 	vbox.add_child(_lbl_corridor_avg_wait)
+
+	# "vs fixed timer" badge — the headline stat (hidden until the running
+	# average settles and the server has sent a baseline for the scenario)
+	_lbl_vs_timer = _make_label("", 12)
+	_lbl_vs_timer.add_theme_color_override("font_color", ACCENT_GREEN)
+	_lbl_vs_timer.mouse_filter = Control.MOUSE_FILTER_PASS
+	_lbl_vs_timer.visible = false
+	vbox.add_child(_lbl_vs_timer)
+
+	_lbl_throughput = _make_label("Throughput: —", 11)
+	_lbl_throughput.add_theme_color_override("font_color", TEXT_DIM)
+	vbox.add_child(_lbl_throughput)
 
 	_lbl_corridor_reward = _make_label("Total Reward: 0", 11)
 	_lbl_corridor_reward.add_theme_color_override("font_color", TEXT_DIM)
@@ -1036,6 +1081,40 @@ func _update_corridor_display(data: Dictionary) -> void:
 	if _lbl_corridor_reward:
 		_lbl_corridor_reward.text = "Total Reward: %.0f" % corridor_total_reward
 
+	# ── "vs fixed timer" badge ────────────────────────────────────────────
+	# Compare the live corridor wait against the scenario's recorded
+	# fixed-timer baseline (sent by the server). Wait for the running average
+	# to settle (2 sim-minutes) so the badge doesn't open on a meaningless 100%.
+	var sim_time: float = float(data.get("sim_time", data.get("step", 0.0)))
+	var baseline_wait: float = float(data.get("baseline_wait", 0.0))
+	if _lbl_vs_timer:
+		if baseline_wait > 0.0 and sim_time >= 120.0:
+			var pct: float = (1.0 - corridor_avg_wait / baseline_wait) * 100.0
+			if pct >= 0.0:
+				_lbl_vs_timer.text = "Beating fixed timer by %d%%" % int(round(pct))
+				_lbl_vs_timer.add_theme_color_override("font_color", ACCENT_GREEN)
+			else:
+				_lbl_vs_timer.text = "%d%% SLOWER than fixed timer" % int(round(-pct))
+				_lbl_vs_timer.add_theme_color_override("font_color", ACCENT_RED)
+			_lbl_vs_timer.tooltip_text = "scenario: %s — fixed-timer baseline %.1fs" % [
+				str(data.get("scenario", "?")), baseline_wait]
+			_lbl_vs_timer.visible = true
+		else:
+			_lbl_vs_timer.visible = false
+
+	# ── Throughput (veh/min over the last sim-minute) ────────────────────
+	var completed: float = float(data.get("vehicles_completed", 0))
+	if not _completed_history.is_empty() and _completed_history.back().x > sim_time:
+		_completed_history.clear()   # sim restarted — drop the stale window
+	_completed_history.append(Vector2(sim_time, completed))
+	while _completed_history.size() > 2 and _completed_history[0].x < sim_time - 60.0:
+		_completed_history.pop_front()
+	if _lbl_throughput:
+		var span: float = sim_time - _completed_history[0].x
+		if span >= 10.0:
+			var rate: float = (completed - _completed_history[0].y) * 60.0 / span
+			_lbl_throughput.text = "Throughput: %.0f veh/min" % maxf(rate, 0.0)
+
 	# Mode indicator — update from control_mode in packet
 	var control_mode: String = data.get("control_mode", _current_control_mode)
 	if control_mode != _current_control_mode:
@@ -1059,17 +1138,36 @@ func _update_corridor_display(data: Dictionary) -> void:
 		var jdata: Dictionary = junctions_data[jid]
 		var jp: Dictionary = _junction_panels[jid]
 
-		# Phase
+		# Phase — name plus how long it has been held; yellow while transitioning
 		var phase_name: String = jdata.get("phase_name", "UNKNOWN")
+		var phase_timer: int = int(jdata.get("phase_timer", 0))
+		var in_yellow: bool = bool(jdata.get("in_yellow", false))
 		var lbl_phase: Label = jp["lbl_phase"]
-		lbl_phase.text = phase_name
-		# Color-code phase
-		if phase_name.begins_with("NS"):
+		lbl_phase.text = "%s · %ds" % [phase_name, phase_timer]
+		# Color-code phase (yellow transition wins)
+		if in_yellow or phase_name.contains("YELLOW"):
+			lbl_phase.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25))
+		elif phase_name.begins_with("NS"):
 			lbl_phase.add_theme_color_override("font_color", ACCENT_GREEN)
 		elif phase_name.begins_with("EW"):
 			lbl_phase.add_theme_color_override("font_color", ACCENT_ORANGE)
 		else:
 			lbl_phase.add_theme_color_override("font_color", TEXT_DIM)
+
+		# Green-wave strip dot — phase-colored (corridor direction = green)
+		if _wave_dots.has(jid):
+			var dot: ColorRect = _wave_dots[jid]
+			if in_yellow or phase_name.contains("YELLOW"):
+				dot.color = Color(1.0, 0.85, 0.25)
+			elif phase_name == "NS_THROUGH":
+				dot.color = Color(0.25, 0.95, 0.4)      # corridor green
+			elif phase_name == "NS_LEFT":
+				dot.color = Color(0.2, 0.75, 0.6)       # teal — NS but not through
+			elif phase_name.begins_with("EW"):
+				dot.color = ACCENT_ORANGE
+			else:
+				dot.color = Color(0.3, 0.3, 0.35)
+			dot.tooltip_text = "%s: %s (%ds)" % [jid, phase_name, phase_timer]
 
 		# AI / Fixed Timer decision
 		var ai_decision: String = jdata.get("ai_decision", "HOLD")
@@ -1132,6 +1230,16 @@ func _update_corridor_display(data: Dictionary) -> void:
 			_chart_wait.add_point(chart_keys[i], avg_w)
 		if _chart_queue:
 			_chart_queue.add_point(chart_keys[i], total_q)
+
+	# ── Green-wave links: light up when adjacent junctions align NS_THROUGH ──
+	for li in range(_wave_links.size()):
+		var a: Dictionary = junctions_data.get(["J0", "J1", "J2"][li], {})
+		var b: Dictionary = junctions_data.get(["J0", "J1", "J2"][li + 1], {})
+		var wave_on: bool = (
+			a.get("phase_name", "") == "NS_THROUGH" and not bool(a.get("in_yellow", false))
+			and b.get("phase_name", "") == "NS_THROUGH" and not bool(b.get("in_yellow", false)))
+		var link: ColorRect = _wave_links[li]
+		link.color = Color(0.25, 0.95, 0.4) if wave_on else Color(0.25, 0.25, 0.3)
 
 	# (Ambulance feature removed 2026-06-13 — no per-junction emergency banner.
 	#  The banner node is retained for the wrong-server warning.)
@@ -1208,6 +1316,15 @@ func reset_display() -> void:
 			_lbl_corridor_avg_wait.add_theme_color_override("font_color", ACCENT_GREEN)
 		if _lbl_corridor_reward:
 			_lbl_corridor_reward.text = "Total Reward: 0"
+		if _lbl_vs_timer:
+			_lbl_vs_timer.visible = false
+		if _lbl_throughput:
+			_lbl_throughput.text = "Throughput: —"
+		_completed_history.clear()
+		for jid in _wave_dots:
+			_wave_dots[jid].color = Color(0.3, 0.3, 0.35)
+		for link in _wave_links:
+			link.color = Color(0.25, 0.25, 0.3)
 		for jid in _junction_panels:
 			var jp: Dictionary = _junction_panels[jid]
 			jp["lbl_phase"].text = "NS_THROUGH"
