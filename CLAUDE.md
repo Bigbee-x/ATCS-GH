@@ -68,6 +68,14 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   a live "vs fixed timer" badge (server tags `scenario` + `baseline_wait` in the
   packet; `corridor_visualizer_server.py` gained `--route` for evening/off-peak),
   per-junction phase hold timers, and a rolling veh/min throughput readout.
+  **PR #25**: smooth vehicle/ped motion via **snapshot interpolation**
+  (`SnapClock.gd` — adaptive playback clock keyed to the packets' authoritative
+  `sim_time`, rendering ~1.5 sim-secs behind newest; entities lerp between KNOWN
+  snapshots, never extrapolate). This supersedes the reverted April attempt
+  (165df1c) which failed by using client *arrival* times — don't retry that.
+  Launcher now defaults to **1.5× sim speed** (`ServerManager.DEFAULT_SIM_SPEED`;
+  real-time reads slow on the compressed roads); SnapClock auto-adapts to any
+  `--speed`.
   **PR #19** added brand **billboards** (`BillboardBuilder` — Ghanaian brands +
   Valiborn, emissive/night-glow, road-facing; a sign near a junction sits on the
   cross-street, so place them between junctions), **rebuilt the airport** (KOTOKA

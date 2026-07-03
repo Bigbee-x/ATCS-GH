@@ -124,10 +124,17 @@ var _sidewalk_paths: Array = []
 var _ambient_peds: Array = []
 
 # ── SUMO-driven crossing pedestrians ──────────────────────────────────────────
-# pid (String) → {node: Node3D, last_pos: Vector3}
+# pid (String) → {node: Node3D, target_pos: Vector3, snaps: Array, phase: float}
 var _crossing_peds: Dictionary = {}
 # Pool of reusable pedestrian meshes
 var _crossing_pool: Array = []
+
+# Snapshot-interpolation playback clock (see SnapClock.gd) — same scheme as
+# VehicleManager: render ~1.5 sim-secs behind the newest packet, interpolating
+# between known sim-time-stamped positions instead of easing toward the latest.
+const SnapClock := preload("res://scripts/SnapClock.gd")
+var _snap_clock: RefCounted = SnapClock.new()
+const MAX_SNAPS: int = 4
 
 # ── Pedestrian toggle ────────────────────────────────────────────────────────
 var _pedestrians_enabled: bool = true
@@ -175,20 +182,59 @@ func _process(delta: float) -> void:
 	if not _pedestrians_enabled:
 		return
 
+	_snap_clock.advance(delta)
+
 	for ped in _ambient_peds:
 		_move_ambient(ped, delta)
 
-	# Smoothly interpolate crossing pedestrians toward target positions,
-	# animating their stride only while they're actually moving.
+	# Move crossing pedestrians by snapshot interpolation (falling back to the
+	# legacy lerp when packets carry no sim_time), animating their stride only
+	# while they're actually moving.
 	for pid in _crossing_peds:
 		var data: Dictionary = _crossing_peds[pid]
 		var node: Node3D = data["node"]
 		var prev: Vector3 = node.position
-		node.position = node.position.lerp(data["target_pos"], minf(delta * 8.0, 1.0))
+		var snaps: Array = data.get("snaps", [])
+		if _snap_clock.is_active() and not snaps.is_empty():
+			node.position = _sample_ped_snaps(snaps, _snap_clock.render_t)
+		else:
+			node.position = node.position.lerp(data["target_pos"], minf(delta * 8.0, 1.0))
 		var moving: bool = node.position.distance_to(prev) > 0.0015
 		if moving:
 			data["phase"] = data.get("phase", 0.0) + delta * STRIDE_RATE * 0.9
 		_animate_walk(node, data.get("phase", 0.0), moving)
+
+
+static func _push_ped_snap(snaps: Array, t: float, pos: Vector3) -> void:
+	## Append a sim-time-stamped position, keeping the buffer monotonic
+	## (equal t skipped; backwards t = sim restart → reset).
+	if not snaps.is_empty():
+		var last_t: float = snaps.back()["t"]
+		if t == last_t:
+			return
+		if t < last_t:
+			snaps.clear()
+	snaps.append({"t": t, "pos": pos})
+	while snaps.size() > MAX_SNAPS:
+		snaps.pop_front()
+
+
+static func _sample_ped_snaps(snaps: Array, rt: float) -> Vector3:
+	## Position at playback time rt — clamps to the buffer ends (holds, never
+	## extrapolates), interpolating linearly between straddling snapshots.
+	var first: Dictionary = snaps[0]
+	if rt <= first["t"]:
+		return first["pos"]
+	var last: Dictionary = snaps[snaps.size() - 1]
+	if rt >= last["t"]:
+		return last["pos"]
+	for i in range(snaps.size() - 1, 0, -1):
+		var a: Dictionary = snaps[i - 1]
+		var b: Dictionary = snaps[i]
+		if rt >= a["t"] and rt <= b["t"]:
+			var f: float = (rt - a["t"]) / maxf(b["t"] - a["t"], 0.001)
+			return (a["pos"] as Vector3).lerp(b["pos"], f)
+	return last["pos"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -322,15 +368,21 @@ func _update_ambient_position(ped: Dictionary) -> void:
 # SUMO-DRIVEN CROSSING PEDESTRIANS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-func update_crossing_pedestrians(ped_list: Array) -> void:
+func update_crossing_pedestrians(ped_list: Array, sim_time: float = -1.0) -> void:
 	## Called from Main.gd when server sends pedestrian data.
 	## ped_list: Array of {id, x, y, speed, angle, edge}
+	## sim_time: the packet's authoritative timestamp (−1 = unstamped → legacy lerp).
 	##
 	## Only renders pedestrians on crossing edges (:Jx_c*) or walking areas (:Jx_w*).
 	## Pedestrians on regular road edges are skipped — the ambient system handles
 	## sidewalk visuals, and SUMO sidewalk coords don't map to Godot sidewalk offsets.
 	if not _pedestrians_enabled:
 		return
+
+	if _snap_clock.restarted(sim_time):
+		for pid in _crossing_peds:
+			_crossing_peds[pid]["snaps"].clear()
+	_snap_clock.feed(sim_time)
 
 	var seen: Dictionary = {}
 
@@ -391,8 +443,11 @@ func update_crossing_pedestrians(ped_list: Array) -> void:
 			_crossing_peds[pid] = {
 				"node": new_mesh,
 				"target_pos": target_pos,
+				"snaps": [],              # sim-time-stamped position history
 				"phase": randf() * TAU,   # desync stride per crosser
 			}
+		if sim_time >= 0.0:
+			_push_ped_snap(_crossing_peds[pid]["snaps"], sim_time, target_pos)
 
 		# Update facing direction from SUMO angle
 		var angle_deg: float = float(ped_data.get("angle", 0.0))
