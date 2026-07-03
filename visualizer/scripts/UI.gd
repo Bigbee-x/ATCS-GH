@@ -53,7 +53,7 @@ var _lbl_reward: Label
 
 # Right panel — corridor mode: per-junction panels
 var _corridor_panel: PanelContainer         # The scrollable right panel for corridor
-var _junction_panels: Dictionary = {}       # { "J0": { lbl_phase, lbl_wait, lbl_queue, lbl_ai, bar }, ... }
+var _junction_panels: Dictionary = {}       # { "J0": { lbl_phase, lbl_ai, lbl_stats, approach_bars, color }, ... }
 var _lbl_corridor_avg_wait: Label           # Corridor aggregate avg wait
 var _lbl_corridor_reward: Label             # Corridor aggregate reward
 var _right_panel_single: PanelContainer     # Reference to single-junction right panel
@@ -416,15 +416,42 @@ func _build_junction_panel(_jid: String, name_text: String, color: Color) -> Dic
 	lbl_ai.add_theme_color_override("font_color", TEXT_DIM)
 	container.add_child(lbl_ai)
 
-	# Queue bar (total queue across all approaches)
-	var bar := ProgressBar.new()
-	bar.min_value = 0
-	bar.max_value = 80
-	bar.value = 0
-	bar.custom_minimum_size = Vector2(210, 10)
-	bar.show_percentage = false
-	bar.modulate = color
-	container.add_child(bar)
+	# Per-approach queue mini-bars (N/E/S/W in a 2×2 grid) — shows WHERE the
+	# traffic is stacked, not just how much. Fed from jdata["queues"] +
+	# jdata["wait_times"] (the server has always sent per-approach data).
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 2)
+	container.add_child(grid)
+
+	var approach_bars: Dictionary = {}
+	for approach in ["north", "east", "south", "west"]:
+		var cell := HBoxContainer.new()
+		cell.add_theme_constant_override("separation", 4)
+		grid.add_child(cell)
+
+		var dir_lbl := _make_label(approach.substr(0, 1).to_upper(), 10)
+		dir_lbl.add_theme_color_override("font_color", TEXT_DIM)
+		dir_lbl.custom_minimum_size = Vector2(10, 0)
+		cell.add_child(dir_lbl)
+
+		var abar := ProgressBar.new()
+		abar.min_value = 0
+		abar.max_value = 40
+		abar.value = 0
+		abar.custom_minimum_size = Vector2(58, 8)
+		abar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		abar.show_percentage = false
+		abar.modulate = color
+		cell.add_child(abar)
+
+		var cnt_lbl := _make_label("0", 10)
+		cnt_lbl.add_theme_color_override("font_color", TEXT_DIM)
+		cnt_lbl.custom_minimum_size = Vector2(18, 0)
+		cell.add_child(cnt_lbl)
+
+		approach_bars[approach] = {"bar": abar, "lbl": cnt_lbl, "cell": cell}
 
 	# Stats line: Wait | Queue | Reward
 	var lbl_stats := _make_label("W: 0.0s  Q: 0  R: 0", 10)
@@ -441,7 +468,7 @@ func _build_junction_panel(_jid: String, name_text: String, color: Color) -> Dic
 		"lbl_phase": lbl_phase,
 		"lbl_ai": lbl_ai,
 		"lbl_stats": lbl_stats,
-		"bar": bar,
+		"approach_bars": approach_bars,
 		"color": color,
 	}
 
@@ -1074,15 +1101,26 @@ func _update_corridor_display(data: Dictionary) -> void:
 			n_approaches += 1
 		var avg_w: float = total_w / maxf(n_approaches, 1.0)
 
-		# Queue bar
-		var bar: ProgressBar = jp["bar"]
-		bar.value = total_q
-		if total_q < 15:
-			bar.modulate = jp["color"]
-		elif total_q < 40:
-			bar.modulate = ACCENT_ORANGE
-		else:
-			bar.modulate = ACCENT_RED
+		# Per-approach queue mini-bars: value + severity color + wait tooltip
+		var approach_bars: Dictionary = jp["approach_bars"]
+		for approach in approach_bars:
+			var q: float = float(queues.get(approach, 0))
+			var ab: Dictionary = approach_bars[approach]
+			var abar: ProgressBar = ab["bar"]
+			abar.value = q
+			if q < 8.0:
+				abar.modulate = jp["color"]
+			elif q < 20.0:
+				abar.modulate = ACCENT_ORANGE
+			else:
+				abar.modulate = ACCENT_RED
+			var cnt_lbl: Label = ab["lbl"]
+			cnt_lbl.text = str(int(q))
+			cnt_lbl.add_theme_color_override(
+				"font_color", ACCENT_RED if q >= 20.0 else TEXT_DIM)
+			var cell: Control = ab["cell"]
+			cell.tooltip_text = "%s: queue %d, wait %.0fs" % [
+				approach, int(q), float(wait_times.get(approach, 0.0))]
 
 		# Stats line
 		var reward: float = jdata.get("reward", 0.0)
@@ -1175,7 +1213,11 @@ func reset_display() -> void:
 			jp["lbl_phase"].text = "NS_THROUGH"
 			jp["lbl_ai"].text = "AI: HOLD"
 			jp["lbl_stats"].text = "W: 0.0s  Q: 0  R: 0"
-			jp["bar"].value = 0
+			for approach in jp["approach_bars"]:
+				var ab: Dictionary = jp["approach_bars"][approach]
+				ab["bar"].value = 0
+				ab["bar"].modulate = jp["color"]
+				ab["lbl"].text = "0"
 		_lbl_mode.text = "CORRIDOR AI"
 		_lbl_mode.add_theme_color_override("font_color", ACCENT_GREEN)
 	else:

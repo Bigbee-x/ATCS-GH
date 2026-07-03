@@ -61,6 +61,9 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   roadside concrete gutters, and utility poles were added (PR #14; the drone was
   reworked from a helicopter to the small quad in PR #15; sensors mount on the
   actual mast-arm side in PR #17; cars cast real headlight beams in PR #18).
+  **PR #23**: the corridor overview panel (UI.gd) shows per-approach N/E/S/W
+  queue mini-bars per junction (severity-colored, wait tooltips) — fed from the
+  per-approach `queues`/`wait_times` the server always sent.
   **PR #19** added brand **billboards** (`BillboardBuilder` — Ghanaian brands +
   Valiborn, emissive/night-glow, road-facing; a sign near a junction sits on the
   cross-street, so place them between junctions), **rebuilt the airport** (KOTOKA
