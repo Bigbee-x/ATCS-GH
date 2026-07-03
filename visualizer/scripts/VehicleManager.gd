@@ -130,8 +130,16 @@ const CAR_COLORS: Array = [
 
 # ── Internal state ───────────────────────────────────────────────────────────
 ## Active vehicles: vid -> { node: Node3D, target_pos: Vector3,
-##   target_rot: float, type: String, opacity: float, is_ambulance: bool }
+##   target_rot: float, snaps: Array, type: String, opacity: float,
+##   is_ambulance: bool }
 var _active: Dictionary = {}
+
+## Snapshot-interpolation playback clock (see SnapClock.gd). Packets stamp
+## sim_time; vehicles render ~1.5 sim-secs behind the newest packet, lerping
+## between known snapshots — smooth 60 fps motion from 1 Hz data.
+const SnapClock := preload("res://scripts/SnapClock.gd")
+var _clock: RefCounted = SnapClock.new()
+const MAX_SNAPS: int = 4     # per-vehicle history (4 s at 1 Hz packets)
 
 ## Recyclable car nodes (hidden, ready for reuse)
 var _car_pool: Array = []
@@ -205,6 +213,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_pulse_time += delta * 6.0
 
+	# Advance the snapshot playback clock (no-op until stamped packets arrive)
+	_clock.advance(delta)
+
 	## Smoothly move every active vehicle toward its target.
 	var to_remove: Array = []
 
@@ -220,11 +231,17 @@ func _process(delta: float) -> void:
 				to_remove.append(vid)
 			continue
 
-		# --- Lerp position ---
-		node.position = node.position.lerp(info["target_pos"], LERP_SPEED * delta)
-
-		# --- Lerp rotation ---
-		node.rotation.y = lerp_angle(node.rotation.y, info["target_rot"], LERP_SPEED * delta)
+		# --- Position/rotation: snapshot interpolation between the two known
+		#     packets straddling render_t (never extrapolates); falls back to
+		#     the legacy exponential lerp when packets carry no sim_time. ---
+		var snaps: Array = info.get("snaps", [])
+		if _clock.is_active() and not snaps.is_empty():
+			var s: Dictionary = _sample_snaps(snaps, _clock.render_t)
+			node.position = s["pos"]
+			node.rotation.y = s["rot"]
+		else:
+			node.position = node.position.lerp(info["target_pos"], LERP_SPEED * delta)
+			node.rotation.y = lerp_angle(node.rotation.y, info["target_rot"], LERP_SPEED * delta)
 
 		# --- Boundary fade: vehicles near road edges fade out smoothly ---
 		var bfade: float = _get_boundary_fade(node.position)
@@ -248,6 +265,44 @@ func _process(delta: float) -> void:
 	# Clean up fully faded-out vehicles
 	for vid in to_remove:
 		_release_vehicle(vid)
+
+
+static func _push_snap(snaps: Array, t: float, pos: Vector3, rot: float) -> void:
+	## Append a sim-time-stamped snapshot, keeping the buffer monotonic:
+	## equal t (state_update repeating the last vehicle_update) is skipped;
+	## t going backwards (stale buffer across a sim restart) resets it.
+	if not snaps.is_empty():
+		var last_t: float = snaps.back()["t"]
+		if t == last_t:
+			return
+		if t < last_t:
+			snaps.clear()
+	snaps.append({"t": t, "pos": pos, "rot": rot})
+	while snaps.size() > MAX_SNAPS:
+		snaps.pop_front()
+
+
+static func _sample_snaps(snaps: Array, rt: float) -> Dictionary:
+	## Pose at playback time rt, interpolating between the two snapshots that
+	## straddle it. Clamps to the ends — HOLDS rather than extrapolates, so
+	## late packets can never cause overshoot-and-reverse artifacts.
+	var first: Dictionary = snaps[0]
+	if rt <= first["t"]:
+		return first
+	var last: Dictionary = snaps[snaps.size() - 1]
+	if rt >= last["t"]:
+		return last
+	for i in range(snaps.size() - 1, 0, -1):
+		var a: Dictionary = snaps[i - 1]
+		var b: Dictionary = snaps[i]
+		if rt >= a["t"] and rt <= b["t"]:
+			var f: float = (rt - a["t"]) / maxf(b["t"] - a["t"], 0.001)
+			return {
+				"t": rt,
+				"pos": (a["pos"] as Vector3).lerp(b["pos"], f),
+				"rot": lerp_angle(a["rot"], b["rot"], f),
+			}
+	return last
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -349,6 +404,15 @@ func update_vehicles(data: Dictionary) -> void:
 	var vehicle_list: Array = data.get("vehicles", [])
 	var seen: Dictionary = {}
 
+	# Snapshot clock: feed the packet's authoritative sim_time. On sim restart
+	# (time jumps backwards) the per-vehicle buffers hold stale future-times —
+	# clear them (SUMO flow ids repeat across runs, so ids alone can't tell).
+	var t: float = float(data.get("sim_time", -1.0))
+	if _clock.restarted(t):
+		for vid in _active:
+			_active[vid]["snaps"].clear()
+	_clock.feed(t)
+
 	for v in vehicle_list:
 		var vid: String = str(v.get("id", ""))
 		if vid.is_empty():
@@ -368,11 +432,15 @@ func update_vehicles(data: Dictionary) -> void:
 			else:
 				_active[vid]["target_pos"] = pos
 				_active[vid]["target_rot"] = rot
+				if t >= 0.0:
+					_push_snap(_active[vid]["snaps"], t, pos, rot)
 		else:
 			# Spawn new vehicle
 			if _active.size() >= MAX_VEHICLES:
 				continue
 			_spawn_vehicle(vid, pos, rot, vtype)
+			if t >= 0.0 and _active.has(vid):
+				_push_snap(_active[vid]["snaps"], t, pos, rot)
 
 	# Mark vehicles for despawn that are no longer in the server data
 	for vid in _active:
@@ -526,6 +594,7 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 		"node": node,
 		"target_pos": pos,
 		"target_rot": rot,
+		"snaps": [],          # sim-time-stamped {t, pos, rot} history
 		"type": vtype,
 		"is_ambulance": is_ambulance,
 		"opacity": 0.0,       # Fade in from 0

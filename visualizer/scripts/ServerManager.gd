@@ -25,6 +25,12 @@ const PORT := 8765
 const DASHBOARD_PORT := 5050
 const DASHBOARD_SCRIPT := "dashboard/app.py"
 
+## Default sim pace. 1.0 = strict real-time, which reads slow on the visually
+## compressed roads (SUMO metres squeeze onto far fewer Godot units) — 1.5×
+## keeps honest SUMO dynamics but a livelier screen pace. SnapClock's
+## production-rate estimator adapts automatically, so motion stays smooth.
+const DEFAULT_SIM_SPEED: float = 1.5
+
 const SERVER_SCRIPTS: Dictionary = {
 	ServerType.SINGLE_JUNCTION: "scripts/visualizer_server.py",
 	ServerType.CORRIDOR: "scripts/corridor_visualizer_server.py",
@@ -144,7 +150,7 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 		return
 
 	# Build CLI arguments
-	var speed: float = args.get("speed", 1.0)
+	var speed: float = args.get("speed", DEFAULT_SIM_SPEED)
 	var port: int = args.get("port", PORT)
 	var demo: bool = args.get("demo", false)
 

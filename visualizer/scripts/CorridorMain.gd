@@ -156,7 +156,8 @@ func _on_state_updated(data: Dictionary) -> void:
 	# Update SUMO-driven crossing pedestrians
 	var ped_list: Array = data.get("pedestrians", [])
 	if ped_list.size() > 0:
-		pedestrian_manager.update_crossing_pedestrians(ped_list)
+		pedestrian_manager.update_crossing_pedestrians(
+			ped_list, float(data.get("sim_time", -1.0)))
 
 
 func _on_vehicle_updated(data: Dictionary) -> void:
@@ -164,7 +165,8 @@ func _on_vehicle_updated(data: Dictionary) -> void:
 
 	var ped_list: Array = data.get("pedestrians", [])
 	if ped_list.size() > 0:
-		pedestrian_manager.update_crossing_pedestrians(ped_list)
+		pedestrian_manager.update_crossing_pedestrians(
+			ped_list, float(data.get("sim_time", -1.0)))
 
 
 func _on_sim_completed(data: Dictionary) -> void:
