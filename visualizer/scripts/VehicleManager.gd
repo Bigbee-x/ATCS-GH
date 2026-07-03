@@ -168,6 +168,13 @@ var _is_dusk: bool = false
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _ready() -> void:
+	## Attach the traffic soundscape (engine emitters + horns + wash). A child
+	## of this node so it ships in both scenes with zero .tscn wiring; it reads
+	## vehicles via audio_snapshot().
+	var traffic_audio := preload("res://scripts/TrafficAudio.gd").new()
+	traffic_audio.name = "TrafficAudio"
+	add_child(traffic_audio)
+
 	## Create shared vehicle materials.
 	_mat_windshield = StandardMaterial3D.new()
 	_mat_windshield.albedo_color = Color(0.1, 0.15, 0.25, 0.7)
@@ -305,6 +312,30 @@ static func _sample_snaps(snaps: Array, rt: float) -> Dictionary:
 	return last
 
 
+func audio_snapshot(cam_pos: Vector3, max_dist: float) -> Array:
+	## Vehicles within max_dist of cam_pos as [{vid, node, speed, type, dist}],
+	## nearest first. Consumed by TrafficAudio a few times per second to assign
+	## engine emitters and pick horn candidates — cheap (one pass, no physics).
+	var out: Array = []
+	for vid in _active:
+		var info: Dictionary = _active[vid]
+		if info.get("despawning", false):
+			continue
+		var node: Node3D = info["node"]
+		var dist: float = node.global_position.distance_to(cam_pos)
+		if dist > max_dist:
+			continue
+		out.append({
+			"vid": vid,
+			"node": node,
+			"speed": float(info.get("speed", 0.0)),
+			"type": str(info.get("type", "car")),
+			"dist": dist,
+		})
+	out.sort_custom(func(a, b): return a["dist"] < b["dist"])
+	return out
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ═════════════════════════════════════════════════════════════════════════════
@@ -432,6 +463,7 @@ func update_vehicles(data: Dictionary) -> void:
 			else:
 				_active[vid]["target_pos"] = pos
 				_active[vid]["target_rot"] = rot
+				_active[vid]["speed"] = float(v.get("speed", 0.0))
 				if t >= 0.0:
 					_push_snap(_active[vid]["snaps"], t, pos, rot)
 		else:
@@ -595,6 +627,7 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 		"target_pos": pos,
 		"target_rot": rot,
 		"snaps": [],          # sim-time-stamped {t, pos, rot} history
+		"speed": 0.0,         # latest SUMO-reported speed (m/s) — audio pitch
 		"type": vtype,
 		"is_ambulance": is_ambulance,
 		"opacity": 0.0,       # Fade in from 0

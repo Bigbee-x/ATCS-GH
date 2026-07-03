@@ -76,7 +76,7 @@ const CAM_LERP: float      = 6.0
 # ── Audio — procedural quad-buzz loop (prop buzz + motor whine + air) ──────
 var _sound_player: AudioStreamPlayer
 var _sound_stream: AudioStreamWAV
-const SOUND_BASE_VOLUME_DB: float = -6.0
+const SOUND_BASE_VOLUME_DB: float = -16.0  # kept well under the traffic soundscape
 const SOUND_FADE_IN_SEC: float    = 0.45   # avoids a click on start
 const SOUND_QUIET_DB: float       = -40.0  # ~silent starting point
 
@@ -332,6 +332,9 @@ func _build_rig() -> void:
 	_camera.fov = 72.0
 	_camera.near = 0.1
 	_camera.far = 500.0
+	# Doppler pairs with TrafficAudio's engine emitters — buzzing traffic with
+	# the drone bends engine pitch like a real fly-by.
+	_camera.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
 	add_child(_camera)
 
 	_build_audio()
