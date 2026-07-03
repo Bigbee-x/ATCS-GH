@@ -1,323 +1,226 @@
 # ATCS-GH — Adaptive Traffic Control System Ghana
 
-> **AI-powered smart traffic control for the Achimota/Neoplan Junction and the N6 Nsawam corridor, Accra**
-
-> ⚠️ **This README is from April 2026 and is partly outdated.** The project has
-> since moved to a **protected-left action space** (no all-green phases), a
-> **continuous-day** training profile, **bounded rewards**, and the
-> **ambulance-priority feature was removed**. For the authoritative current
-> state, read **[`CLAUDE.md`](CLAUDE.md)**.
-
----
-
-## Overview
-
-ATCS-GH uses **Double DQN reinforcement learning agents** to adaptively control traffic signals along a real stretch of the N6 Nsawam Road in Accra — starting at the Achimota/Neoplan Junction (GPS: 5.6216N, 0.2193W) and extending north through two additional junctions. The system replaces traditional fixed-timer signals with AI that observes real-time traffic, adjusts signal phases dynamically, prioritises emergency vehicles, and coordinates green-wave timing across the corridor.
-
-The project includes a **real-time 3D visualiser** built in Godot 4 — fully procedural (no external assets, no plugins) — connected to the simulation via WebSocket, plus a **Flask web dashboard** showing live training and evaluation analytics.
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| **Phase 1** | Done | Fixed-timer baseline, demand calibration, metrics pipeline |
-| **Phase 2** | Done | Single-junction Double DQN — 81%+ wait-time improvement vs tuned baseline |
-| **Phase 3** | Done | 3-junction N6 corridor with multi-agent DQN + green-wave coordination |
-| **Phase 4** | Done | Full pedestrian modelling (SUMO crossings + ambient peds) and multi-scenario generalisation |
-| **Phase 5** | Done | Production-grade 3D visualiser + live dashboard + one-click Godot launcher |
-| **Phase 6** | Future | Field pilot with real-world signal controllers |
+> **AI traffic signals for Accra.** Double-DQN agents control the
+> Achimota/Neoplan Junction and a 3-junction stretch of the N6 Nsawam corridor
+> in a calibrated SUMO microsimulation — cutting average waits by **40–98%**
+> versus a realistic fixed-timer across every demand scenario, verified across
+> seeds. Rendered live in a fully procedural Godot 4 3D world.
+>
+> *Valiborn Technologies — "Relax, it works."*
 
 ---
 
-## Architecture
+## Results (greedy policy, full 2-hour scenarios, 5 seeds)
+
+The deployable models are evaluated frozen (ε = 0) against protected-left
+fixed-timer baselines. **Mean ± std across 5 seeds — the AI beats the timer on
+every scenario at every seed, including each scenario's worst seed.**
+Reproduce with `python scripts/multi_seed_eval.py` (raw rows in
+`data/multi_seed_eval.csv`).
+
+### Single junction — Achimota/Neoplan (`ai/best_model.pth`)
+
+| Scenario | AI wait (mean ± std) | Worst seed | Fixed timer | Improvement |
+|---|---:|---:|---:|---:|
+| continuous_day | 18.1 ± 0.9 s | 19.5 s | 47.6 s | **−62%** |
+| morning_rush | 27.8 ± 2.3 s | 30.7 s | 186.7 s | **−85%** |
+| evening_rush | 256.1 ± 16.7 s | 277.6 s | 427.4 s | **−40%** |
+| weekend_market | 13.8 ± 0.5 s | 14.3 s | 885.8 s | **−98%** |
+| off_peak | 8.4 ± 0.5 s | 9.1 s | 14.2 s | **−41%** |
+
+### 3-junction corridor (`ai/checkpoints/corridor/best_J{0,1,2}.pth`)
+
+| Scenario | AI wait (mean ± std) | Worst seed | Fixed timer | Improvement |
+|---|---:|---:|---:|---:|
+| corridor_morning | 13.0 ± 1.2 s | 14.4 s | 143.1 s | **−91%** |
+| corridor_evening | 10.5 ± 0.5 s | 11.1 s | 134.8 s | **−92%** |
+| corridor_offpeak | 3.4 ± 0.1 s | 3.4 s | 25.6 s | **−87%** |
+
+Baselines are the recorded protected-left fixed-timer references
+(`data/scenario_baselines.csv`, `data/corridor_baselines.csv`). All results are
+**purely learned behaviour** — an earlier hard-coded ambulance-preemption
+feature was removed so the numbers reflect only what the agents learned.
+
+---
+
+## What it is
+
+- **SUMO microsimulation** of real Accra geometry: the Achimota/Neoplan
+  Junction (GPS 5.6216 N, 0.2193 W) and a 3-junction corridor along Achimota
+  Forest Road (J0 Achimota → J1 Asylum Down → J2 Nima/Tesano), with cars,
+  trotros, and signal-respecting pedestrians.
+- **Double-DQN control** (PyTorch): one agent per junction reads live per-lane
+  queues/speeds/waits and picks the next signal phase every 5 s from a
+  protected-left action set — `HOLD / NS_THROUGH / NS_LEFT / EW_THROUGH /
+  EW_LEFT`. No all-green phases (permissive lefts deadlock the junction box).
+- **Godot 4 visualiser**: a procedural 3D Accra — zoned township, billboards,
+  airport, day/night + weather, traffic sounds, a free-fly camera drone — fed
+  live over WebSocket, with an in-scene analytics panel and a Flask dashboard.
 
 ```
-                                 ┌──────────────────────────────────┐
-                                 │  Godot 4 Visualiser (3D client)  │
-                                 │  LauncherMenu → Single / Corridor │
-                                 └──────────────┬───────────────────┘
-                                                │ WebSocket (port 8765)
-                                                │
-  SUMO Traffic Sim ◀──TraCI──▶ Python Server ──┤
-  (intersection /              (visualizer_server.py
-   corridor.sumocfg)            corridor_visualizer_server.py)
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────────┐
-                                 │  Flask Dashboard (port 5050)      │
-                                 │  Live training + scenario eval   │
-                                 └──────────────────────────────────┘
+                               ┌─────────────────────────────────┐
+                               │  Godot 4 visualiser (3D client) │
+                               │  LauncherMenu → Single/Corridor │
+                               └───────────────┬─────────────────┘
+                                               │ WebSocket :8765
+ SUMO microsim ◀──TraCI──▶ Python server ──────┤
+ (intersection /           (visualizer_server.py /
+  corridor.sumocfg)         corridor_visualizer_server.py)
+                                               │
+                               ┌───────────────▼─────────────────┐
+                               │  Flask dashboard  :5050         │
+                               └─────────────────────────────────┘
 ```
 
 | Component | Technology | Role |
-|-----------|-----------|------|
-| Traffic Simulation | SUMO + TraCI | Microsimulation of vehicles, pedestrians, and signals |
-| AI Agent | PyTorch (Double DQN, per-junction) | Observes 45-dim (single) / 50-dim (corridor) state, 7 actions |
-| Training Pipeline | Python | Epsilon-greedy, prioritized replay, target network, multi-scenario training |
-| Action Sanitizer | Python | Alternates `NS_ALL`/`EW_ALL` between protected through/left phases |
-| WebSocket Server | Python asyncio | Bridges sim to visualiser in real-time |
-| 3D Visualiser | Godot 4 (GDScript) | Procedural 3D rendering with day/night cycle, buildings, pedestrians |
-| Launcher | Godot autoload | One-click server + dashboard + browser spawn from Godot |
-| Dashboard | Flask + Chart.js | Live training curves, per-scenario evaluation, live simulation feed |
+|---|---|---|
+| Traffic simulation | SUMO + TraCI | Vehicles, pedestrians, signals (1 s steps) |
+| AI agents | PyTorch Double-DQN | 41-dim state (single) / 46-dim per junction (corridor), 5 actions |
+| Training | Python | Expert warm-start, ε-greedy, scenario rotation, maximin model selection |
+| Bridge | Python asyncio websockets | Streams sim state to the 3D client every sim-second |
+| Visualiser | Godot 4.6 (GDScript, all procedural) | 3D world, HUD, launcher, drone, audio |
+| Dashboard | Flask + Chart.js | Live + historical metrics at `http://127.0.0.1:5050` |
 
 ---
 
-## Project Structure
+## Quick start
+
+```bash
+# 1. Install Python deps (Python 3.11 recommended; SUMO comes with eclipse-sumo)
+python -m pip install -r requirements.txt
+
+# 2. Open visualizer/project.godot in Godot 4.6+ (Standard, NOT .NET) and press F5
+#    → pick Single Junction or N6 Corridor in the launcher. It spawns the
+#    Python server + dashboard and opens the dashboard in a browser for you.
+```
+
+Manual workflow (no launcher):
+
+```bash
+python scripts/visualizer_server.py            # single junction, AI control
+python scripts/corridor_visualizer_server.py   # corridor, AI control
+python scripts/corridor_visualizer_server.py --route simulation/corridor_routes_evening.rou.xml
+python dashboard/app.py                        # dashboard → http://127.0.0.1:5050
+# then open the Godot project and press F5
+```
+
+In the 3D scene: drag the time-of-day slider (night = headlights, billboards,
+runway lights), set weather, press **H** to fly the drone, **K** for sensor
+sightlines.
+
+### Training & evaluation
+
+```bash
+python scripts/train_agent.py --episodes 200      # single junction
+python scripts/train_corridor.py --episodes 240   # corridor (3 agents, rotation)
+
+python scripts/_eval_best.py                      # official single-junction eval
+python scripts/eval_corridor.py --compare         # official corridor eval
+python scripts/multi_seed_eval.py                 # 5-seed robustness (both systems)
+```
+
+Training uses Apple-Silicon MPS automatically (~9 s per greedy 2-h episode,
+~30 s per training episode). Baselines: `scripts/_per_scenario_baselines.py`
+(protected-left timer preset, writes `data/scenario_baselines.csv`) and
+`run_corridor_baseline.py --route … --label …` (writes
+`data/corridor_baselines.csv`).
+
+---
+
+## The junctions
+
+**Achimota/Neoplan (single junction):** 4 approaches × 2 lanes — Achimota
+Forest Rd (N/S), Aggrey St (E), Guggisberg St (W). The junction is asymmetric:
+northbound saturates before southbound, so morning (N-heavy, 1 901 veh/h) and
+evening (S-heavy, 2 350 veh/h) stress it differently. Five demand scenarios:
+`continuous_day` (a realistic 24-h profile with the N→S directional flip —
+the training centerpiece), `morning_rush`, `evening_rush`, `weekend_market`
+(E-heavy), `off_peak`. Heavy scenarios are calibrated to solvable demand so
+the AI is graded against a fair target.
+
+**N6 corridor:** J0/J1/J2 spaced 300 m apart. Each junction has its own
+independent agent — a 46-dim state adds neighbour queue/phase/link occupancy,
+and any green-wave that emerges is *learned* coordination (visible live in the
+corridor overview's green-wave strip). Three calibrated scenarios rotate in
+training: `corridor_morning` (S→N heavy), `corridor_evening` (the N→S flip),
+`corridor_offpeak` (light, balanced) — built by
+`scripts/build_corridor_scenarios.py`.
+
+### Training methodology (what made the models robust)
+
+1. **Bounded, clipped rewards** — queue/wait penalties normalised and clipped
+   (±40) so saturated traffic can't produce a runaway "gridlock trap" signal.
+2. **Expert warm-start** — during exploration, 70% of random actions follow a
+   sustained-green heuristic so heavy scenarios keep flowing while ε decays.
+3. **Scenario rotation** — one scenario per episode, round-robin; the single
+   junction rotates 5, the corridor 3.
+4. **Maximin best-model selection** — the saved checkpoint is the one whose
+   *worst* scenario (single) / *worst junction* (corridor), measured as rolling
+   wait relative to its own baseline, is best — gated to near-greedy ε ≤ 0.10
+   so selection reflects deployment behaviour.
+
+---
+
+## The visualiser
+
+Fully procedural (CSG + generated audio — zero external assets):
+
+- **Zoned township** around the corridor: residential compounds, glass office
+  towers, industrial yard, school + football pitch, hospital campus + GOIL
+  filling station, market, and a KOTOKA-style airport with lit runway.
+- **Brand billboards** (MTN, Telecel, GCB, Voltic, Guinness, Fan Ice, GOIL,
+  Melcom + Valiborn) that glow at night.
+- **Atmosphere**: day/night cycle, weather (rain/fog/overcast) with
+  headlight behaviour, drifting clouds, street + utility poles, gutters.
+- **Smooth traffic**: vehicle motion is snapshot-interpolated against the
+  packets' sim-time (`SnapClock.gd`) — 60 fps motion from 1 Hz data, no
+  stutter; launcher runs the sim at 1.5× for a lively pace.
+- **Traffic soundscape**: per-vehicle engine audio (petrol + trotro diesel)
+  that follows SUMO speeds with doppler, congestion-driven horns, and a
+  moving-traffic wash — all synthesised at startup.
+- **Camera drone**: press **H** — a DJI-style quadcopter with FPS controls
+  and a chase camera. Fly-bys bend engine pitch.
+- **Corridor overview panel**: per-approach queue bars, a green-wave strip,
+  live *"Beating fixed timer by N%"* badge, phase timers, throughput.
+
+See [`visualizer/README.md`](visualizer/README.md) for controls and protocol.
+
+---
+
+## Repository map
 
 ```
 ATCS-GH/
-├── simulation/                         # SUMO network files
-│   ├── nodes.nod.xml / edges.edg.xml   # Single-junction nodes and edges
-│   ├── routes.rou.xml                  # Demand (cars, trotros, ambulances, peds)
-│   ├── intersection.net.xml            # Generated single-junction network
-│   ├── intersection.sumocfg            # Single-junction config
-│   ├── corridor_nodes.nod.xml          # 3-junction corridor nodes (J0/J1/J2)
-│   ├── corridor_edges.edg.xml          # Corridor edges (including 1500m arms)
-│   ├── corridor_routes.rou.xml         # Multi-junction routes + emergencies + peds
-│   ├── corridor.net.xml                # Generated corridor network
-│   ├── corridor.sumocfg                # Corridor config
-│   └── scenarios/                      # Morning rush / evening / market / emergency / off-peak
-│
-├── ai/                                 # DQN agents and environments
-│   ├── traffic_env.py                  # Single-junction env (45-dim state, 7 actions)
-│   ├── corridor_env.py                 # Multi-junction env (50-dim per junction, 7 actions)
-│   ├── dqn_agent.py                    # Double DQN with prioritized replay
-│   ├── best_model.pth                  # Single-junction trained checkpoint
-│   ├── best_model_v1_38dim.pth         # Legacy 38-dim checkpoint (pre-ped integration)
-│   └── checkpoints/                    # Per-episode + per-junction training checkpoints
-│
-├── scripts/
-│   ├── build_network.py                # Compile net.xml via netconvert (single + corridor)
-│   ├── run_baseline.py                 # Phase 1 fixed-timer single-junction
-│   ├── run_corridor_baseline.py        # Fixed-timer baseline for the 3-junction corridor
-│   ├── train_agent.py                  # Phase 2 DQN training (single junction)
-│   ├── train_corridor.py               # Phase 3 multi-agent DQN training
-│   ├── run_ai.py                       # Run trained AI on a full scenario (single junction)
-│   ├── eval_multi_seed.py              # Multi-seed confidence-interval eval (single)
-│   ├── eval_scenarios.py               # Per-scenario evaluation with AI vs baseline
-│   ├── eval_corridor.py                # Corridor multi-seed evaluation
-│   ├── generate_scenarios.py           # Build scenario route files (5 demand patterns)
-│   ├── visualizer_server.py            # WebSocket server — single junction
-│   ├── corridor_visualizer_server.py   # WebSocket server — 3-junction corridor
-│   ├── metrics_logger.py               # Shared CSV metrics output
-│   └── launch_visualizer.sh            # Terminal one-liner (Godot launcher is preferred)
-│
-├── visualizer/                         # Godot 4 project (fully procedural)
-│   ├── project.godot
-│   ├── scenes/
-│   │   ├── LauncherMenu.tscn           # Entry — pick Single Junction or Corridor
-│   │   ├── Main.tscn                   # Single-junction 3D world + HUD
-│   │   └── CorridorMain.tscn           # 3-junction corridor world + HUD
-│   └── scripts/
-│       ├── ServerManager.gd            # Autoload — spawns Python server + dashboard
-│       ├── LauncherMenu.gd             # Sim-selection UI, one-click launch
-│       ├── Main.gd / CorridorMain.gd   # Scene orchestrators
-│       ├── Intersection.gd             # 3D roads + signals (incl. overhead lights + arrows)
-│       ├── CorridorBuilder.gd          # Instantiates 3 junctions with corridor links
-│       ├── VehicleManager.gd           # Pooled rendering + headlights/taillights/shadows
-│       ├── PedestrianManager.gd        # Ambient + SUMO-integrated pedestrians
-│       ├── EnvironmentBuilder.gd       # Procedural Accra buildings, shops, stalls, walls
-│       ├── TimeOfDayManager.gd         # Day/night cycle (sun, sky, fog, ambient)
-│       ├── UI.gd                       # HUD, queues, overrides, panels
-│       ├── MetricsChart.gd             # In-game live charts
-│       ├── AudioManager.gd             # Ambient city sounds + sirens
-│       └── WebSocketClient.gd          # Server connection + reconnect
-│
-├── dashboard/                          # Flask analytics dashboard
-│   ├── app.py                          # Routes: /, /live, /api/*
-│   ├── templates/dashboard.html
-│   └── static/                         # Chart.js, styles
-│
-├── data/                               # Generated CSV results
-│   ├── training_log.csv                # Live training curve (dashboard pulls this)
-│   ├── baseline_results.csv
-│   ├── baseline_tuned_results.csv
-│   ├── ai_results.csv
-│   ├── ai_eval_seed*.csv               # Multi-seed AI evaluation
-│   ├── {ai,bl}_<scenario>_seed*.csv    # Per-scenario AI + baseline results
-│   └── scenario_eval_results.csv       # Aggregated scenario comparison
-│
-├── docs/phase1_notes.md                # Phase 1 baseline design log (historical)
-├── plan.md                             # Phase 3 corridor plan (historical — delivered)
+├── ai/                     # envs + agent + deployable models
+│   ├── traffic_env.py         # single junction (41-dim, 5 actions)
+│   ├── corridor_env.py        # corridor (46-dim/junction, 5 actions)
+│   ├── dqn_agent.py           # Double-DQN
+│   ├── best_model.pth         # deployable single-junction model
+│   └── checkpoints/corridor/best_J{0,1,2}.pth   # deployable corridor models
+├── simulation/             # SUMO networks + demand
+│   ├── intersection.*         # single-junction net/config
+│   ├── corridor.*             # corridor net/config
+│   ├── corridor_routes*.rou.xml   # corridor scenarios (morning/evening/offpeak)
+│   └── scenarios/             # single-junction scenarios (5)
+├── scripts/                # training / baselines / eval / servers / builders
+├── visualizer/             # Godot 4 project (open + F5)
+├── dashboard/              # Flask analytics (127.0.0.1:5050)
+├── data/                   # baselines + eval CSVs (incl. multi_seed_eval.csv)
 └── requirements.txt
 ```
 
----
-
-## Quick Start
-
-### Easiest — use the Godot launcher
-
-The launcher runs **everything** for you (Python server, Flask dashboard, browser tab).
-
-1. Install deps: `pip install -r requirements.txt`
-2. Build the networks: `python scripts/build_network.py && python scripts/build_network.py --corridor`
-3. Open `visualizer/project.godot` in **Godot 4.6+** (Standard edition)
-4. Press **F5** — the Launcher menu appears
-5. Click **Single Junction** or **N6 Corridor**. The launcher:
-   - Kills any orphan Python server from a prior session (ports 8765 / 5050)
-   - Spawns the correct `*_visualizer_server.py` as a background process
-   - Starts the Flask dashboard and opens `http://localhost:5050?tab=live` in your browser
-   - Connects the 3D scene via WebSocket
-
-### Manual workflow (terminal)
-
-```bash
-# Single-junction AI
-python scripts/visualizer_server.py          # AI mode
-python scripts/visualizer_server.py --demo   # Random-action demo
-python scripts/visualizer_server.py --manual # Control from Godot HUD
-
-# Corridor
-python scripts/corridor_visualizer_server.py
-
-# Dashboard
-python dashboard/app.py                      # http://localhost:5050
-
-# Then open visualizer/project.godot in Godot and press F5
-```
-
-### Training
-
-```bash
-# Single junction
-python scripts/train_agent.py --episodes 200
-
-# Corridor (3 agents in parallel, shared SUMO sim)
-python scripts/train_corridor.py --episodes 200
-```
-
-Apple Silicon MPS acceleration is used automatically. A single-junction episode is ~2 min wall-time at 1x; corridor episodes ~3 min.
-
-### Evaluation
-
-```bash
-python scripts/eval_multi_seed.py              # Single junction, 5 seeds, CIs
-python scripts/eval_scenarios.py               # AI vs baseline across all 5 scenarios
-python scripts/eval_corridor.py --seeds 5      # Corridor multi-seed
-```
+Historical design docs: [`plan.md`](plan.md) (corridor plan — delivered),
+[`docs/phase1_notes.md`](docs/phase1_notes.md). `CLAUDE.md` is the working
+engineering brief and always reflects the current state.
 
 ---
 
-## Achimota/Neoplan Junction (J0)
+## Requirements & notes
 
-The single-junction sim is calibrated to the real Achimota/Neoplan Junction on Accra's N6 Nsawam Road, part of Ghana's ATMC smart signal network.
-
-```
-              Nsawam / Achimota Forest Rd (N)
-                     ↕↕ (2 lanes)
-  Guggisberg (W)  ─⬛─  Aggrey St (E)
-    (2 lanes)      ↕↕    (2 lanes)
-              CBD / South (S)
-                 (2 lanes)
-```
-
-| Approach | Road | Lanes | Speed | Demand |
-|----------|------|-------|-------|--------|
-| North | Achimota Forest Rd (from Nsawam) | 2 | 50 km/h | 900 veh/hr |
-| South | Achimota Forest Rd (from CBD) | 2 | 50 km/h | 420 veh/hr |
-| East | Aggrey Street | 2 | 50 km/h | 320 veh/hr |
-| West | Guggisberg Street | 2 | 50 km/h | 300 veh/hr |
-
-Total: ~2,270 vehicles/hour + trotros + ambulances + pedestrians.
-
-## N6 Corridor (J0 → J1 → J2)
-
-Three traffic-light junctions spaced 300m apart along Achimota Forest Rd. Each has its own DQN agent with a **50-dim state** that includes neighbor queue length, neighbor phase, and upstream/downstream corridor link status. This enables **green-wave coordination** via a dedicated reward term — agents learn the ~22s ideal offset between adjacent junctions at 50 km/h.
-
-- **J0** (Achimota/Neoplan): 2-lane E + 2-lane W cross streets
-- **J1** (Asylum Down / Ring Rd): 2-lane symmetric cross streets
-- **J2** (Nima / Tesano): 1-lane symmetric cross streets
-
-Corridor arms extend **1500m** north and south of the endpoints for realistic approach dynamics.
-
----
-
-## AI Agent
-
-### State Vector
-
-| Env | Dims | Composition |
-|-----|-----|------|
-| **Single** | 45 | 8 lanes × (queue + speed + wait) + 4 approach queues + 8 phase one-hot + 1 phase timer + 4 emergency flags + 4 pedestrian-wait |
-| **Corridor** | 50/junction | 42-dim own state + 8 neighbor dims (upstream + downstream queue, phase, link speed) |
-
-### Actions (7, shared across all environments)
-
-| Action | Effect |
-|--------|--------|
-| HOLD | Keep current phase |
-| NS_THROUGH | N/S straight + right green, left blocked |
-| NS_LEFT | N/S protected left turn only |
-| EW_THROUGH | E/W straight + right green, left blocked |
-| EW_LEFT | E/W protected left turn only |
-| NS_ALL | N/S all movements green (permissive left) |
-| EW_ALL | E/W all movements green (permissive left) |
-
-### ActionSanitizer (runtime wrapper)
-
-`NS_ALL` and `EW_ALL` are permissive-left phases that force left-turners to yield to opposing through traffic, which doesn't match the fixed-timer baseline's protected-left cycle. The sanitizer **alternates** each time the AI picks an ALL-phase:
-
-```
-1st NS_ALL → NS_LEFT    (serve lefts first)
-2nd NS_ALL → NS_THROUGH
-3rd NS_ALL → NS_LEFT
-...
-```
-
-This preserves the agent's directional intent while guaranteeing both movements eventually get served on a clean protected cycle. Existing 7-action checkpoints load unchanged. Corridor uses one sanitizer per junction (alternation state is independent across J0/J1/J2).
-
-### Emergency Preemption
-
-A hard safety layer detects approaching ambulances and forces green on their approach, overriding the AI's decision. Reduces emergency wait from ~100s (baseline) to near 0s.
-
-### Pedestrian-Aware Policy
-
-The state vector includes per-approach pedestrian wait times. The reward function penalises prolonged pedestrian waits, so the agent proactively serves crossings rather than starving them indefinitely.
-
----
-
-## Results
-
-### Single-junction Achimota (5-seed, 2-hour scenarios)
-
-| Metric | Naive Baseline | Tuned Baseline | AI (Double DQN) | Improvement |
-|--------|---------------:|---------------:|----------------:|-------------|
-| Avg Wait Time | 81.83s | ~55s | **~10s** | **81%+ vs tuned** |
-| Emergency Wait | ~100s | ~100s | **<5s** | hard-safety preempt |
-| Throughput | 43.3 veh/min | ~46 veh/min | **~55 veh/min** | |
-
-### Scenario Generalization (trained once, evaluated across 5 scenarios)
-
-Morning rush, evening rush, off-peak, heavy-emergency, weekend-market. The AI beats the tuned baseline on every scenario — full breakdown available in the live dashboard.
-
-### Corridor (3-junction, preliminary)
-
-Multi-agent DQN learns coordinated green-wave timing. Per-junction and corridor-wide metrics are logged to `data/corridor_eval_*.csv` and rendered live in the dashboard.
-
----
-
-## Visualiser Features
-
-- **Launcher menu** with card-based selection of Single Junction or N6 Corridor
-- **Automatic server + dashboard lifecycle** — no terminal juggling
-- **Fully procedural 3D** — no external assets, everything is CSG / procedural meshes
-- **Detailed vehicles** — cars, trotros, ambulances with windshields, cabin steps, undercarriage, headlights, taillights
-- **Day/night cycle** — sun, sky gradient, ambient light, fog, keyframed across 24h (manual slider or sim-linked)
-- **Accra streetscape** — block buildings, shop awnings, compound walls, market stall clusters, procedurally placed along every road arm
-- **Pedestrians** — ambient sidewalk strollers + full SUMO-integrated crosswalk pedestrians that respect the signal
-- **Overhead traffic lights** with mast-arm poles, separate protected-left arrow indicators, and emissive glow
-- **HUD** — per-approach queue bars, AI decision readout, reward trace, emergency banner
-- **Live in-game charts** for wait time, queue length, and throughput
-- **Ambient audio** — city drone, sirens during emergency preemption
-
-See [`visualizer/README.md`](visualizer/README.md) for controls, WebSocket protocol, and troubleshooting.
-
----
-
-## Requirements
-
-- Python 3.10+
-- SUMO 1.18+ (with TraCI) — `pip install eclipse-sumo` or `brew install sumo`
-- PyTorch 2.0+ (MPS on Apple Silicon, CUDA or CPU elsewhere)
-- Flask (for the dashboard) — installed via `requirements.txt`
-- **Godot 4.6+ (Standard edition)** for the visualiser — do **not** use the .NET version
-- macOS or Linux (Windows untested)
+- **Python 3.11+**, deps via `requirements.txt` (`eclipse-sumo` bundles SUMO +
+  TraCI — the envs bootstrap `SUMO_HOME` automatically).
+- **PyTorch** uses MPS on Apple Silicon automatically (CUDA/CPU elsewhere).
+- **Godot 4.6+ Standard** (not .NET) for the visualiser.
+- macOS/Linux. The launcher auto-detects the Python interpreter; it opens the
+  dashboard in Chrome/Brave/Edge/Firefox because Safari's HTTPS-Only mode
+  refuses local HTTP servers.

@@ -1,23 +1,14 @@
-# ATCS-GH Python Dependencies
-# ════════════════════════════
-# Install with:  pip install -r requirements.txt
+# ATCS-GH — Python dependencies
+# ═════════════════════════════
+# Install with:  python -m pip install -r requirements.txt
+# Tested with Python 3.11 on macOS (Apple Silicon; torch picks the MPS backend).
 #
-# IMPORTANT — TraCI is NOT installed via pip.
-# It ships with SUMO and is loaded from $SUMO_HOME/tools/
-# See README.md for SUMO installation instructions.
-#
-# Minimum Python version: 3.10 (uses X | Y type union hints)
+# eclipse-sumo bundles the SUMO binaries AND the traci/sumolib tools —
+# ai/traffic_env.py / ai/corridor_env.py bootstrap SUMO_HOME from the installed
+# package automatically, so no separate SUMO install or env var is needed.
 
-# ── Phase 1 (baseline simulation) ────────────────────────────
-pandas>=1.5.0       # analysis of baseline_results.csv / ai_results.csv
-numpy>=1.24.0       # numerical operations
-
-# ── Phase 2 (DQN AI controller) ──────────────────────────────
-torch>=2.0.0        # DQN neural network (uses MPS on Apple Silicon automatically)
-
-# ── Phase 2.5 (3D Visualizer bridge) ───────────────────────────
-websockets>=12.0    # WebSocket server for Godot 4 3D visualizer
-
-# ── Phase 3 (future — install when ready) ────────────────────
-# gymnasium>=0.29.0         # standard RL environment interface
-# stable-baselines3>=2.0.0  # PPO / SAC alternatives to custom DQN
+torch>=2.3          # Double-DQN networks (MPS on Apple Silicon automatically)
+numpy>=1.26         # numerics
+websockets>=12.0    # SUMO ↔ Godot visualizer bridge
+flask>=3.0          # metrics dashboard (http://127.0.0.1:5050)
+eclipse-sumo>=1.20  # SUMO simulator + bundled TraCI/sumolib tools

@@ -271,7 +271,7 @@ def configure_fixed_timer(tl_id: str,
 
 def run_simulation(gui: bool = False,
                    preset: str = "naive",
-                   route_file: str | None = None) -> tuple[list[dict], dict]:
+                   route_file: str | None = None) -> list[dict]:
     """
     Main simulation loop.
 
