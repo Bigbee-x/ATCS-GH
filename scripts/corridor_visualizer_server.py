@@ -21,6 +21,7 @@ Usage:
 
 import os
 import sys
+import csv
 import json
 import time
 import asyncio
@@ -57,6 +58,37 @@ try:
 except ImportError as e:
     print(f"[ERROR] Cannot import TraCI: {e}")
     sys.exit(1)
+
+
+# ── Scenario / baseline resolution (for the UI's "vs fixed timer" badge) ─────
+
+_SCENARIO_BY_ROUTE = {
+    "corridor_routes.rou.xml":         "corridor_morning",
+    "corridor_routes_evening.rou.xml": "corridor_evening",
+    "corridor_routes_offpeak.rou.xml": "corridor_offpeak",
+}
+_BASELINES_CSV = PROJECT_ROOT / "data" / "corridor_baselines.csv"
+
+
+def resolve_scenario(route: str | None) -> tuple[str, float]:
+    """(scenario_label, fixed-timer baseline corridor wait) for a route file.
+
+    The label comes from the route filename (default = the morning route the
+    env falls back to); the baseline wait from data/corridor_baselines.csv.
+    Returns baseline 0.0 when unknown — the UI hides the badge then.
+    """
+    fname = Path(route).name if route else "corridor_routes.rou.xml"
+    label = _SCENARIO_BY_ROUTE.get(fname, fname)
+    baseline = 0.0
+    try:
+        with open(_BASELINES_CSV) as f:
+            for row in csv.DictReader(f):
+                if row.get("label") == label:
+                    baseline = float(row["corridor_avg_wait_s"])
+                    break
+    except (OSError, ValueError, KeyError):
+        pass
+    return label, baseline
 
 import websockets
 from dqn_agent import DQNAgent
@@ -355,7 +387,8 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
 
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
-async def simulation_loop(mode: str, model_dir: Path, speed: float):
+async def simulation_loop(mode: str, model_dir: Path, speed: float,
+                          route: str | None = None):
     """
     Main simulation loop: run corridor SUMO, make decisions, broadcast state.
 
@@ -409,7 +442,8 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
     active_control_mode = mode
 
     # ── Initialise SUMO environment ──────────────────────────────────────
-    env = CorridorEnv(gui=False, verbose=False)
+    env = CorridorEnv(gui=False, verbose=False, route_file=route)
+    scenario_label, baseline_wait = resolve_scenario(route)
     run_count = 0
 
     try:
@@ -611,6 +645,10 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float):
                     "avg_wait": round(corridor_avg_wait, 1),
                     "total_reward": round(corridor_total_reward, 1),
 
+                    # Scenario + its fixed-timer baseline (UI "vs timer" badge)
+                    "scenario": scenario_label,
+                    "baseline_wait": baseline_wait,
+
                     # Per-vehicle positions (all junctions)
                     "vehicles": _collect_vehicle_data(),
 
@@ -672,12 +710,16 @@ async def main(args):
         mode = SimMode.AI
 
     model_dir = Path(args.model_dir)
+    scenario_label, baseline_wait = resolve_scenario(args.route)
 
     print()
     print("=" * 62)
     print("  ATCS-GH  |  Corridor 3D Visualizer Server")
     print("=" * 62)
     print(f"  Mode       : {mode.upper()}")
+    print(f"  Scenario   : {scenario_label} (fixed-timer baseline "
+          f"{baseline_wait:.1f}s)" if baseline_wait > 0 else
+          f"  Scenario   : {scenario_label} (no baseline recorded)")
     print(f"  Junctions  : {', '.join(JUNCTION_IDS)}")
     print(f"  Model dir  : {model_dir}")
     print(f"  Speed      : {args.speed}x")
@@ -690,7 +732,7 @@ async def main(args):
     print()
 
     async with websockets.serve(ws_handler, "localhost", args.port):
-        await simulation_loop(mode, model_dir, args.speed)
+        await simulation_loop(mode, model_dir, args.speed, args.route)
 
 
 if __name__ == "__main__":
@@ -722,6 +764,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port", type=int, default=8765,
         help="WebSocket server port (default: 8765)"
+    )
+    parser.add_argument(
+        "--route", type=str, default=None,
+        help="Scenario route file (default: the morning route; e.g. "
+             "simulation/corridor_routes_evening.rou.xml)"
     )
 
     args = parser.parse_args()
