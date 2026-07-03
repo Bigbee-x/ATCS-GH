@@ -1,10 +1,10 @@
 # CLAUDE.md — ATCS-GH project brief (authoritative current state)
 
-> Read this first. It reflects the project as of **2026-06-26** and supersedes
-> `README.md` / `plan.md`, which are from April and are now **stale/misleading**
-> (they describe emergency priority + all-procedural visuals — neither current).
-> NOTE: the corridor IS now trained AND fully visualized (see the Corridor +
-> visualizer sections); only the README/plan wording is stale, not this file.
+> Read this first — it is the working engineering brief, current as of
+> **2026-07-03**. `README.md` was rewritten 2026-07-03 (PR #27) and is now the
+> accurate public-facing overview with multi-seed results; keep BOTH in sync
+> when results or architecture change. `plan.md` and `docs/phase1_notes.md`
+> are historical design records (delivered).
 
 ## What this is
 Adaptive Traffic Control System for the **Achimota/Neoplan Junction, Accra**
@@ -32,8 +32,10 @@ hard-coded override, not learned — removing it makes the AI's results honest).
 - `scripts/train_agent.py` — training. Rotation = continuous_day ×2 + morning +
   evening + weekend. **Maximin best-model selection** (saves on the *worst*
   per-scenario relative wait, baselines floored 60s, ε-gated ≤0.10).
-- `scripts/run_baseline.py` — fixed-timer baselines. Use **`--preset protected`**
-  (protected-left 4-phase: NS 40/15, EW 25/10) — the realistic benchmark.
+- `scripts/run_baseline.py` — fixed-timer baselines. The realistic benchmark is
+  the **"protected" preset** (protected-left 4-phase: NS 40/15, EW 25/10) —
+  NOTE: it's API-only (`run_simulation(preset="protected")`, used by
+  `_per_scenario_baselines.py`); the CLI exposes only `--tuned`/`--scenario`.
 - `scripts/_per_scenario_baselines.py` → `data/scenario_baselines.csv` (the
   per-scenario "naive timer to beat", used for grading).
 - `scripts/visualizer_server.py` — SUMO↔Godot WebSocket bridge. `--baseline`

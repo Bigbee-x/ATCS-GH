@@ -17,7 +17,16 @@ signal server_error(message: String)
 enum ServerType { NONE, SINGLE_JUNCTION, CORRIDOR }
 
 # ── Configuration ───────────────────────────────────────────────────────────
-const PYTHON_PATH := "/Users/osborn/.pyenv/versions/3.11.7/bin/python3"
+## Python interpreter candidates, first hit wins. Osborn's pyenv build leads
+## (it has torch + eclipse-sumo installed); the rest make the launcher work on
+## any other machine with the requirements installed (see requirements.txt).
+const PYTHON_CANDIDATES: Array = [
+	"/Users/osborn/.pyenv/versions/3.11.7/bin/python3",
+	"/opt/homebrew/bin/python3",
+	"/usr/local/bin/python3",
+	"/usr/bin/python3",
+]
+var PYTHON_PATH: String = ""   # resolved in _ready from PYTHON_CANDIDATES
 const LOG_FILE := "/tmp/atcs_gh_server.log"
 const DASHBOARD_LOG := "/tmp/atcs_gh_dashboard.log"
 const POLL_INTERVAL := 1.0        # Seconds between health checks / log reads
@@ -71,11 +80,18 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false  # Let us intercept quit
 	tree_exiting.connect(_on_tree_exiting)
 
-	# Verify Python is accessible
-	if not FileAccess.file_exists(PYTHON_PATH):
-		push_warning("[ServerManager] Python not found at %s" % PYTHON_PATH)
+	# Resolve the Python interpreter (first existing candidate wins)
+	for cand in PYTHON_CANDIDATES:
+		if FileAccess.file_exists(cand):
+			PYTHON_PATH = cand
+			break
+	if PYTHON_PATH.is_empty():
+		PYTHON_PATH = "python3"   # last resort: rely on PATH inside the bash cmd
+		push_warning("[ServerManager] No known Python found — falling back to "
+			+ "'python3' on PATH. Install deps with: pip install -r requirements.txt")
 
-	print("[ServerManager] Ready — project root: %s" % _project_root)
+	print("[ServerManager] Ready — project root: %s | python: %s" % [
+		_project_root, PYTHON_PATH])
 
 
 func _notification(what: int) -> void:
