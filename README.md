@@ -41,6 +41,17 @@ Baselines are the recorded protected-left fixed-timer references
 **purely learned behaviour** — an earlier hard-coded ambulance-preemption
 feature was removed so the numbers reflect only what the agents learned.
 
+**Transferability (measured, not assumed):** checkpoints are junction-specific.
+A swap test (`scripts/transfer_swap_test.py`, raw rows in
+`data/transfer_swap_test.csv`) drops each corridor brain onto the other
+junctions with zero retraining: every swapped configuration gridlocks
+(~1,000× worse than the fixed timer) — partly out-of-distribution inputs
+(different lane layouts), partly corridor coupling (one failing junction
+spills back and collapses its neighbours). What transfers is the **platform**
+— the env/reward design, training methodology, and calibration pipeline retune
+a model for a new junction in hours on a laptop (full corridor training:
+~2 h), warm-starting from existing weights.
+
 ---
 
 ## What it is
