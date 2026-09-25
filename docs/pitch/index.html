@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ATCS-GH — deep reinforcement learning for adaptive traffic signal control in Accra. 40–98% lower vehicle wait times in simulation, validated across 8 demand scenarios and 5 random seeds.">
+<meta name="theme-color" content="#FCFCFD" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1115" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ATCS-GH — Adaptive Traffic Control for Accra">
+<meta property="og:description" content="Deep reinforcement learning that gives Accra's fixed-timer traffic lights a brain. 40–98% lower wait times in simulation. Valiborn Technologies.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F1115'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23D62828'/%3E%3C/svg%3E">
+<title>ATCS-GH — Adaptive Traffic Control for Accra</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+  :focus-visible { outline: 2px solid #D62828; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+<style>
+  /* Brand palette — locked.
+     canvas #FCFCFD · ink #0F1115 · grey #5F6672 / #8A90A0
+     hairline #E7E8EC · signal red #D62828
+     Dark theme swaps ink↔canvas and derives only what legibility requires
+     (surface lift, dark hairline, and a lighter red for contrast on black). */
+  :root {
+    --paper:      #FCFCFD;
+    --surface:    #FFFFFF;
+    --ink:        #0F1115;
+    --ink-2:      #5F6672;
+    --ink-3:      #8A90A0;
+    --rule:       #E7E8EC;
+    --rule-soft:  #F1F2F5;
+    --accent:     #D62828;
+
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #0F1115;
+      --surface:    #16181E;
+      --ink:        #FCFCFD;
+      --ink-2:      #8A90A0;
+      --ink-3:      #5F6672;
+      --rule:       #24272F;
+      --rule-soft:  #1B1E25;
+      --accent:     #E84A4A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0F1115;
+    --surface:    #16181E;
+    --ink:        #FCFCFD;
+    --ink-2:      #8A90A0;
+    --ink-3:      #5F6672;
+    --rule:       #24272F;
+    --rule-soft:  #1B1E25;
+    --accent:     #E84A4A;
+  }
+
+  :root[data-theme="light"] {
+    --paper:      #FCFCFD;
+    --surface:    #FFFFFF;
+    --ink:        #0F1115;
+    --ink-2:      #5F6672;
+    --ink-3:      #8A90A0;
+    --rule:       #E7E8EC;
+    --rule-soft:  #F1F2F5;
+    --accent:     #D62828;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .deck {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ── Slide scaffolding ─────────────────────────────────────── */
+  .slide { padding: 56px 0; }
+  .slide + .slide {
+    border-top: 2px dashed var(--rule);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .eyebrow b {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  h1 {
+    font-size: clamp(2.3rem, 5.4vw, 3.5rem);
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0 0 20px;
+  }
+  h2 {
+    font-size: clamp(1.5rem, 3.1vw, 2.05rem);
+    line-height: 1.15;
+    letter-spacing: -0.022em;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0 0 18px;
+  }
+  h3 {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+  p { margin: 0 0 16px; max-width: 68ch; color: var(--ink-2); }
+  p.lead {
+    font-size: 1.2rem;
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: 62ch;
+  }
+  strong { color: var(--ink); font-weight: 650; }
+  a { color: var(--accent); }
+
+  /* ── Cover ─────────────────────────────────────────────────── */
+  .cover { padding: 72px 0 60px; }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 28px;
+  }
+  .cover-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    margin-top: 32px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* Signal-phase bar: the one subject-specific flourish */
+  .phasebar {
+    display: flex;
+    gap: 4px;
+    margin: 34px 0 0;
+    height: 8px;
+    max-width: 420px;
+  }
+  .phasebar span { flex: 1; border-radius: 2px; background: var(--rule); }
+  .phasebar span:nth-child(1),
+  .phasebar span:nth-child(2),
+  .phasebar span:nth-child(5) { background: var(--accent); }
+
+  /* ── Stat row ──────────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 28px 0 8px;
+  }
+  .stat { background: var(--surface); padding: 20px 22px; }
+  .stat .n {
+    font-family: var(--mono);
+    font-size: 1.85rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .stat .n.pos { color: var(--accent); }
+  .stat .k {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-top: 8px;
+  }
+
+  /* ── Two-column ────────────────────────────────────────────── */
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 32px;
+    margin-top: 26px;
+  }
+  .cols p { margin-bottom: 0; }
+
+  /* ── Ordered / feature lists ───────────────────────────────── */
+  ul.clean { list-style: none; padding: 0; margin: 18px 0 0; }
+  ul.clean li {
+    position: relative;
+    padding-left: 26px;
+    margin-bottom: 12px;
+    color: var(--ink-2);
+    max-width: 68ch;
+  }
+  ul.clean li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 10px;
+    width: 12px; height: 2px;
+    background: var(--accent);
+  }
+
+  /* ── Pipeline (sense → decide → act) ───────────────────────── */
+  .pipe {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+    margin: 26px 0 0;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 18px 20px;
+  }
+  .step .num {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+  .step h4 {
+    margin: 8px 0 6px;
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .step p { font-size: 0.92rem; margin: 0; color: var(--ink-2); }
+
+  /* ── Results table ─────────────────────────────────────────── */
+  .tablewrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+    margin: 26px 0 14px;
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; }
+  th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    text-align: right;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  th:first-child, th:nth-child(2) { text-align: left; }
+  td {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--rule-soft);
+    font-size: 0.93rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--mono);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  td:nth-child(2) { text-align: left; color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  .sys {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left !important;
+  }
+  td.cut { color: var(--accent); font-weight: 600; }
+  .bar {
+    display: inline-block;
+    vertical-align: middle;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 1px;
+    opacity: 0.45;
+    margin-right: 8px;
+  }
+
+  /* ── Note / caveat block ───────────────────────────────────── */
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    padding: 18px 22px;
+    border-radius: 0 3px 3px 0;
+    margin-top: 24px;
+  }
+  .note h3 { color: var(--accent); margin-bottom: 8px; }
+  .note p { margin: 0; color: var(--ink-2); font-size: 0.95rem; }
+  .note p + p { margin-top: 10px; }
+
+  .caption {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--ink-3);
+    margin: 0;
+  }
+
+  /* ── Roadmap ───────────────────────────────────────────────── */
+  .road { margin-top: 26px; display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .phase { background: var(--surface); padding: 18px 22px; display: grid; grid-template-columns: 120px 1fr; gap: 20px; align-items: baseline; }
+  .phase .tag {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .phase.done .tag { color: var(--ink); }
+  .phase.now .tag  { color: var(--accent); }
+  .phase.next .tag { color: var(--ink-3); }
+  .phase p { margin: 0; font-size: 0.95rem; }
+  .phase b { color: var(--ink); font-weight: 650; }
+
+  /* ── Footer ────────────────────────────────────────────────── */
+  .foot {
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 2px dashed var(--rule);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+  }
+
+  @media (max-width: 620px) {
+    body { font-size: 16px; }
+    .deck { padding: 0 20px 72px; }
+    .slide { padding: 44px 0; }
+    .phase { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+
+</head>
+<body>
+
+<div class="deck">
+
+  <!-- ══ COVER ══════════════════════════════════════════════ -->
+  <section class="slide cover">
+    <div class="wordmark">Valiborn Technologies</div>
+    <h1>ATCS-GH — giving Accra's fixed-timer traffic lights a brain.</h1>
+    <p class="lead">
+      Deep reinforcement learning for adaptive traffic signal control, built and
+      validated on real Accra junction geometry. <strong>40–98% lower average vehicle
+      wait times in simulation</strong>, across 8 demand scenarios and 5 random seeds.
+    </p>
+    <div class="phasebar" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="cover-meta">
+      <span>Osborn Dogbe · Founder</span>
+      <span>Accra, Ghana</span>
+      <span>Status: simulation-validated, pre-pilot</span>
+    </div>
+  </section>
+
+  <!-- ══ 01 PROBLEM ═════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>01</b> Problem</div>
+    <h2>Accra's signals can't react. The city pays for it every day.</h2>
+    <p>
+      Ghana loses an estimated <strong>GH¢4.5 billion a year</strong> to traffic
+      congestion — roughly <strong>71% of it purely time lost in traffic</strong>, with
+      congestion-related fatigue costing the average commuter another 30 minutes of
+      effective productivity daily.
+    </p>
+    <p>
+      Most signalised junctions run <strong>fixed timers</strong>: a green stays green for
+      a preset number of seconds whether twenty cars are queued or none. The plan cannot
+      see the road. It cannot respond to a market-day surge, a directional rush-hour flip,
+      or a junction backing up two blocks away — and adjacent junctions do not coordinate,
+      so cleared traffic simply queues again at the next light.
+    </p>
+    <p class="caption">Source: “The Cost of Gridlock,” Glima Research policy brief, February 2026.</p>
+  </section>
+
+  <!-- ══ 02 SOLUTION ════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>02</b> Solution</div>
+    <h2>A learned controller that replaces the timetable, not the hardware.</h2>
+    <p>
+      ATCS-GH is a reinforcement learning agent that watches each approach in real time
+      and decides which phase to run next — every few seconds, continuously. It learns the
+      junction's actual behaviour rather than following a schedule written years ago.
+    </p>
+    <div class="cols">
+      <div>
+        <h3>Software-first</h3>
+        <p>It replaces the signal <em>plan</em>, not the poles, lamps, or controller cabinets — the capital-intensive parts stay where they are.</p>
+      </div>
+      <div>
+        <h3>Coordinated by default</h3>
+        <p>Each junction runs its own agent. Across a corridor they learn to align greens, so a cleared queue keeps moving instead of stopping at the next light.</p>
+      </div>
+      <div>
+        <h3>Built for local traffic</h3>
+        <p>Trained on mixed Accra traffic — private cars, shared <em>trotros</em>, and signal-respecting pedestrian crossings — not on imported assumptions.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 03 HOW IT WORKS ════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>03</b> How it works</div>
+    <h2>Sense, decide, act — five seconds at a time.</h2>
+    <div class="pipe">
+      <div class="step">
+        <div class="num">SENSE</div>
+        <h4>Read the junction</h4>
+        <p>Per-lane queue length, vehicle speed, and accumulated waiting time on every approach — 41 signals at a single junction, 46 per junction on a corridor.</p>
+      </div>
+      <div class="step">
+        <div class="num">DECIDE</div>
+        <h4>Double-DQN policy</h4>
+        <p>A deep Q-network selects one of five safe phases: hold, or a protected through/left for each axis. Permissive-left phases are excluded — they deadlock the junction box.</p>
+      </div>
+      <div class="step">
+        <div class="num">ACT</div>
+        <h4>Drive the signal</h4>
+        <p>The phase is applied with proper amber transitions and minimum green times, then the loop repeats on the next decision tick.</p>
+      </div>
+    </div>
+    <div class="note">
+      <h3>No scripted overrides</h3>
+      <p>An earlier hard-coded emergency-vehicle preemption rule was deliberately removed from the system. Every result on the next page is behaviour the agent learned on its own — nothing is propped up by a hand-written rule.</p>
+    </div>
+  </section>
+
+  <!-- ══ 04 RESULTS ═════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>04</b> Results</div>
+    <h2>It beats a realistic fixed timer on every scenario, at every seed.</h2>
+
+    <div class="stats">
+      <div class="stat"><div class="n pos">86%</div><div class="k">median wait reduction</div></div>
+      <div class="stat"><div class="n pos">8 / 8</div><div class="k">scenarios improved</div></div>
+      <div class="stat"><div class="n">40</div><div class="k">evaluation runs (5 seeds)</div></div>
+      <div class="stat"><div class="n">2 h</div><div class="k">full corridor training, on a laptop</div></div>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>System</th><th>Scenario</th><th>ATCS-GH</th><th>Fixed timer</th><th>Reduction</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="sys">Corridor</td><td>Evening rush</td><td>10.5 s</td><td>134.8 s</td><td class="cut"><span class="bar" style="width:46px"></span>92%</td></tr>
+          <tr><td class="sys">Corridor</td><td>Morning rush</td><td>13.0 s</td><td>143.1 s</td><td class="cut"><span class="bar" style="width:45px"></span>91%</td></tr>
+          <tr><td class="sys">Corridor</td><td>Off-peak</td><td>3.4 s</td><td>25.6 s</td><td class="cut"><span class="bar" style="width:43px"></span>87%</td></tr>
+          <tr><td class="sys">Single</td><td>Weekend market</td><td>13.8 s</td><td>885.8 s</td><td class="cut"><span class="bar" style="width:49px"></span>98%</td></tr>
+          <tr><td class="sys">Single</td><td>Morning rush</td><td>27.8 s</td><td>186.7 s</td><td class="cut"><span class="bar" style="width:42px"></span>85%</td></tr>
+          <tr><td class="sys">Single</td><td>Continuous day</td><td>18.1 s</td><td>47.6 s</td><td class="cut"><span class="bar" style="width:31px"></span>62%</td></tr>
+          <tr><td class="sys">Single</td><td>Off-peak</td><td>8.4 s</td><td>14.2 s</td><td class="cut"><span class="bar" style="width:20px"></span>41%</td></tr>
+          <tr><td class="sys">Single</td><td>Evening rush</td><td>256.1 s</td><td>427.4 s</td><td class="cut"><span class="bar" style="width:20px"></span>40%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">
+      Mean average vehicle wait, greedy policy (ε = 0), full 2-hour scenarios, 5 random
+      seeds each. Baseline is a realistic protected-left fixed timer, not a naive one.
+    </p>
+
+    <div class="note">
+      <h3>How to read these numbers</h3>
+      <p><strong>The 98% is collapse-avoidance, not typical performance.</strong> That scenario's fixed-timer baseline is a gridlocked junction — the AI prevents a breakdown rather than shaving a good plan. The honest headline is the mid-range: <strong>85–92% on the peak-hour scenarios that matter most.</strong></p>
+      <p><strong>This is versus fixed-time control</strong> — the status quo across much of Accra. Against a modern vehicle-actuated system the margin would be smaller.</p>
+    </div>
+  </section>
+
+  <!-- ══ 05 WHY THE NUMBERS HOLD ════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>05</b> Method</div>
+    <h2>Engineered so the result isn't an artefact of a lucky run.</h2>
+    <div class="cols">
+      <div>
+        <h3>Honest baseline</h3>
+        <p>Benchmarked against a competent protected-left timer, after an earlier naive baseline was discarded for being too easy to beat.</p>
+      </div>
+      <div>
+        <h3>Worst-case selection</h3>
+        <p>The shipped model is the checkpoint whose <em>weakest</em> scenario is strongest — not its best-case peak.</p>
+      </div>
+      <div>
+        <h3>Deployment conditions</h3>
+        <p>Evaluated with exploration switched off, over full-length scenarios, on demand patterns held out from that episode's training.</p>
+      </div>
+      <div>
+        <h3>Reproducible</h3>
+        <p>Every figure regenerates from a committed script, with raw per-seed rows checked into the repository for audit.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 06 PLATFORM ════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>06</b> What's built</div>
+    <h2>A working platform, not a notebook.</h2>
+    <ul class="clean">
+      <li><strong>Calibrated microsimulation</strong> of the Achimota/Neoplan junction and a 3-junction stretch of the N6 Nsawam corridor, in SUMO — the simulator used by real transport agencies.</li>
+      <li><strong>Trained, deployable agents</strong> — one single-junction model and three independent corridor agents, in PyTorch.</li>
+      <li><strong>Real-time 3D visualiser</strong> in Godot 4 — the live simulation rendered as a full Accra streetscape with vehicles, pedestrians, day/night and weather, for validation and stakeholder demos.</li>
+      <li><strong>Analytics dashboard and evaluation harnesses</strong> — live metrics plus one-command multi-seed benchmarking and transfer testing.</li>
+      <li><strong>Runs end-to-end on a laptop.</strong> Full 3-agent corridor training completes in about two hours.</li>
+    </ul>
+  </section>
+
+  <!-- ══ 07 SCALING ═════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>07</b> Scaling</div>
+    <h2>The platform transfers. The model retrains.</h2>
+    <p>
+      We measured this rather than assumed it. Dropping one junction's trained policy onto
+      a different junction with no retraining <strong>fails outright</strong> — lane
+      layouts differ, so the inputs fall outside anything that model has seen, and in a
+      corridor one misbehaving junction backs up into its neighbours.
+    </p>
+    <p>
+      So the product is not a checkpoint — it's the pipeline that produces one:
+      network calibration, reward and training design, and the evaluation harness.
+      <strong>A new junction is a retraining job measured in hours on commodity hardware</strong>,
+      warm-started from existing weights, not a research project.
+    </p>
+  </section>
+
+  <!-- ══ 08 ROADMAP ═════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>08</b> Roadmap</div>
+    <h2>From simulation to a signalised corridor in Accra.</h2>
+    <div class="road">
+      <div class="phase done">
+        <div class="tag">Complete</div>
+        <p><b>Simulation validation.</b> Single junction and 3-junction corridor trained and multi-seed benchmarked; visualiser, dashboard, and reproducible evaluation shipped.</p>
+      </div>
+      <div class="phase now">
+        <div class="tag">In progress</div>
+        <p><b>Perception and robustness.</b> Replace idealised sensing with realistic detection — camera-based counting, dropout, and noise — and quantify how performance degrades under it.</p>
+      </div>
+      <div class="phase next">
+        <div class="tag">Next</div>
+        <p><b>Pilot engagement.</b> Present the corridor case to the Accra Metropolitan Assembly and transport authorities; instrument one live junction in shadow mode, recommending phases without controlling them.</p>
+      </div>
+      <div class="phase next">
+        <div class="tag">Then</div>
+        <p><b>Controlled deployment.</b> Hand control of a pilot corridor to the agent under supervision, with measured before/after outcomes, then extend junction by junction.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 09 THE ASK ═════════════════════════════════════════ -->
+  <section class="slide">
+    <div class="eyebrow"><b>09</b> Why Google Africa Applied AI Lab</div>
+    <h2>The gap between simulation and a street is perception and scale.</h2>
+    <p>
+      The controller works. What stands between it and a live Accra junction is
+      cheap, reliable perception — and the ability to train across a network rather
+      than a corridor. Both are areas where the Lab's models and expertise would
+      change our trajectory directly.
+    </p>
+    <ul class="clean">
+      <li><strong>Vision models for detection.</strong> Inductive loops are expensive to install and maintain. Robust vehicle and queue estimation from ordinary roadside cameras is what makes this deployable at African cost structures — and it is the single highest-leverage unlock for the project.</li>
+      <li><strong>Compute for network-scale training.</strong> Three coordinated agents train on a laptop. Tens of junctions across a district is a different problem, and access to serious training capacity moves the timeline from years to months.</li>
+      <li><strong>Expertise in reinforcement learning at scale.</strong> Multi-agent stability, sim-to-real transfer, and safe deployment are exactly where outside review would sharpen the work — and where we have open questions we would rather answer with Google engineers than alone.</li>
+      <li><strong>A named African deployment case.</strong> A measured before/after on a real Accra corridor is a reference point that generalises to Lagos, Nairobi, Kampala — cities with the same fixed-timer infrastructure and the same congestion economics.</li>
+    </ul>
+  </section>
+
+  <!-- ══ CONTACT ════════════════════════════════════════════ -->
+  <div class="foot">
+    <span>ATCS-GH · Valiborn Technologies</span>
+    <span>Osborn Dogbe, Founder</span>
+    <span>ovdogbe@st.ug.edu.gh</span>
+    <span>Accra, Ghana</span>
+  </div>
+
+</div>
+
+</body>
+</html>
