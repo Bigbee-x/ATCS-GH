@@ -80,11 +80,16 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false  # Let us intercept quit
 	tree_exiting.connect(_on_tree_exiting)
 
-	# Resolve the Python interpreter (first existing candidate wins)
-	for cand in PYTHON_CANDIDATES:
-		if FileAccess.file_exists(cand):
-			PYTHON_PATH = cand
-			break
+	# Resolve the Python interpreter. The project's own virtualenv wins
+	# (uv venv --python 3.11 .venv), then the first existing candidate.
+	var venv_python: String = _project_root.path_join(".venv/bin/python3")
+	if FileAccess.file_exists(venv_python):
+		PYTHON_PATH = venv_python
+	else:
+		for cand in PYTHON_CANDIDATES:
+			if FileAccess.file_exists(cand):
+				PYTHON_PATH = cand
+				break
 	if PYTHON_PATH.is_empty():
 		PYTHON_PATH = "python3"   # last resort: rely on PATH inside the bash cmd
 		push_warning("[ServerManager] No known Python found — falling back to "
