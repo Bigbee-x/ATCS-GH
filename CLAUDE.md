@@ -112,6 +112,12 @@ recalibrated to solvable demand (originals in `scenarios/_pre_recal/`).
 - **All-green phases deadlock the box** — never reintroduce them.
 - **Reward must stay bounded/clipped** or heavy traffic hits the gridlock trap.
 - **No emergency/ambulance feature anywhere** (removed 2026-06-13).
+- **`simulation/intersection.net.xml` is gitignored** — a fresh clone must generate it with
+  `python scripts/build_network.py`. That script passes `simulation/connections.con.xml`
+  (inner lane = left + u-turn only) so the junction has the 20 signal links `PHASE_SIGNALS`
+  expects; without it netconvert makes 24 and SUMO dies with "Mismatching phase size in tls 'J0'".
+- The Godot launcher (`ServerManager.gd`) uses `<repo>/.venv/bin/python3` when it exists, then
+  the pyenv/Homebrew/system Pythons.
 - The continuous-day model alone **gridlocks a sustained 2-hr evening rush**
   (only saw brief peaks) → that's why training also includes constant
   morning/evening (the "v4" hybrid rotation).

@@ -97,10 +97,15 @@ a model for a new junction in hours on a laptop (full corridor training:
 ## Quick start
 
 ```bash
-# 1. Install Python deps (Python 3.11 recommended; SUMO comes with eclipse-sumo)
-python -m pip install -r requirements.txt
+# 1. Install Python deps into a project-local virtualenv (Python 3.11 recommended;
+#    SUMO comes with eclipse-sumo). The Godot launcher looks for .venv/ first.
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 
-# 2. Open visualizer/project.godot in Godot 4.6+ (Standard, NOT .NET) and press F5
+# 2. Generate the single-junction SUMO network (gitignored, so a fresh clone lacks it)
+.venv/bin/python scripts/build_network.py
+
+# 3. Open visualizer/project.godot in Godot 4.6+ (Standard, NOT .NET) and press F5
 #    → pick Single Junction or N6 Corridor in the launcher. It spawns the
 #    Python server + dashboard and opens the dashboard in a browser for you.
 ```
