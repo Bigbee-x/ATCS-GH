@@ -41,13 +41,13 @@ static func surface(kind: int, color: Color) -> ShaderMaterial:
 	material.set_shader_parameter("rain_intensity", _rain)
 	material.set_shader_parameter("surface_kind", kind)
 	material.set_shader_parameter("tint", color)
-	if kind in [0, 1, 2, 3, 5]:
-		var maps: Array = ASPHALT if kind == 1 else (GROUND if kind == 3 else PLASTER)
+	if kind in [0, 1, 2, 3, 5, 8]:
+		var maps: Array = ASPHALT if kind == 1 else (GROUND if kind in [3, 8] else PLASTER)
 		material.set_shader_parameter("photographed", true)
 		material.set_shader_parameter("albedo_map", maps[0])
 		material.set_shader_parameter("height_map", maps[1])
 		material.set_shader_parameter("roughness_map", maps[2])
-		material.set_shader_parameter("tile_size", 3.0 if kind == 1 else (4.0 if kind == 3 else 2.0))
+		material.set_shader_parameter("tile_size", 3.0 if kind == 1 else (4.0 if kind in [3, 8] else 2.0))
 	_cache[key] = material
 	return material
 

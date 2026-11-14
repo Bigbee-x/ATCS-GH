@@ -3,6 +3,7 @@ const CrossingFurniture = preload("res://scripts/CrossingFurniture.gd")
 const StreetLamp = preload("res://scripts/StreetLamp.gd")
 
 const Signals = preload("res://scripts/SignalHardware.gd")
+const PowerLines = preload("res://scripts/PowerLines.gd")
 const PedSignals = preload("res://scripts/PedestrianSignals.gd")
 
 const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
@@ -551,110 +552,23 @@ func set_street_lights_night(enabled: bool) -> void:
 		lamp.set_night(enabled)
 
 func _build_utility_poles() -> void:
-	## Place wooden utility poles (taller than street lamps, further back) along
-	## ONE side of each road arm, with a cross-arm + 3 ceramic insulators near
-	## the top and 3 horizontal power lines strung between consecutive poles.
+	## Overhead lines down ONE side of each road arm (PowerLines.gd): a pole every
+	## 22 m from just beyond the junction to the end of the arm, cross-arms across
+	## the road, transformers hanging on the field side.
 	var half_junc: float = JUNCTION_SIZE / 2.0
-	var spacing: float = 22.0          # Longer span than street lights
-	var pole_height: float = 7.0       # Taller than street lights (4m)
-	var crossbar_len: float = 1.8
-	var insulator_spacing: float = crossbar_len * 0.38  # insulator offsets: -x, 0, +x
-
 	var arms: Array = [
-		{"dir": Vector3(0, 0, 1),  "width": NS_ROAD_WIDTH, "side": 1.0},
-		{"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH, "side": 1.0},
-		{"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH,  "side": 1.0},
-		{"dir": Vector3(1, 0, 0),  "width": W_ROAD_WIDTH,  "side": 1.0},
+		{"dir": Vector3(0, 0, 1),  "width": NS_ROAD_WIDTH},
+		{"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH},
+		{"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH},
+		{"dir": Vector3(1, 0, 0),  "width": W_ROAD_WIDTH},
 	]
-
 	for arm_info in arms:
 		var direction: Vector3 = arm_info["dir"]
-		var road_w: float = arm_info["width"]
-		var side: float = arm_info["side"]
-		# Sit further back than street lights (0.6) to avoid clashing
-		var side_offset: float = road_w / 2.0 + SIDEWALK_WIDTH + 1.25
-		var is_ns: bool = abs(direction.z) > 0.0
-
-		var lateral: Vector3
-		if is_ns:
-			lateral = Vector3(side * side_offset, 0, 0)
-		else:
-			lateral = Vector3(0, 0, side * side_offset)
-
-		# Insulator positions from the previous pole on this arm (for wire spans)
-		var prev_insulators: Array = []
+		var side_offset: float = float(arm_info["width"]) / 2.0 + SIDEWALK_WIDTH + 1.25
+		var lateral: Vector3 = Vector3(side_offset, 0, 0) if absf(direction.z) > 0.0 else Vector3(0, 0, side_offset)
+		var bases: Array[Vector3] = []
 		var dist: float = half_junc + 8.0
 		while dist < ROAD_LENGTH - 3.0:
-			var pos: Vector3 = direction * dist + lateral
-
-			# Pole (wooden)
-			var pole := CSGCylinder3D.new()
-			pole.radius = 0.12
-			pole.height = pole_height
-			pole.position = pos + Vector3(0, pole_height / 2.0, 0)
-			pole.material = _mat_util_pole
-			pole.name = "UtilityPole"
-			add_child(pole)
-
-			# Cross-arm (horizontal bar perpendicular to road)
-			var crossbar := CSGBox3D.new()
-			if is_ns:
-				crossbar.size = Vector3(crossbar_len, 0.14, 0.14)
-			else:
-				crossbar.size = Vector3(0.14, 0.14, crossbar_len)
-			crossbar.position = pos + Vector3(0, pole_height - 0.25, 0)
-			crossbar.material = _mat_util_pole
-			crossbar.name = "UtilityCrossbar"
-			add_child(crossbar)
-
-			# Diagonal support brace (short 45° strut from pole to cross-arm)
-			var brace := CSGBox3D.new()
-			if is_ns:
-				brace.size = Vector3(0.55, 0.08, 0.08)
-			else:
-				brace.size = Vector3(0.08, 0.08, 0.55)
-			brace.position = pos + Vector3(0, pole_height - 0.55, 0)
-			brace.rotation_degrees = Vector3(0, 0, 35) if is_ns else Vector3(35, 0, 0)
-			brace.material = _mat_util_pole
-			brace.name = "UtilityBrace"
-			add_child(brace)
-
-			# 3 ceramic insulators on the cross-arm (little white cylinders)
-			var insulator_positions: Array = []
-			for k in range(3):
-				var slot: float = (k - 1) * insulator_spacing  # -1, 0, +1 slots
-				var ins_offset: Vector3
-				if is_ns:
-					ins_offset = Vector3(slot, 0.0, 0.0)
-				else:
-					ins_offset = Vector3(0.0, 0.0, slot)
-				var ins := CSGCylinder3D.new()
-				ins.radius = 0.07
-				ins.height = 0.20
-				ins.position = pos + Vector3(0, pole_height - 0.05, 0) + ins_offset
-				ins.material = _mat_insulator
-				ins.name = "UtilityInsulator"
-				add_child(ins)
-				# Wire-attach point sits just above the insulator top
-				insulator_positions.append(ins.position + Vector3(0, 0.12, 0))
-
-			# String 3 wires between this pole and the previous one on this arm
-			if prev_insulators.size() == 3:
-				for k in range(3):
-					var w_start: Vector3 = prev_insulators[k]
-					var w_end: Vector3 = insulator_positions[k]
-					var mid: Vector3 = (w_start + w_end) * 0.5
-					var span: float = (w_end - w_start).length()
-					var wire := CSGBox3D.new()
-					if is_ns:
-						wire.size = Vector3(0.035, 0.035, span)
-					else:
-						wire.size = Vector3(span, 0.035, 0.035)
-					# Slight sag so wires don't look perfectly stiff
-					wire.position = mid + Vector3(0, -0.15, 0)
-					wire.material = _mat_wire
-					wire.name = "PowerLine"
-					add_child(wire)
-
-			prev_insulators = insulator_positions
-			dist += spacing
+			bases.append(direction * dist + lateral)
+			dist += 22.0
+		PowerLines.run(self, bases, lateral.normalized(), lateral.normalized())

@@ -9,7 +9,7 @@ uniform sampler2D roughness_map : repeat_enable, filter_linear_mipmap_anisotropi
 uniform bool photographed = false;
 uniform float tile_size = 2.0;
 uniform vec4 tint : source_color = vec4(0.65, 0.58, 0.46, 1.0);
-// plaster, asphalt, concrete, ground, sheet metal, paving, bark
+// plaster, asphalt, concrete, ground, sheet metal, paving, bark, turf, laterite
 uniform int surface_kind = 0;
 uniform float wetness : hint_range(0.0, 1.0) = 0.0;
 uniform float rain_intensity : hint_range(0.0, 1.0) = 0.0;
@@ -70,10 +70,19 @@ void fragment() {
 		color *= 1.0 - seam * 0.28;
 		relief += fine * 0.003 - seam * 0.008;
 	} else if (surface_kind == 3) {
-		// Dry laterite and irregular grass, rather than a uniform green carpet.
-		float vegetation = smoothstep(0.45, 0.8, noise_at(p * 0.32));
-		vec3 soil = photographed_color * vec3(0.7, 0.66, 0.58);
-		color = mix(soil, soil * vec3(0.55, 0.75, 0.36), vegetation * 0.55);
+		// Accra groundcover: rainy-season grass over laterite, olive where it dries
+		// in broad swathes, with red earth worn through only in small patches.
+		// Albedos are true linear values (grass reflects ~10% green); brighter ones
+		// wash out to a chalky sage under the tropical sun.
+		float cover = smoothstep(0.20, 0.40, noise_at(p * 0.32) * 0.72 + medium * 0.28);
+		// The photo is red laterite (linear mean ~0.19): darken it to damp earth and
+		// use its normalised luminance only as texture inside the grass.
+		vec3 soil = photographed_color * vec3(0.52, 0.47, 0.42);
+		float detail = clamp(dot(photographed_color, vec3(0.3333)) / 0.19, 0.4, 1.8);
+		float dryness = smoothstep(0.38, 0.80, noise_at(p * 0.085 + vec2(17.0, 3.0)));
+		vec3 grass = mix(vec3(0.046, 0.102, 0.026), vec3(0.112, 0.118, 0.042), dryness);
+		grass *= mix(1.0, detail, 0.32) * (0.84 + medium * 0.22) * (0.9 + fine * 0.2);
+		color = mix(soil, grass, cover);
 		color *= 0.9 + macro * 0.2;
 		relief = (photographed_height - 0.5) * 0.045;
 	} else if (surface_kind == 4) {
@@ -89,6 +98,16 @@ void fragment() {
 		float bark = noise_at(p * vec2(18.0, 1.6));
 		color *= 0.6 + bark * 0.65;
 		relief = bark * 0.025;
+	} else if (surface_kind == 7) {
+		// Mown turf: the stripe colour with fine blade grain and faint clumping.
+		color = tint.rgb * (0.86 + medium * 0.12 + fine * 0.14);
+		relief = fine * 0.008;
+		rough = 0.93;
+	} else if (surface_kind == 8) {
+		// Bare laterite: tracks, yards and tilled plots in the same earth as kind 3.
+		color = photographed_color * vec3(0.52, 0.47, 0.42) * tint.rgb;
+		color *= 0.9 + macro * 0.2;
+		relief = (photographed_height - 0.5) * 0.045;
 	}
 	// Water gathers on upward-facing paved surfaces, leaving irregular dry islands.
 	float pavement = (surface_kind == 1 || surface_kind == 2 || surface_kind == 5) ? 1.0 : 0.0;

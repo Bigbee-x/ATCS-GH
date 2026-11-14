@@ -82,6 +82,8 @@ var _mat_window_cool_early: StandardMaterial3D
 var _mat_sign_glow: StandardMaterial3D     # Mall signage, bright commercial
 var _mat_stadium_cap: StandardMaterial3D   # Stadium light heads
 var _mat_canopy_glow: StandardMaterial3D   # Petrol under-canopy
+var _mat_fuel_fascia: StandardMaterial3D   # Filling-station fascia, backlit at night
+var _mat_fuel_stripe: StandardMaterial3D   # Amber reveals, roundels and stripes, lit at night
 var _mat_cross_white: StandardMaterial3D   # Church cross
 var _mat_cross_red: StandardMaterial3D     # Clinic red cross
 var _mat_sodium_glow: StandardMaterial3D   # Industrial yard floods (warm orange)
@@ -102,7 +104,7 @@ var _is_night: bool = false
 # ── OmniLight3D instances toggled at night ──────────────────────────────────
 var _stadium_lights: Array[OmniLight3D] = []
 var _yard_lights: Array[OmniLight3D] = []   # Industrial yard floods
-var _petrol_light: OmniLight3D = null
+var _petrol_lights: Array[OmniLight3D] = []   # One under each filling-station canopy
 
 # ── Tree-exclusion zones (world-space rects: [x_min, z_min, x_max, z_max]) ──
 # Populated by things like the football pitch so trees don't spawn on the field.
@@ -169,6 +171,9 @@ func _ready() -> void:
 			for zs in [-1.0, 1.0]:
 				_scatter_trees(xs, zs, TREES_PER_QUADRANT)
 
+	# Open land between the districts and the surrounding street grid gets homes,
+	# smallholdings and greenery before the grid itself is laid.
+	_infill_lots()
 	_streetscape.backdrop(corridor_mode)
 	_streetscape.finish()
 
@@ -267,6 +272,20 @@ func _create_glow_materials() -> void:
 	_mat_stadium_cap.emission_energy_multiplier = 0.0
 
 	# Petrol station under-canopy glow panel
+	_mat_fuel_fascia = StandardMaterial3D.new()
+	_mat_fuel_fascia.albedo_color = Color("1f5a55")
+	_mat_fuel_fascia.metallic = 0.25
+	_mat_fuel_fascia.roughness = 0.42
+	_mat_fuel_fascia.emission_enabled = true
+	_mat_fuel_fascia.emission = Color("2f8f84")
+	_mat_fuel_fascia.emission_energy_multiplier = 0.0
+	_mat_fuel_stripe = StandardMaterial3D.new()
+	_mat_fuel_stripe.albedo_color = Color("e9a93a")
+	_mat_fuel_stripe.metallic = 0.1
+	_mat_fuel_stripe.roughness = 0.5
+	_mat_fuel_stripe.emission_enabled = true
+	_mat_fuel_stripe.emission = Color("ffb84a")
+	_mat_fuel_stripe.emission_energy_multiplier = 0.0
 	_mat_canopy_glow = StandardMaterial3D.new()
 	_mat_canopy_glow.albedo_color = Color(0.96, 0.94, 0.85)
 	_mat_canopy_glow.roughness = 0.5
@@ -376,6 +395,10 @@ func _apply_light_state() -> void:
 		_mat_stadium_cap.emission_energy_multiplier = stadium_e
 	if _mat_canopy_glow:
 		_mat_canopy_glow.emission_energy_multiplier = canopy_e
+	if _mat_fuel_fascia:
+		_mat_fuel_fascia.emission_energy_multiplier = 0.55 if night else 0.0
+	if _mat_fuel_stripe:
+		_mat_fuel_stripe.emission_energy_multiplier = 1.6 if night else 0.0
 	if _mat_cross_white:
 		_mat_cross_white.emission_energy_multiplier = cross_e
 	if _mat_cross_red:
@@ -390,8 +413,9 @@ func _apply_light_state() -> void:
 	for light in _yard_lights:
 		if light:
 			light.visible = night
-	if _petrol_light:
-		_petrol_light.visible = night
+	for light in _petrol_lights:
+		if light:
+			light.visible = night
 
 
 # ── Dusk window material pickers ────────────────────────────────────────────
@@ -579,8 +603,10 @@ func _build_corridor() -> void:
 	_corridor_hospital(-38.0, 16.0)
 	_corridor_residential(38.0, -32.0, 3, 3)
 	_corridor_market(-38.0, -32.0)
-	_place_petrol_station(Vector3(24.0, 0, -10.0))
-	_place_petrol_station(Vector3(-24.0, 0, 70.0))
+	# Filling stations front their cross streets, forecourts meeting the 0.7 m footway.
+	# Each is set so the cross street's lamp lands on the shop's kerb strip, not a driveway.
+	_place_petrol_station(Vector3(17.4, 0, -6.8), Vector3.BACK, 1.0, 0.4, 0.7, true)
+	_place_petrol_station(Vector3(-17.4, 0, 66.8), Vector3.FORWARD, 1.0, 0.4, 0.7, true)
 	_reserve_district_buildings()
 
 	# The corridor sidewalk is 0.7 wide; every frontage faces the actual curb.
@@ -658,18 +684,17 @@ func _corridor_institutional(cx: float, cz: float) -> void:
 	## (school + church), with the rest of the block deliberately left open as a
 	## car park and trees. The keep-clear zone registered in _build_corridor stops
 	## generic frontage from cluttering this block.
-	_place_football_pitch(Vector3(cx - 8, 0, cz), 18.0, 11.0)
+	_place_football_pitch(Vector3(cx - 8, 0, cz), 18.0, 11.0, "ADINKRA PARK", 4)
 	_place_school_building(Vector3(cx + 14, 0, cz + 3), 3, 11.0, 6.0)   # big — kept
 	_place_church(Vector3(cx + 15, 0, cz - 6))                          # big — kept
 
-	# Car park west of the pitch (serves the school + stadium)
-	_place_parking_lot(Vector3(cx - 22, 0, cz), 6.0, 14.0, 12)
+	# Car park west of the pitch (serves the school + stadium), clear of its fence.
+	_place_parking_lot(Vector3(cx - 23, 0, cz), 6.0, 14.0, 12)
 
-	# Trees dotted around the grounds (south edge, north edge, and the gap
-	# between the pitch and the school) — all clear of the pitch and buildings.
+	# Trees dotted around the grounds (south edge and the gap between the pitch
+	# and the school), clear of the fence, the stand and the buildings.
 	for t in [Vector3(cx - 14, 0, cz - 9), Vector3(cx - 4, 0, cz - 9),
-			Vector3(cx + 4, 0, cz - 9), Vector3(cx - 10, 0, cz + 9),
-			Vector3(cx, 0, cz + 9), Vector3(cx + 6, 0, cz + 8),
+			Vector3(cx + 4, 0, cz - 9), Vector3(cx + 6, 0, cz + 8),
 			Vector3(cx + 9, 0, cz)]:
 		_place_tree(t)
 
@@ -678,13 +703,13 @@ func _corridor_institutional(cx: float, cz: float) -> void:
 
 func _corridor_hospital(cx: float, cz: float) -> void:
 	## A planned hospital campus on the −X flank: one H-block hospital with a
-	## taller ward tower set back behind it, a patient car park, a roadside GOIL
-	## filling station (advertised by the relocated GOIL billboard), and trees.
+	## taller ward tower set back behind it, a patient car park, a roadside
+	## filling station on the J0 cross street, and trees.
 	## The keep-clear zone in _build_corridor keeps generic frontage out.
 	_place_clinic(Vector3(cx + 4, 0, cz + 2))                        # main hospital (H-block)
 	_place_midrise_office(Vector3(cx - 6, 0, cz + 2), 5, 8.0, 8.0)   # ward tower, set back
 	_place_parking_lot(Vector3(cx + 14, 0, cz + 4), 9.0, 10.0, 12)   # patient car park
-	_place_petrol_station(Vector3(cx + 21, 0, cz - 8))               # roadside GOIL station
+	_place_petrol_station(Vector3(cx + 21, 0, cz - 8.2), Vector3.FORWARD, 1.0, 0.4, 0.7, true)  # roadside filling station
 
 	for t in [Vector3(cx - 8, 0, cz - 7), Vector3(cx - 9, 0, cz + 9),
 			Vector3(cx + 6, 0, cz + 9), Vector3(cx - 2, 0, cz - 8),
@@ -804,8 +829,13 @@ func _build_quadrants() -> void:
 	# Residential: SE  (compound houses)
 	_build_residential_quadrant(-1.0, -1.0)
 
-	# One petrol station (SW inner corner — visible from junction)
-	_place_petrol_station(Vector3(22, 0, -22))
+	# One filling station in the SW block, facing Achimota Forest Rd. Its access lane
+	# leaves the road between the trotro station and the corner shops, crossing the
+	# footway and bridging the open drain; the station's other driveway stays closed.
+	# The lane runs just south of the footway's street lamp at z -14.5.
+	_place_petrol_station(Vector3(17.2, 0, -20.6), Vector3.LEFT, -1.0, 0.0, 0.0, false)
+	_streetscape.access_lane(Vector3(3.2, 0, -15.8), Vector3(13.0, 0, -15.8), 2.1)
+	_add_exclusion_zone(3.2, -17.0, 13.0, -14.6)
 
 
 # ─── NE: Commercial / Office district ───────────────────────────────────────
@@ -861,7 +891,7 @@ func _build_institutional_quadrant(xs: float, zs: float) -> void:
 	_place_school_building(Vector3(xs * 66, 0, zs * 72), 2, 10.0, 5.5)
 
 	# Football pitch (prominent green rectangle — has its own 4 stadium lights)
-	_place_football_pitch(Vector3(xs * 48, 0, zs * 38), 22.0, 13.0)
+	_place_football_pitch(Vector3(xs * 48, 0, zs * 38), 22.0, 13.0, "UNITY PARK")
 
 	# Church — distinctive cross tower
 	_place_church(Vector3(xs * 72, 0, zs * 28))
@@ -1016,159 +1046,39 @@ func _place_school_building(center: Vector3, stories: int, w: float, d: float) -
 	_streetscape.building(center, Vector3.BACK, w, d, stories, false, true)
 
 
-func _place_football_pitch(center: Vector3, w: float, d: float) -> void:
-	## A proper football pitch: mown-stripe turf, full white markings (boundary,
-	## halfway line + centre circle/spot, penalty boxes, goal areas, penalty
-	## spots), goals, stadium floods and a bleacher. w = length (X), d = width (Z).
-	var turf_dark: Color = Color(0.18, 0.42, 0.16)
-	var turf_light: Color = Color(0.24, 0.50, 0.20)
-
-	# Base slab (shows at the very edge) + alternating mown stripes on top so the
-	# pitch clearly reads as managed turf, not the surrounding lawn.
-	var base := CSGBox3D.new()
-	base.size = Vector3(w, 0.04, d)
-	base.position = center + Vector3(0, 0.02, 0)
-	base.material = _get_material(turf_dark)
-	base.name = "FootballPitch"
-	add_child(base)
-	var n_stripes: int = 7
-	var stripe_w: float = d / float(n_stripes)
-	for i in range(n_stripes):
-		var stripe := CSGBox3D.new()
-		stripe.size = Vector3(w, 0.03, stripe_w + 0.01)
-		stripe.position = center + Vector3(0, 0.035, -d / 2.0 + (i + 0.5) * stripe_w)
-		stripe.material = _get_material(turf_light if i % 2 == 0 else turf_dark)
-		stripe.name = "PitchStripe"
-		add_child(stripe)
-
-	# ── White markings ───────────────────────────────────────────────────
-	var lt: float = 0.18           # line thickness
-	var lh: float = 0.01           # line height
-	var ly: float = 0.06           # line top (sits above the stripes)
-	var pb_d: float = w * 0.16     # penalty-box depth (into the pitch, X)
-	var pb_w: float = d * 0.58     # penalty-box width (Z)
-	var ga_d: float = w * 0.07     # goal-area depth
-	var ga_w: float = d * 0.34     # goal-area width
-
-	var lines: Array = [
-		# Boundary
-		[Vector3(0, ly, d / 2.0 - lt / 2.0), Vector3(w, lh, lt)],
-		[Vector3(0, ly, -d / 2.0 + lt / 2.0), Vector3(w, lh, lt)],
-		[Vector3(w / 2.0 - lt / 2.0, ly, 0), Vector3(lt, lh, d)],
-		[Vector3(-w / 2.0 + lt / 2.0, ly, 0), Vector3(lt, lh, d)],
-		# Halfway line
-		[Vector3(0, ly, 0), Vector3(lt, lh, d)],
-	]
-	# Penalty box + goal area at each end (s = -1 / +1 along the length)
-	for s in [-1.0, 1.0]:
-		lines.append([Vector3(s * (w / 2.0 - pb_d), ly, 0), Vector3(lt, lh, pb_w)])
-		lines.append([Vector3(s * (w / 2.0 - pb_d / 2.0), ly, pb_w / 2.0), Vector3(pb_d, lh, lt)])
-		lines.append([Vector3(s * (w / 2.0 - pb_d / 2.0), ly, -pb_w / 2.0), Vector3(pb_d, lh, lt)])
-		lines.append([Vector3(s * (w / 2.0 - ga_d), ly, 0), Vector3(lt, lh, ga_w)])
-		lines.append([Vector3(s * (w / 2.0 - ga_d / 2.0), ly, ga_w / 2.0), Vector3(ga_d, lh, lt)])
-		lines.append([Vector3(s * (w / 2.0 - ga_d / 2.0), ly, -ga_w / 2.0), Vector3(ga_d, lh, lt)])
-	for p in lines:
-		var line := CSGBox3D.new()
-		line.size = p[1]
-		line.position = center + p[0]
-		line.material = _get_material(CROSS_WHITE)
-		line.name = "PitchLine"
-		add_child(line)
-
-	# Centre circle (round, 32-sided) with a turf fill so it reads as a ring
-	var cr: float = d * 0.17
-	var ring := CSGCylinder3D.new()
-	ring.radius = cr
-	ring.height = 0.015
-	ring.sides = 32
-	ring.position = center + Vector3(0, ly + 0.005, 0)
-	ring.material = _get_material(CROSS_WHITE)
-	ring.name = "PitchCircle"
-	add_child(ring)
-	var inner := CSGCylinder3D.new()
-	inner.radius = cr - lt
-	inner.height = 0.02
-	inner.sides = 32
-	inner.position = center + Vector3(0, ly + 0.01, 0)
-	inner.material = _get_material(turf_dark)   # centre sits on a dark stripe
-	inner.name = "PitchCircleInner"
-	add_child(inner)
-	# Spots — centre + the two penalty spots
-	for spot_x in [0.0, w / 2.0 - w * 0.11, -(w / 2.0 - w * 0.11)]:
-		var spot := CSGCylinder3D.new()
-		spot.radius = 0.13
-		spot.height = 0.02
-		spot.sides = 12
-		spot.position = center + Vector3(spot_x, ly + 0.012, 0)
-		spot.material = _get_material(CROSS_WHITE)
-		spot.name = "PitchSpot"
-		add_child(spot)
-
-	# Stadium flood-lights at the 4 corners (real OmniLights, on at night)
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			var corner := center + Vector3(sx * (w / 2.0 + 1.8), 0, sz * (d / 2.0 + 1.8))
-			_place_stadium_light(corner)
-
-	# Goal posts at each short end (pitch width runs along X)
-	_place_goal_post(center + Vector3(-w / 2.0, 0, 0), 1.0)    # Net extends in -X
-	_place_goal_post(center + Vector3(w / 2.0, 0, 0), -1.0)    # Net extends in +X
-
-	# Bleacher on the far-from-junction side.
-	# Pitch center.z is positive in the NW quadrant, so the outside side is +Z.
-	var bleacher_face: float = -1.0 if center.z > 0 else 1.0   # Face toward pitch
-	var bleacher_front_z: float = center.z + (d / 2.0 + 1.0) * sign(center.z)
-	_place_bleacher(
-		Vector3(center.x, 0, bleacher_front_z),
-		w * 0.8,      # bleacher width (along X, parallel to touchline)
-		4,            # rows
-		bleacher_face
-	)
-
-	# Exclusion zone: pitch interior + bleacher + goals + stadium-light poles
-	var zone_pad := 2.5
-	_add_exclusion_zone(
-		center.x - w / 2.0 - zone_pad,
-		center.z - d / 2.0 - zone_pad,
-		center.x + w / 2.0 + zone_pad,
-		center.z + d / 2.0 + zone_pad + 3.0   # extra on +z side for bleacher
-	)
+func _place_football_pitch(center: Vector3, w: float, d: float, ground_name: String, rows: int = 5) -> void:
+	## A community football ground from the streetscape kit (see
+	## AccraStreetscape.football_ground): w = length (X), d = width (Z). The stand
+	## takes the touchline away from the junction; each floodlight mast gets a
+	## night light, and the fence line plus the stand are kept clear.
+	var stand_side: float = 1.0 if center.z >= 0.0 else -1.0
+	for spot in _streetscape.football_ground(center, w, d, stand_side, rows, ground_name, _mat_stadium_cap):
+		var light := OmniLight3D.new()
+		light.name = "FloodLight"
+		light.position = spot
+		light.omni_range = 32.0
+		light.light_energy = 2.8
+		light.light_color = Color(1.0, 0.98, 0.90)
+		light.shadow_enabled = false   # Perf: four floods per ground
+		light.visible = false          # Off until night
+		add_child(light)
+		_stadium_lights.append(light)
+	var near: float = d / 2.0 + 2.6
+	var far: float = d / 2.0 + 1.5 + rows * 0.55 + 0.7
+	_add_exclusion_zone(center.x - w / 2.0 - 2.7, center.z - (near if stand_side > 0.0 else far),
+		center.x + w / 2.0 + 2.7, center.z + (far if stand_side > 0.0 else near))
 
 
 func _place_stadium_light(base: Vector3) -> void:
-	## Tall metal pole + emissive lamp head + OmniLight3D (visible at night only).
-	var pole_h := 8.5
-	var pole := CSGCylinder3D.new()
-	pole.radius = 0.14
-	pole.height = pole_h
-	pole.position = base + Vector3(0, pole_h / 2.0, 0)
-	pole.material = _get_material(Color(0.32, 0.32, 0.35))
-	pole.name = "StadiumPole"
-	add_child(pole)
-
-	# Cross-brace just below the lamp head (bit of silhouette detail)
-	var brace := CSGBox3D.new()
-	brace.size = Vector3(0.9, 0.1, 0.1)
-	brace.position = base + Vector3(0, pole_h - 0.4, 0)
-	brace.material = _get_material(Color(0.30, 0.30, 0.32))
-	brace.name = "StadiumBrace"
-	add_child(brace)
-
-	# Lamp head (emissive box)
-	var head := CSGBox3D.new()
-	head.size = Vector3(1.3, 0.55, 0.85)
-	head.position = base + Vector3(0, pole_h + 0.35, 0)
-	head.material = _mat_stadium_cap
-	head.name = "StadiumHead"
-	add_child(head)
-
-	# Real scene light
+	## Yard / car-park floodlight from the kit (AccraStreetscape.area_light), with a
+	## real light that comes on at night.
 	var light := OmniLight3D.new()
-	light.position = base + Vector3(0, pole_h + 0.5, 0)
+	light.name = "AreaLight"
+	light.position = _streetscape.area_light(base, _mat_stadium_cap)
 	light.omni_range = 32.0
 	light.light_energy = 2.8
 	light.light_color = Color(1.0, 0.98, 0.90)
-	light.shadow_enabled = false  # Perf: 4 stadium lights with shadows is too much
+	light.shadow_enabled = false  # Perf: several area lights per district
 	light.visible = false         # Off until night
 	add_child(light)
 	_stadium_lights.append(light)
@@ -1525,90 +1435,6 @@ func _place_flatbed_truck(center: Vector3) -> void:
 	add_child(chassis)
 
 
-func _place_bleacher(center: Vector3, width: float, rows: int, face_z: float) -> void:
-	## Stepped concrete bleacher. face_z = +1 or -1 (direction seats face).
-	## Row 0 is frontmost (near pitch); each later row steps UP and AWAY from pitch.
-	var row_h := 0.32
-	var row_d := 0.55
-	for r in range(rows):
-		var y: float = r * row_h + row_h / 2.0
-		var z_shift: float = -face_z * r * row_d
-		var seat := CSGBox3D.new()
-		seat.size = Vector3(width, row_h, row_d)
-		seat.position = center + Vector3(0, y, z_shift)
-		seat.material = _get_material(Color(0.62, 0.60, 0.58))
-		seat.name = "BleacherStep"
-		add_child(seat)
-	# Side walls (simple trapezoid-ish approximation using 2 boxes)
-	var total_h: float = rows * row_h
-	var total_d: float = rows * row_d
-	for sx in [-1.0, 1.0]:
-		var wall := CSGBox3D.new()
-		wall.size = Vector3(0.2, total_h, total_d)
-		wall.position = center + Vector3(
-			sx * (width / 2.0 + 0.1),
-			total_h / 2.0,
-			-face_z * (rows - 1) * row_d / 2.0
-		)
-		wall.material = _get_material(Color(0.52, 0.52, 0.54))
-		wall.name = "BleacherWall"
-		add_child(wall)
-
-
-func _place_goal_post(center: Vector3, facing_x: float) -> void:
-	## Small goal post at a pitch end. facing_x = +1 if goal opens in +X direction
-	## (i.e., the pitch lies in +X from center), -1 otherwise. The net extends AWAY
-	## from the pitch behind the goal line.
-	var goal_w := 4.5    # Distance between the 2 vertical posts (along Z)
-	var goal_h := 1.3    # Height of crossbar
-	var goal_d := 1.0    # How far the net extends back (away from pitch)
-	var post_r := 0.06
-
-	# 2 vertical posts at the goal line
-	for sz in [-1.0, 1.0]:
-		var post := CSGCylinder3D.new()
-		post.radius = post_r
-		post.height = goal_h
-		post.position = center + Vector3(0, goal_h / 2.0, sz * goal_w / 2.0)
-		post.material = _get_material(CROSS_WHITE)
-		post.name = "GoalPost"
-		add_child(post)
-
-	# Crossbar (thin box along Z at the top)
-	var bar := CSGBox3D.new()
-	bar.size = Vector3(post_r * 2.0, post_r * 2.0, goal_w)
-	bar.position = center + Vector3(0, goal_h, 0)
-	bar.material = _get_material(CROSS_WHITE)
-	bar.name = "GoalCrossbar"
-	add_child(bar)
-
-	# Back posts (shorter, leaning back into net)
-	for sz in [-1.0, 1.0]:
-		var back_post := CSGCylinder3D.new()
-		back_post.radius = post_r * 0.8
-		back_post.height = goal_h * 0.85
-		back_post.position = center + Vector3(
-			-facing_x * goal_d,
-			goal_h * 0.425,
-			sz * goal_w / 2.0
-		)
-		back_post.material = _get_material(Color(0.62, 0.62, 0.64))
-		back_post.name = "GoalBackPost"
-		add_child(back_post)
-
-	# Net top (connects top of back posts, thin horizontal panel)
-	var net_top := CSGBox3D.new()
-	net_top.size = Vector3(goal_d, 0.03, goal_w)
-	net_top.position = center + Vector3(
-		-facing_x * goal_d * 0.5,
-		goal_h * 0.9,
-		0
-	)
-	net_top.material = _get_material(Color(0.58, 0.58, 0.60))
-	net_top.name = "GoalNetTop"
-	add_child(net_top)
-
-
 func _place_tree(center: Vector3) -> void:
 	_streetscape.tree(center, _rng.randf() < 0.18)
 
@@ -1627,79 +1453,462 @@ func _scatter_trees(xs: float, zs: float, count: int) -> void:
 				break
 
 
-func _place_petrol_station(center: Vector3) -> void:
-	_add_exclusion_zone(center.x - 4.8, center.z - 3.8, center.x + 7.8, center.z + 3.8)
-	## Canopy on 4 pillars + 2 fuel pumps + small kiosk.
-	var canopy_w := 7.0
-	var canopy_d := 5.0
-	var canopy_h := 3.8
+func _place_petrol_station(center: Vector3, facing: Vector3 = Vector3.BACK, shop_side: float = 1.0,
+		apron: float = 0.0, footway: float = 0.0, two_way: bool = true) -> void:
+	## A branded filling station from the streetscape kit (see
+	## AccraStreetscape.filling_station), fronting its road along `facing`. The
+	## footprint, out to the kerb, is reserved so trees and frontage keep clear,
+	## and a light under each canopy comes on at night.
+	var frame := Transform3D(Basis(Vector3.UP, atan2(facing.x, facing.z)), center)
+	var lo := Vector3(INF, 0, INF)
+	var hi := Vector3(-INF, 0, -INF)
+	for corner in [Vector3(-6.4, 0, -4.5), Vector3(6.4, 0, -4.5), Vector3(-6.4, 0, 4.2 + apron + footway), Vector3(6.4, 0, 4.2 + apron + footway)]:
+		var p: Vector3 = frame * corner
+		lo = lo.min(p)
+		hi = hi.max(p)
+	_add_exclusion_zone(lo.x, lo.z, hi.x, hi.z)
+	for spot in _streetscape.filling_station(center, facing, shop_side, apron, footway, two_way, _mat_canopy_glow, _mat_fuel_fascia, _mat_fuel_stripe):
+		var light := OmniLight3D.new()
+		light.name = "CanopyLight"
+		light.position = spot
+		light.omni_range = 16.0
+		light.light_energy = 2.6
+		light.light_color = Color(1.0, 0.96, 0.86)
+		light.shadow_enabled = false
+		light.visible = false
+		add_child(light)
+		_petrol_lights.append(light)
 
-	# Asphalt pad
-	var pad := CSGBox3D.new()
-	pad.size = Vector3(canopy_w + 2.0, 0.05, canopy_d + 2.0)
-	pad.position = center + Vector3(0, 0.025, 0)
-	pad.material = _get_material(ASPHALT)
-	pad.name = "PetrolPad"
-	add_child(pad)
 
-	# Canopy top (yellow/orange — Shell-ish, or green for Goil)
-	var top := CSGBox3D.new()
-	top.size = Vector3(canopy_w, 0.3, canopy_d)
-	top.position = center + Vector3(0, canopy_h, 0)
-	top.material = _get_material(Color(0.90, 0.78, 0.10))
-	top.name = "PetrolCanopy"
-	add_child(top)
+# ═════════════════════════════════════════════════════════════════════════════
+# INFILL — neighbourhoods, smallholdings and greenery on the land left open
+# ═════════════════════════════════════════════════════════════════════════════
 
-	# Red trim stripe
-	var trim := CSGBox3D.new()
-	trim.size = Vector3(canopy_w + 0.1, 0.12, canopy_d + 0.1)
-	trim.position = center + Vector3(0, canopy_h - 0.2, 0)
-	trim.material = _get_material(Color(0.85, 0.15, 0.12))
-	trim.name = "PetrolTrim"
-	add_child(trim)
+const OCC_SIZE := 200          # 1 m cells across the 200 m square the districts sit in
+var _occ := PackedByteArray()  # 1 = taken
+var _occ_sum := PackedInt32Array()
+var _occ_origin := Vector2.ZERO
+var _arterials: Array[Rect2] = []
+var _road_rects: Array[Rect2] = []
 
-	# Under-canopy glow panel (reads as recessed fluorescents at night)
-	var under_glow := CSGBox3D.new()
-	under_glow.size = Vector3(canopy_w - 0.6, 0.08, canopy_d - 0.6)
-	under_glow.position = center + Vector3(0, canopy_h - 0.35, 0)
-	under_glow.material = _mat_canopy_glow
-	under_glow.name = "PetrolUnderGlow"
-	add_child(under_glow)
 
-	# Scene light under the canopy (illuminates pumps + any vehicles below)
-	_petrol_light = OmniLight3D.new()
-	_petrol_light.position = center + Vector3(0, canopy_h - 0.6, 0)
-	_petrol_light.omni_range = 22.0
-	_petrol_light.light_energy = 3.2
-	_petrol_light.light_color = Color(1.0, 0.96, 0.80)
-	_petrol_light.shadow_enabled = false
-	_petrol_light.visible = false
-	add_child(_petrol_light)
+func _infill_lots() -> void:
+	## The districts leave broad open ground between them and the street grid
+	## around the scene. Rasterise everything built so far (1 m cells), then:
+	## continue the grid with whole neighbourhood blocks where a 32 m block is still
+	## free, pack walled compounds (sheds in industrial areas) into the remaining
+	## land with laterite paths to their road, and finish with smallholdings, groves
+	## of trees and shrubs. Deterministic: the planner has its own seed.
+	var started: int = Time.get_ticks_msec()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 90210 if corridor_mode else 70707
+	var mid: float = 30.0 if corridor_mode else 0.0
+	_occ_origin = Vector2(-100.0, mid - 100.0)
+	_occ.resize(OCC_SIZE * OCC_SIZE)
+	_occ.fill(0)
+	_rasterise_existing(mid)
+	var blocks: int = _infill_blocks(mid, rng)
+	_build_occ_sum()
+	var buildings: int = _infill_buildings(mid, rng, 13.2)
+	var farms: int = _infill_farms(mid, rng)
+	# A second, tighter pass puts single houses (or small sheds) in the gaps.
+	_build_occ_sum()
+	buildings += _infill_buildings(mid, rng, 9.4)
+	var greenery: Vector2i = _infill_greenery(rng)
+	print("[Infill] %d neighbourhood blocks, %d buildings, %d smallholdings, %d trees, %d shrubs (%d ms)" % [
+		blocks, buildings, farms, greenery.x, greenery.y, Time.get_ticks_msec() - started])
 
-	# 4 pillars
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			var pillar := CSGBox3D.new()
-			pillar.size = Vector3(0.3, canopy_h, 0.3)
-			pillar.position = center + Vector3(sx * (canopy_w / 2.0 - 0.2),
-				canopy_h / 2.0, sz * (canopy_d / 2.0 - 0.2))
-			pillar.material = _get_material(Color(0.82, 0.80, 0.78))
-			pillar.name = "PetrolPillar"
-			add_child(pillar)
 
-	# 2 pump islands
-	for dz in [-1.2, 1.2]:
-		var pump := CSGBox3D.new()
-		pump.size = Vector3(0.5, 1.4, 0.7)
-		pump.position = center + Vector3(0, 0.7, dz)
-		pump.material = _get_material(Color(0.85, 0.15, 0.12))
-		pump.name = "PetrolPump"
-		add_child(pump)
+func _rasterise_existing(mid: float) -> void:
+	# Kit geometry still waiting to be batched, every visible mesh in the scene
+	# (the junctions' roads, poles and street furniture too), reserved plots and
+	# keep-clear zones, the arterials with a margin, the airport, and the frame
+	# where the surrounding street grid begins (its lanes at +96 m; the first lane
+	# on the far sides, at -96 m, is left for infill blocks to draw).
+	for rect in _streetscape.pending_footprints():
+		_occ_mark(rect.grow(0.3))
+	_road_rects.clear()
+	_rasterise_node(get_parent())
+	for zone in _exclusion_zones:
+		_occ_mark(Rect2(zone[0], zone[1], zone[2] - zone[0], zone[3] - zone[1]))
+	for plot in _occupied_plots:
+		_occ_mark(plot)
+	for use: Dictionary in _streetscape.land_uses:
+		_occ_mark(_building_plot(use.center, use.facing, use.width, use.depth))
+	_arterials = _arterial_rects()
+	for road in _arterials:
+		_occ_mark(road.grow(2.5))
+		_road_rects.append(road)
+	if corridor_mode:
+		var airport = preload("res://scripts/AirportLayout.gd")
+		_occ_mark(airport.SITE.grow(3.0))
+		_occ_mark(airport.ACCESS.grow(3.0))
+	_occ_mark(Rect2(95.0, mid - 100.0, 5.0, 200.0))
+	_occ_mark(Rect2(-100.0, mid + 95.0, 200.0, 5.0))
+	_occ_mark(Rect2(-100.0, mid - 100.0, 2.0, 200.0))
+	_occ_mark(Rect2(-100.0, mid - 100.0, 200.0, 2.0))
+	_road_rects.append(Rect2(94.5, mid - 100.0, 3.0, 200.0))
+	_road_rects.append(Rect2(-100.0, mid + 94.5, 200.0, 3.0))
 
-	# Kiosk beside canopy
-	var kiosk := CSGBox3D.new()
-	kiosk.size = Vector3(3.0, 2.5, 3.0)
-	kiosk.position = center + Vector3(canopy_w / 2.0 + 2.5, 1.25, 0)
-	kiosk.material = _get_material(Color(0.92, 0.88, 0.78))
-	kiosk.name = "PetrolKiosk"
-	add_child(kiosk)
+
+func _rasterise_node(node: Node) -> void:
+	for child in node.get_children():
+		if child is CanvasItem or child is CanvasLayer or child is GPUParticles3D or child is CPUParticles3D:
+			continue
+		if child is Node3D and not (child as Node3D).visible:
+			continue
+		if child is GeometryInstance3D and not child is Label3D:
+			var box: AABB = _world_aabb(child)
+			# Ground planes and sky are not obstacles; roads (long but narrow) are.
+			if box.size != Vector3.ZERO and box.position.y < 15.0 and (box.size.x < 60.0 or box.size.z < 60.0):
+				var rect := Rect2(box.position.x, box.position.z, box.size.x, box.size.z)
+				_occ_mark(rect.grow(0.3))
+				var label: String = String(child.name)
+				if label.begins_with("ResidentialStreet") or label.begins_with("CommercialAccess"):
+					_road_rects.append(rect)
+		_rasterise_node(child)
+
+
+func _world_aabb(node: GeometryInstance3D) -> AABB:
+	# CSG meshes are built a frame late, so size primitives from their parameters.
+	var local := AABB()
+	if node is CSGBox3D:
+		var size: Vector3 = (node as CSGBox3D).size
+		local = AABB(-size * 0.5, size)
+	elif node is CSGCylinder3D:
+		var cylinder := node as CSGCylinder3D
+		local = AABB(Vector3(-cylinder.radius, -cylinder.height * 0.5, -cylinder.radius),
+			Vector3(cylinder.radius * 2.0, cylinder.height, cylinder.radius * 2.0))
+	elif node is CSGSphere3D:
+		var r: float = (node as CSGSphere3D).radius
+		local = AABB(-Vector3.ONE * r, Vector3.ONE * r * 2.0)
+	else:
+		local = node.get_aabb()
+	if local.size == Vector3.ZERO:
+		return AABB()
+	return node.global_transform * local
+
+
+func _arterial_rects() -> Array[Rect2]:
+	## The simulated roads as tools/validate_zoning.gd sees them.
+	var roads: Array[Rect2] = []
+	if not corridor_mode:
+		roads.append(Rect2(-3.2, -93.5, 6.4, 187.0))
+		roads.append(Rect2(-93.5, -3.2, 187.0, 6.4))
+		return roads
+	roads.append(Rect2(-3.0, -58.0, 6.0, 176.0))
+	for i in range(3):
+		var east_width: float = [5.0, 5.0, 3.0][i]
+		var west_width: float = [3.0, 5.0, 3.0][i]
+		roads.append(Rect2(-58.0, i * 30.0 - east_width * 0.5, 58.0, east_width))
+		roads.append(Rect2(0.0, i * 30.0 - west_width * 0.5, 58.0, west_width))
+	return roads
+
+
+func _occ_cells(rect: Rect2) -> Rect2i:
+	var x0: int = clampi(floori(rect.position.x - _occ_origin.x), 0, OCC_SIZE)
+	var z0: int = clampi(floori(rect.position.y - _occ_origin.y), 0, OCC_SIZE)
+	var x1: int = clampi(ceili(rect.end.x - _occ_origin.x), 0, OCC_SIZE)
+	var z1: int = clampi(ceili(rect.end.y - _occ_origin.y), 0, OCC_SIZE)
+	return Rect2i(x0, z0, maxi(0, x1 - x0), maxi(0, z1 - z0))
+
+
+func _occ_mark(rect: Rect2) -> void:
+	var cells := _occ_cells(rect)
+	for z in range(cells.position.y, cells.end.y):
+		var row: int = z * OCC_SIZE
+		for x in range(cells.position.x, cells.end.x):
+			_occ[row + x] = 1
+
+
+func _occ_inside(rect: Rect2) -> bool:
+	return rect.position.x >= _occ_origin.x and rect.position.y >= _occ_origin.y \
+		and rect.end.x <= _occ_origin.x + OCC_SIZE and rect.end.y <= _occ_origin.y + OCC_SIZE
+
+
+func _occ_clear(rect: Rect2) -> bool:
+	## Exact test against the live raster; anything off the raster counts as taken.
+	if not _occ_inside(rect):
+		return false
+	var cells := _occ_cells(rect)
+	for z in range(cells.position.y, cells.end.y):
+		var row: int = z * OCC_SIZE
+		for x in range(cells.position.x, cells.end.x):
+			if _occ[row + x] != 0:
+				return false
+	return true
+
+
+func _build_occ_sum() -> void:
+	var n: int = OCC_SIZE + 1
+	_occ_sum.resize(n * n)
+	_occ_sum.fill(0)
+	for z in range(OCC_SIZE):
+		var running: int = 0
+		for x in range(OCC_SIZE):
+			running += _occ[z * OCC_SIZE + x]
+			_occ_sum[(z + 1) * n + x + 1] = _occ_sum[z * n + x + 1] + running
+
+
+func _occ_sum_clear(rect: Rect2) -> bool:
+	## Constant-time test against the raster as of the last _build_occ_sum.
+	if not _occ_inside(rect):
+		return false
+	var c := _occ_cells(rect)
+	var n: int = OCC_SIZE + 1
+	return _occ_sum[c.end.y * n + c.end.x] - _occ_sum[c.position.y * n + c.end.x] \
+		- _occ_sum[c.end.y * n + c.position.x] + _occ_sum[c.position.y * n + c.position.x] == 0
+
+
+func _rect_gap(a: Rect2, b: Rect2) -> float:
+	return Vector2(maxf(0.0, maxf(a.position.x - b.end.x, b.position.x - a.end.x)),
+		maxf(0.0, maxf(a.position.y - b.end.y, b.position.y - a.end.y))).length()
+
+
+func _clear_of_arterials(rect: Rect2, gap: float) -> bool:
+	for road in _arterials:
+		if _rect_gap(rect, road) < gap:
+			return false
+	return true
+
+
+func _backdrop_block(center: Vector2, mid: float) -> bool:
+	# Mirrors AccraStreetscape.backdrop's choice of blocks.
+	var local := Vector2(center.x, center.y - mid)
+	if maxf(absf(local.x), absf(local.y)) < 100.0 or local.length() > 270.0:
+		return false
+	if corridor_mode:
+		var airport = preload("res://scripts/AirportLayout.gd")
+		var block := Rect2(center.x - 17.5, center.y - 17.5, 35, 35)
+		if block.intersects(airport.SITE) or block.intersects(airport.ACCESS):
+			return false
+	return true
+
+
+func _infill_blocks(mid: float, rng: RandomNumberGenerator) -> int:
+	# Whole free 32 m blocks on the surrounding grid's lattice get its lanes (west
+	# and south edges, plus east/north where no neighbouring block draws one) and
+	# four compounds, so the street grid carries on up to the districts.
+	var full: Array[Vector2] = []
+	for row in range(-3, 3):
+		for col in range(-3, 3):
+			var c := Vector2((col + 0.5) * 32.0, mid + (row + 0.5) * 32.0)
+			if _occ_clear(Rect2(c.x - 17.5, c.y - 17.5, 32.0, 32.0)) and _clear_of_arterials(Rect2(c.x - 14.5, c.y - 14.5, 29.0, 29.0), 13.0):
+				full.append(c)
+	for c in full:
+		var lanes: Array[Rect2] = [Rect2(c.x - 17.5, c.y - 16.0, 3.0, 32.0), Rect2(c.x - 16.0, c.y - 17.5, 32.0, 3.0)]
+		var east := Vector2(c.x + 32.0, c.y)
+		if east not in full and not _backdrop_block(east, mid) and _occ_clear(Rect2(c.x + 14.5, c.y - 16.0, 3.0, 32.0)):
+			lanes.append(Rect2(c.x + 14.5, c.y - 16.0, 3.0, 32.0))
+		var north := Vector2(c.x, c.y + 32.0)
+		if north not in full and not _backdrop_block(north, mid) and _occ_clear(Rect2(c.x - 16.0, c.y + 14.5, 32.0, 3.0)):
+			lanes.append(Rect2(c.x - 16.0, c.y + 14.5, 32.0, 3.0))
+		for lane in lanes:
+			_streetscape.lane(Vector3(lane.get_center().x, 0, lane.get_center().y), lane.size)
+			_road_rects.append(lane)
+			_occ_mark(lane)
+		_occ_mark(Rect2(c.x - 17.5, c.y - 17.5, 32.0, 32.0))
+	for c in full:
+		for offset: Vector2 in [Vector2(-7, -7), Vector2(7, -7), Vector2(-7, 7), Vector2(7, 7)]:
+			var at: Vector2 = c + offset + Vector2(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.5, 0.5))
+			_place_infill_home(at, rng.randf_range(10.6, 11.4), rng, false)
+	return full.size()
+
+
+func _infill_buildings(mid: float, rng: RandomNumberGenerator, room: float) -> int:
+	# Pack the remaining open land: candidate `room`-metre plots on a 2 m lattice,
+	# tested against the summed raster (plus what this pass has added). Homes stay
+	# 12.5 m clear of the arterials; industrial areas get sheds with yards instead.
+	# Compound-sized rooms get walled compounds, smaller ones a single house.
+	var added: Array[Rect2] = []
+	var count: int = 0
+	var z: float = mid - 98.0
+	while z + room < mid + 95.0:
+		var x: float = -98.0
+		while x + room < 95.0:
+			var plot := Rect2(x, z, room, room)
+			var placed: bool = false
+			if _occ_sum_clear(plot) and not _hits_any(plot, added) and _occ_clear(plot):
+				var at: Vector2 = plot.get_center()
+				if _industrial_at(at):
+					placed = _place_infill_shed(at, room, rng)
+				elif room >= 12.0:
+					placed = _place_infill_home(at, rng.randf_range(10.4, 11.4), rng, true)
+				else:
+					placed = _place_infill_house(at, room, rng)
+				if placed:
+					added.append(plot)
+					count += 1
+			if placed:
+				x += room
+			else:
+				x += 2.0
+		z += 2.0
+	return count
+
+
+func _hits_any(rect: Rect2, rects: Array[Rect2]) -> bool:
+	for other in rects:
+		if rect.intersects(other):
+			return true
+	return false
+
+
+func _industrial_at(p: Vector2) -> bool:
+	if corridor_mode:
+		return p.x < -8.0 and p.y > 66.0
+	return p.x > 8.0 and p.y < -8.0
+
+
+func _place_infill_home(at: Vector2, size: float, rng: RandomNumberGenerator, with_path: bool) -> bool:
+	## A walled compound (now and then a small walk-up block) with its gate to the
+	## nearest road, and a laterite path out to it when it sits back.
+	var plot := Rect2(at - Vector2(size, size) * 0.5, Vector2(size, size))
+	if not _clear_of_arterials(plot, 12.5):
+		return false
+	var access: Array = _face_road(plot)
+	var facing: Vector3 = access[0]
+	var center := Vector3(at.x, 0, at.y)
+	if rng.randf() < 0.12:
+		_streetscape.apartment(center, facing, rng.randi_range(3, 4), 8.0, 6.4)
+	else:
+		_streetscape.compound(center, size, 1 if rng.randf() < 0.6 else 2, facing)
+	_occ_mark(plot.grow(0.6))
+	if with_path:
+		_gate_path(at, size, facing, access[1])
+	return true
+
+
+func _place_infill_shed(at: Vector2, room: float, rng: RandomNumberGenerator) -> bool:
+	## A workshop shed on a concrete yard, roller door to the north.
+	var plot := Rect2(at - Vector2(room, room) * 0.5, Vector2(room, room))
+	if not _clear_of_arterials(plot, 4.0):
+		return false
+	var scale: float = room / 13.2
+	_streetscape.warehouse(Vector3(at.x, 0, at.y - 1.0 * scale), rng.randf_range(8.5, 11.0) * scale,
+		rng.randf_range(3.8, 5.0) * maxf(scale, 0.8), rng.randf_range(5.5, 7.0) * scale)
+	_occ_mark(plot)
+	return true
+
+
+func _place_infill_house(at: Vector2, room: float, rng: RandomNumberGenerator) -> bool:
+	## A detached house on its paved apron, front door to the nearest road.
+	var plot := Rect2(at - Vector2(room, room) * 0.5, Vector2(room, room))
+	if not _clear_of_arterials(plot, 12.5):
+		return false
+	var access: Array = _face_road(plot)
+	var facing: Vector3 = access[0]
+	var w: float = rng.randf_range(6.0, 7.2)
+	var d: float = rng.randf_range(5.0, 6.0)
+	_streetscape.building(Vector3(at.x, 0, at.y), facing, w, d, 1 if rng.randf() < 0.55 else 2)
+	_occ_mark(plot.grow(-0.2))
+	_gate_path(at, maxf(w, d), facing, access[1] + (room - maxf(w, d)) * 0.5)
+	return true
+
+
+func _face_road(plot: Rect2) -> Array:
+	## [direction to the nearest road beside the plot, gap to it]; with no road
+	## within reach the gate faces south and the gap is 0.
+	var best := Vector3(0, 0, -1)
+	var best_gap: float = 40.0
+	for road in _road_rects:
+		var gap: float = INF
+		var direction := Vector3.ZERO
+		if road.position.x < plot.end.x - 2.0 and road.end.x > plot.position.x + 2.0:
+			if road.position.y >= plot.end.y:
+				gap = road.position.y - plot.end.y
+				direction = Vector3(0, 0, 1)
+			elif road.end.y <= plot.position.y:
+				gap = plot.position.y - road.end.y
+				direction = Vector3(0, 0, -1)
+		elif road.position.y < plot.end.y - 2.0 and road.end.y > plot.position.y + 2.0:
+			if road.position.x >= plot.end.x:
+				gap = road.position.x - plot.end.x
+				direction = Vector3(1, 0, 0)
+			elif road.end.x <= plot.position.x:
+				gap = plot.position.x - road.end.x
+				direction = Vector3(-1, 0, 0)
+		if gap < best_gap:
+			best_gap = gap
+			best = direction
+	return [best, best_gap if best_gap < 40.0 else 0.0]
+
+
+func _gate_path(at: Vector2, size: float, facing: Vector3, gap: float) -> void:
+	# Laterite path from the gate straight toward the road, stopping short of
+	# anything in its way.
+	if gap < 0.8:
+		return
+	var dir := Vector2(facing.x, facing.z)
+	var start: Vector2 = at + dir * (size * 0.5 + 0.6)
+	var length: float = 0.0
+	while length < gap - 0.6:
+		var probe_center: Vector2 = start + dir * (length + 0.5)
+		var half := Vector2(0.8, 0.5) if absf(dir.y) > 0.5 else Vector2(0.5, 0.8)
+		if not _occ_clear(Rect2(probe_center - half, half * 2.0)):
+			break
+		length += 1.0
+	if length < 1.0:
+		return
+	var end: Vector2 = start + dir * length
+	_streetscape.track(Vector3(at.x + dir.x * size * 0.5, 0, at.y + dir.y * size * 0.5), Vector3(end.x, 0, end.y), 1.5)
+	var lo := Vector2(minf(start.x, end.x), minf(start.y, end.y))
+	var hi := Vector2(maxf(start.x, end.x), maxf(start.y, end.y))
+	_occ_mark(Rect2(lo, hi - lo).grow(0.75))
+
+
+func _infill_farms(mid: float, rng: RandomNumberGenerator) -> int:
+	# Smallholdings of cassava and maize on open land away from the arterials.
+	var count: int = 0
+	for attempt in range(400):
+		if count >= 7:
+			break
+		var along_x: bool = rng.randf() < 0.5
+		var size := Vector2(rng.randf_range(8.0, 12.0), rng.randf_range(6.0, 8.5))
+		if not along_x:
+			size = Vector2(size.y, size.x)
+		var at := Vector2(rng.randf_range(-90.0, 90.0), mid + rng.randf_range(-90.0, 90.0))
+		var room := Rect2(at - size * 0.5, size).grow(1.4)
+		# Peri-urban: only out towards the edge of the scene.
+		if maxf(absf(at.x), absf(at.y - mid)) < 55.0:
+			continue
+		if _occ_clear(room) and _clear_of_arterials(room, 10.0):
+			_streetscape.farm_plot(Vector3(at.x, 0, at.y), size.x, size.y, along_x)
+			_occ_mark(room)
+			count += 1
+	return count
+
+
+func _infill_greenery(rng: RandomNumberGenerator) -> Vector2i:
+	# Trees, then shrubs, on whatever is still open. A coarse noise field groups
+	# them into groves with meadow between, rather than an even sprinkle.
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.seed
+	noise.frequency = 0.03
+	var trees: int = 0
+	var shrubs: int = 0
+	for gz in range(0, OCC_SIZE, 6):
+		for gx in range(0, OCC_SIZE, 6):
+			var p: Vector2 = _occ_origin + Vector2(gx + rng.randf_range(1.0, 5.0), gz + rng.randf_range(1.0, 5.0))
+			var grove: float = noise.get_noise_2d(p.x, p.y) * 0.5 + 0.5
+			if rng.randf() > 0.2 + grove * 0.72:
+				continue
+			var spot := Rect2(p - Vector2(1.7, 1.7), Vector2(3.4, 3.4))
+			if not _occ_clear(spot):
+				continue
+			_streetscape.tree(Vector3(p.x, 0, p.y), rng.randf() < 0.22, 7, 10)
+			_occ_mark(spot.grow(0.4))
+			trees += 1
+	for gz in range(0, OCC_SIZE, 3):
+		for gx in range(0, OCC_SIZE, 3):
+			var p: Vector2 = _occ_origin + Vector2(gx + rng.randf_range(0.5, 2.5), gz + rng.randf_range(0.5, 2.5))
+			var grove: float = noise.get_noise_2d(p.x + 40.0, p.y) * 0.5 + 0.5
+			if rng.randf() > 0.08 + grove * 0.45:
+				continue
+			var spot := Rect2(p - Vector2(0.75, 0.75), Vector2(1.5, 1.5))
+			if not _occ_clear(spot):
+				continue
+			_streetscape.shrub(Vector3(p.x, 0, p.y), rng.randf_range(0.7, 1.25))
+			_occ_mark(spot)
+			shrubs += 1
+	return Vector2i(trees, shrubs)

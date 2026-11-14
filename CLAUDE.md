@@ -77,6 +77,18 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   `PedestrianSignals.gd`: WALK while SUMO's crossing is green, a flashing hand while walkers are
   still on a crossing after WALK ends (crossing_safety.py holds traffic for them), steady hand
   otherwise. `validate_street_details.gd` checks all of this.
+  Filling stations come from `AccraStreetscape.filling_station` (placed by
+  `EnvironmentBuilder._place_petrol_station` with a facing, shop side and driveways) and
+  carry the project's own "Sankofa" fuel brand, not a real retailer. The single junction's
+  station is reached by an access lane off Achimota Forest Rd; stations sit so street lamps
+  land on kerb strips, not driveways.
+  The football grounds come from `AccraStreetscape.football_ground` (stand on the side away
+  from the junction; masts register night lights in `_stadium_lights`), and both scenes'
+  utility poles from `PowerLines.gd`. `EnvironmentBuilder._infill_lots` runs just before the
+  backdrop: it rasterises everything built so far (kit batches, scene meshes, exclusion
+  zones, plots, arterials, airport) and fills what is left with homes, sheds, smallholdings
+  and greenery, so anything new must exist (or reserve its zone) before that call. Ground
+  shader kinds 7 (mown turf) and 8 (bare laterite) were added for the pitch, tracks and farms.
   **K** now paints each sensor's road footprint (wide camera, thermal, tele, radar) from
   its true field of view, head height and 10° tilt; ranges are shortened to the scene
   (`COVERAGE` in `SensorBuilder.gd`). The drone airframe (`DroneAirframe.gd`) is now a
