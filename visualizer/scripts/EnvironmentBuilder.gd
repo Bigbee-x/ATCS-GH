@@ -1,14 +1,23 @@
 extends Node3D
+
+const TransitLayout = preload("res://scripts/TransitLayout.gd")
+
+const SignLayout = preload("res://scripts/StreetSignLayout.gd")
 ## Procedurally generates Accra-style buildings, shops, compound walls,
 ## and market stalls along all road arms of the single junction.
 ##
-## All geometry is CSG-based — no imported models or textures.
+## Detailed mesh architecture and vegetation are built by AccraStreetscape;
+## legacy landmarks retain their geometry with shared weathered materials.
 ## Built once in _ready() with seeded RNG for deterministic placement.
 ##
 ## Placement zone:
 ##   [Grass] [Buildings] [Sidewalk] [Road] [Sidewalk] [Buildings] [Grass]
 
 # ── Road geometry (must match Intersection.gd) ──────────────────────────────
+const Streetscape = preload("res://scripts/AccraStreetscape.gd")
+const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
+var _streetscape: Node3D
+
 const ROAD_LENGTH     := 90.0
 const NS_ROAD_WIDTH   := 6.4
 const E_ROAD_WIDTH    := 6.4
@@ -22,8 +31,6 @@ const ROAD_THICKNESS  := 0.1
 const BUILDING_OFFSET := 2.6     # Setback: sidewalk edge → building face
                                  # (was 0.5 — buildings loomed over the road;
                                  # now gutter 0.6 + verge ~2.0 sit between)
-const MIN_GAP         := 0.3     # Minimum gap between buildings
-const MAX_GAP         := 1.5     # Maximum gap between buildings
 const JUNCTION_MARGIN := 5.5     # Don't place buildings too close to junction
                                  # (was 3.0 — crowded the TL poles/cabinets)
 const ROAD_END_MARGIN := 5.0     # Don't place buildings at road edge
@@ -32,80 +39,17 @@ const ROAD_END_MARGIN := 5.0     # Don't place buildings at road edge
 const GUTTER_WIDTH        := 0.6    # channel width, runs beside the sidewalk
 const GUTTER_RIM_W        := 0.10   # concrete rim thickness each side
 const GUTTER_RIM_H        := 0.15   # rim height (matches sidewalk curb)
-const GUTTER_BRIDGE_EVERY := 7.0    # avg spacing of access slab bridges
 const GUTTER_FLOOR_COLOR  := Color(0.10, 0.11, 0.12)   # dark channel interior
 const GUTTER_CONCRETE     := Color(0.62, 0.60, 0.56)   # weathered concrete
 const GUTTER_SLAB_COLOR   := Color(0.68, 0.66, 0.62)   # slightly lighter slabs
 
 # ── Accra facade palette ────────────────────────────────────────────────────
-const FACADE_COLORS: Array = [
-	Color(0.85, 0.72, 0.45),   # Ochre
-	Color(0.92, 0.88, 0.78),   # Cream
-	Color(0.78, 0.52, 0.38),   # Terracotta
-	Color(0.65, 0.78, 0.88),   # Pale blue
-	Color(0.68, 0.82, 0.62),   # Light green
-	Color(0.88, 0.72, 0.75),   # Pink
-	Color(0.92, 0.92, 0.90),   # White
-	Color(0.72, 0.70, 0.68),   # Warm gray
-]
-
-const AWNING_COLORS: Array = [
-	Color(0.85, 0.15, 0.12),   # Red
-	Color(0.15, 0.60, 0.25),   # Green
-	Color(0.18, 0.35, 0.75),   # Blue
-	Color(0.90, 0.78, 0.10),   # Yellow
-	Color(0.90, 0.50, 0.12),   # Orange
-]
-
-const WALL_COLORS: Array = [
-	Color(0.88, 0.85, 0.78),   # Cream wall
-	Color(0.75, 0.72, 0.68),   # Gray wall
-	Color(0.82, 0.78, 0.72),   # Sandy wall
-]
-
-const CANOPY_COLORS: Array = [
-	Color(0.85, 0.20, 0.15),   # Red canopy
-	Color(0.12, 0.55, 0.30),   # Green canopy
-	Color(0.20, 0.40, 0.80),   # Blue canopy
-	Color(0.90, 0.80, 0.15),   # Yellow canopy
-	Color(0.85, 0.45, 0.10),   # Orange canopy
-	Color(0.70, 0.25, 0.60),   # Purple canopy
-]
-
 # ── District palettes (quadrant fill) ───────────────────────────────────────
 const GLASS_COLORS: Array = [
 	Color(0.35, 0.50, 0.65),   # Blue-tinted glass
 	Color(0.40, 0.55, 0.60),   # Teal glass
 	Color(0.50, 0.55, 0.60),   # Silver glass
 	Color(0.30, 0.42, 0.55),   # Deep blue
-]
-
-const TOWER_BASE_COLORS: Array = [
-	Color(0.85, 0.85, 0.88),   # White
-	Color(0.55, 0.58, 0.62),   # Concrete gray
-	Color(0.75, 0.72, 0.68),   # Warm concrete
-	Color(0.92, 0.88, 0.78),   # Cream tower
-]
-
-const SCHOOL_COLORS: Array = [
-	Color(0.92, 0.88, 0.75),   # Cream
-	Color(0.88, 0.82, 0.68),   # Light tan
-]
-
-const CAR_COLORS: Array = [
-	Color(0.85, 0.20, 0.15),   # Red
-	Color(0.20, 0.35, 0.70),   # Blue
-	Color(0.90, 0.90, 0.88),   # White
-	Color(0.15, 0.15, 0.18),   # Black
-	Color(0.82, 0.80, 0.30),   # Yellow-ish
-	Color(0.60, 0.62, 0.65),   # Silver
-]
-
-const TREE_GREENS: Array = [
-	Color(0.22, 0.42, 0.20),   # Dark green
-	Color(0.32, 0.52, 0.26),   # Olive
-	Color(0.28, 0.58, 0.28),   # Medium
-	Color(0.40, 0.62, 0.32),   # Bright
 ]
 
 const PITCH_GREEN       := Color(0.30, 0.55, 0.28)
@@ -124,7 +68,7 @@ const CROSS_WHITE       := Color(0.95, 0.93, 0.90)
 const TREES_PER_QUADRANT := 18
 
 # ── Shared materials (created once) ─────────────────────────────────────────
-var _materials: Dictionary = {}   # Color hash → StandardMaterial3D
+var _materials: Dictionary = {}   # Glass material cache
 
 # ── Emissive materials for night-time glow (toggled via TimeOfDayManager) ───
 var _mat_window_warm: StandardMaterial3D   # House / residential windows (full-night)
@@ -152,23 +96,6 @@ const DUSK_WINDOW_EMISSION: float = 1.2
 ## Full-night emission intensity (same as the pre-dusk value for _mat_window_warm).
 const NIGHT_WINDOW_EMISSION: float = 2.2
 
-# ── Roadside facade detail (doors + windows with interior light) ────────────
-## Door dimensions and open-vs-closed probabilities for roadside buildings.
-## Open doors use a warm emissive material (_pick_window_warm) so they look
-## like "light spilling out through the doorway"; closed doors use a dark
-## wood panel.
-const ROADSIDE_DOOR_HEIGHT: float = 1.7
-const ROADSIDE_DOOR_WIDTH_HOUSE: float = 0.75
-const ROADSIDE_DOOR_WIDTH_SHOP: float = 1.05
-const ROADSIDE_DOOR_OPEN_PROB_HOUSE: float = 0.35
-const ROADSIDE_DOOR_OPEN_PROB_SHOP: float = 0.60
-const ROADSIDE_WINDOW_WIDTH: float = 0.55
-const ROADSIDE_WINDOW_HEIGHT: float = 0.65
-const ROADSIDE_UPPER_WINDOW_WIDTH: float = 0.55
-const ROADSIDE_UPPER_WINDOW_HEIGHT: float = 0.55
-const ROADSIDE_DETAIL_PROTRUDE: float = 0.035   # How far detail sits off facade (anti-z-fight)
-const ROADSIDE_DOOR_DARK: Color = Color(0.18, 0.12, 0.08)  # Stained wood
-
 var _is_dusk: bool = false
 var _is_night: bool = false
 
@@ -187,6 +114,9 @@ var _petrol_light: OmniLight3D = null
 var _placement_origin: Vector3 = Vector3.ZERO
 
 var _exclusion_zones: Array = []
+# Reserved full plots, including shop aprons, keep frontage and districts separate.
+var _occupied_plots: Array[Rect2] = []
+var frontage_uses: Array[Dictionary] = []
 
 # ── RNG ─────────────────────────────────────────────────────────────────────
 var _rng: RandomNumberGenerator
@@ -202,10 +132,24 @@ func _ready() -> void:
 
 	# Create shared emissive materials BEFORE any buildings reference them
 	_create_glow_materials()
+	_streetscape = Streetscape.new()
+	_streetscape.name = "DetailedStreetscape"
+	add_child(_streetscape)
+	_streetscape.configure(_mat_window_warm_early, _mat_window_cool_early)
 
+	for stop in TransitLayout.stations(corridor_mode):
+		var reserved: Rect2 = TransitLayout.plot(stop)
+		_add_exclusion_zone(reserved.position.x, reserved.position.y, reserved.end.x, reserved.end.y)
+	for spec in SignLayout.billboards(corridor_mode):
+		var plot: Rect2 = SignLayout.plot(spec)
+		_add_exclusion_zone(plot.position.x, plot.position.y, plot.end.x, plot.end.y)
 	if corridor_mode:
 		_build_corridor()
 	else:
+		# Lay out districts and their access streets before filling roadside plots.
+		_build_quadrants()
+		_build_junction_corners()
+		_reserve_district_buildings()
 		# Build along each of the 4 road arms of the single junction
 		# format: [arm_name, road_axis (0=X, 1=Z), dir_sign (+1/-1), road_width]
 		var arms: Array = [
@@ -221,9 +165,12 @@ func _ready() -> void:
 			var road_w: float = arm[3]
 			_build_arm_buildings(arm_name, axis, dir_sign, road_w)
 			_build_arm_gutters(axis, dir_sign, road_w)
-		# Junction corner anchors + quadrant districts (single junction only)
-		_build_junction_corners()
-		_build_quadrants()
+		for xs in [-1.0, 1.0]:
+			for zs in [-1.0, 1.0]:
+				_scatter_trees(xs, zs, TREES_PER_QUADRANT)
+
+	_streetscape.backdrop(corridor_mode)
+	_streetscape.finish()
 
 	# Hook into day/night cycle so emissive materials + OmniLights toggle correctly
 	_wire_day_night()
@@ -233,7 +180,7 @@ func _ready() -> void:
 	# head-height are harmless — the player can't reach them anyway.
 	_enable_collision_on_all_csg(self)
 
-	print("[EnvironmentBuilder] Built Accra streetscape + 4 quadrant districts + lights")
+	print("[EnvironmentBuilder] Built detailed Accra streetscape and district lighting")
 
 
 func _enable_collision_on_all_csg(node: Node) -> void:
@@ -469,97 +416,6 @@ func _pick_window_cool() -> StandardMaterial3D:
 # ROADSIDE FACADE DECORATION (doors + windows with interior light)
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _decorate_roadside_facade(body_center: Vector3, width: float,
-								height: float, depth: float,
-								road_dir: Vector3, lateral_dir: Vector3,
-								is_shop: bool) -> void:
-	## Place a door and one or two rows of windows on the road-facing face of a
-	## roadside building. Doors have a chance to be "open" (warm-lit aperture);
-	## closed doors get a dark wood panel. Windows use `_pick_window_warm()`
-	## so some light up at golden hour and others hold out until full night —
-	## this integrates with the existing dusk system in _apply_light_state().
-	##
-	## body_center: center of the building body (height/2 above ground)
-	## width:       dimension along the road (lateral)
-	## height:      building height from ground
-	## depth:       dimension perpendicular to road (into building)
-	## road_dir:    unit vector pointing outward from the facade toward the road
-	## lateral_dir: unit vector along the facade (perpendicular to road_dir, horizontal)
-	## is_shop:     true for shop fronts (wider door, higher open probability)
-	##
-	## Details sit ROADSIDE_DETAIL_PROTRUDE outside the facade plane to avoid
-	## z-fighting with the body geometry.
-	var lateral_is_x: bool = abs(lateral_dir.x) > 0.5
-
-	# Facade plane sits at body_center.xz + road_dir * depth/2. We push
-	# details a tiny bit beyond that so they render cleanly against the body.
-	var facade_base: Vector3 = Vector3(body_center.x, 0.0, body_center.z) \
-							   + road_dir * (depth / 2.0 + ROADSIDE_DETAIL_PROTRUDE)
-
-	# ── Door ────────────────────────────────────────────────────────────────
-	var door_width: float = ROADSIDE_DOOR_WIDTH_SHOP if is_shop else ROADSIDE_DOOR_WIDTH_HOUSE
-	door_width = min(door_width, width * 0.55)
-	var door_height: float = min(ROADSIDE_DOOR_HEIGHT, height * 0.75)
-	var door_open_prob: float = ROADSIDE_DOOR_OPEN_PROB_SHOP if is_shop else ROADSIDE_DOOR_OPEN_PROB_HOUSE
-	var door_is_open: bool = _rng.randf() < door_open_prob
-
-	var door := CSGBox3D.new()
-	if lateral_is_x:
-		door.size = Vector3(door_width, door_height, 0.06)
-	else:
-		door.size = Vector3(0.06, door_height, door_width)
-	door.position = facade_base + Vector3(0.0, door_height / 2.0, 0.0)
-	if door_is_open:
-		door.material = _pick_window_warm()   # Warm interior glow spilling out
-	else:
-		door.material = _get_material(ROADSIDE_DOOR_DARK)
-	door.name = "RoadsideDoor"
-	add_child(door)
-
-	# ── Ground-floor flanking windows (skip if body is too narrow) ─────────
-	var gw_half_span: float = door_width / 2.0 + 0.32 + ROADSIDE_WINDOW_WIDTH / 2.0
-	var facade_margin: float = width / 2.0 - ROADSIDE_WINDOW_WIDTH / 2.0 - 0.12
-	if gw_half_span <= facade_margin:
-		var gw_y: float = min(door_height * 0.55 + 0.15,
-							  height - ROADSIDE_WINDOW_HEIGHT / 2.0 - 0.2)
-		for side in [-1.0, 1.0]:
-			var gwin := CSGBox3D.new()
-			if lateral_is_x:
-				gwin.size = Vector3(ROADSIDE_WINDOW_WIDTH, ROADSIDE_WINDOW_HEIGHT, 0.05)
-			else:
-				gwin.size = Vector3(0.05, ROADSIDE_WINDOW_HEIGHT, ROADSIDE_WINDOW_WIDTH)
-			gwin.position = facade_base + Vector3(0.0, gw_y, 0.0) \
-							+ lateral_dir * (side * gw_half_span)
-			gwin.material = _pick_window_warm()
-			gwin.name = "RoadsideWindowGround"
-			add_child(gwin)
-
-	# ── Upper-floor window row (only if tall enough for a 2nd storey) ──────
-	if height >= 2.8:
-		var upper_y: float = height - 0.8
-		var num_windows: int = max(2, int(width / 1.3))
-		for i in range(num_windows):
-			# Distribute windows across the facade, evenly spaced
-			var t_norm: float = (float(i) + 1.0) / (float(num_windows) + 1.0) - 0.5
-			var lateral_t: float = t_norm * (width - 0.5)
-			var uwin := CSGBox3D.new()
-			if lateral_is_x:
-				uwin.size = Vector3(ROADSIDE_UPPER_WINDOW_WIDTH,
-									ROADSIDE_UPPER_WINDOW_HEIGHT, 0.05)
-			else:
-				uwin.size = Vector3(0.05, ROADSIDE_UPPER_WINDOW_HEIGHT,
-									ROADSIDE_UPPER_WINDOW_WIDTH)
-			uwin.position = facade_base + Vector3(0.0, upper_y, 0.0) \
-							+ lateral_dir * lateral_t
-			uwin.material = _pick_window_warm()
-			uwin.name = "RoadsideWindowUpper"
-			add_child(uwin)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# EXCLUSION ZONES (prevent trees spawning on top of special features)
-# ═════════════════════════════════════════════════════════════════════════════
-
 func _add_exclusion_zone(x_min: float, z_min: float, x_max: float, z_max: float) -> void:
 	## Register a world-space AABB. _scatter_trees skips any position inside any zone.
 	_exclusion_zones.append([x_min, z_min, x_max, z_max])
@@ -576,39 +432,83 @@ func _in_exclusion_zone(x: float, z: float) -> bool:
 # ARM BUILDING GENERATION
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _build_arm_buildings(_arm_name: String, axis: int, dir_sign: float,
-						  road_width: float) -> void:
-	## Generate buildings along both sides of a road arm.
-	var sidewalk_edge: float = road_width / 2.0 + SIDEWALK_WIDTH
-	var build_start: float = JUNCTION_HALF + JUNCTION_MARGIN
-	var build_end: float = JUNCTION_HALF + ROAD_LENGTH - ROAD_END_MARGIN
+func _building_plot(center: Vector3, facing: Vector3, width: float, depth: float,
+		apron: float = 1.3) -> Rect2:
+	# Local +Z faces the road. Include roof edges and the usable front apron.
+	var size := Vector2(width + 0.8, depth + 0.4 + apron)
+	var at := center + facing * ((apron - 0.4) * 0.5)
+	if absf(facing.x) > 0.5:
+		size = Vector2(size.y, size.x)
+	return Rect2(Vector2(at.x, at.z) - size * 0.5, size)
 
-	# Both sides of the road: +perp and -perp
-	for side_sign in [-1.0, 1.0]:
-		var perp_offset: float = side_sign * (sidewalk_edge + BUILDING_OFFSET)
-		var cursor: float = build_start
 
-		while cursor < build_end:
-			# Choose building type with weighted random
-			var roll: float = _rng.randf()
-			var building_length: float
+func _reserve_district_buildings() -> void:
+	for use: Dictionary in _streetscape.land_uses:
+		_occupied_plots.append(_building_plot(use.center, use.facing, use.width, use.depth))
 
-			if roll < 0.45:
-				building_length = _place_block_building(axis, dir_sign, cursor, perp_offset, side_sign)
-			elif roll < 0.75:
-				building_length = _place_shop_front(axis, dir_sign, cursor, perp_offset, side_sign)
-			elif roll < 0.85:
-				building_length = _place_compound_wall(axis, dir_sign, cursor, perp_offset, side_sign)
-			else:
-				building_length = _place_market_stalls(axis, dir_sign, cursor, perp_offset, side_sign)
 
-			cursor += building_length + _rng.randf_range(MIN_GAP, MAX_GAP)
+func _plot_available(plot: Rect2) -> bool:
+	for zone in _exclusion_zones:
+		if plot.intersects(Rect2(zone[0], zone[1], zone[2] - zone[0], zone[3] - zone[1])):
+			return false
+	for occupied in _occupied_plots:
+		if plot.intersects(occupied):
+			return false
+	return true
+
+
+func _build_arm_buildings(arm_name: String, axis: int, dir_sign: float,
+		road_width: float) -> void:
+	var arm_id: int = ["north", "south", "east", "west"].find(arm_name)
+	for side in range(2):
+		var side_sign: float = -1.0 if side == 0 else 1.0
+		var face: float = side_sign * (road_width * 0.5 + SIDEWALK_WIDTH + BUILDING_OFFSET)
+		_build_frontage_strip(axis, dir_sign, JUNCTION_HALF + JUNCTION_MARGIN + 5.0,
+			JUNCTION_HALF + ROAD_LENGTH - ROAD_END_MARGIN, face, side_sign, arm_id * 2 + side)
+
+
+func _build_frontage_strip(axis: int, direction: float, start: float, end: float,
+		face: float, side: float, district_id: int) -> void:
+	# One anchor business per strip, followed by small independent shops/kiosks.
+	# Homes are exclusively in the interior neighbourhoods.
+	var anchors: Array[String] = ["supermarket", "mechanic", "mall", "police", "supermarket", "mechanic", "mall", "shop"]
+	var local_uses: Array[String] = ["shop", "kiosk", "shop", "shop", "kiosk"]
+	var cursor: float = start
+	var index: int = 0
+	while cursor < end:
+		var kind: String = anchors[district_id % anchors.size()] if index == 0 else local_uses[(index + district_id) % local_uses.size()]
+		var sizes: Dictionary = {"supermarket": Vector2(8.4, 5.2), "mall": Vector2(11.0, 5.5),
+			"mechanic": Vector2(8.0, 5.8), "police": Vector2(7.0, 5.0),
+			"shop": Vector2(4.6, 3.6), "kiosk": Vector2(2.6, 2.4)}
+		var size: Vector2 = sizes[kind]
+		if cursor + size.x > end:
+			break
+		var center := _compute_position(axis, direction, cursor + size.x * 0.5, face, side, size.y)
+		var facing := Vector3(0, 0, -side) if axis == 0 else Vector3(-side, 0, 0)
+		var plot := _building_plot(center, facing, size.x, size.y)
+		if not _plot_available(plot):
+			cursor += 1.0
+			continue
+		_streetscape.commercial(center, facing, size.x, size.y, kind)
+		# Each entrance has its own paved connection over the drain to the sidewalk.
+		var path := CSGBox3D.new()
+		var access_width: float = size.x * 0.75 if kind == "mechanic" else 1.35
+		path.size = _orient_size(axis, access_width, 0.08, BUILDING_OFFSET + 0.15)
+		path.position = _compute_position(axis, direction, cursor + size.x * 0.5,
+			face - side * (BUILDING_OFFSET + 0.075), side, BUILDING_OFFSET + 0.15) + Vector3(0, 0.16, 0)
+		path.material = SurfaceMaterials.surface(2, Color("aaa89a"))
+		path.name = "ShopAccessBridge"
+		add_child(path)
+		_occupied_plots.append(plot)
+		frontage_uses.append({"kind": kind, "center": center, "plot": plot})
+		cursor += size.x + 1.25
+		index += 1
 
 
 func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
 	## Open concrete drainage gutters along both sides of a road arm, in the
-	## strip between the sidewalk and the building setback, with periodic slab
-	## bridges so frontages stay accessible — the classic Accra streetscape.
+	## strip between the sidewalk and the building setback. Slab bridges align
+	## with shop entrances and the mouths of neighbourhood access streets.
 	var inner: float = road_width / 2.0 + SIDEWALK_WIDTH       # channel inner edge
 	var outer: float = inner + GUTTER_WIDTH                     # channel outer edge
 	var g_start: float = JUNCTION_HALF + 1.2                    # past the corner zone
@@ -637,19 +537,28 @@ func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
 			rim.name = "GutterRim"
 			add_child(rim)
 
-		# Access slab bridges across the channel at irregular intervals
-		var span: float = GUTTER_WIDTH + 2.0 * GUTTER_RIM_W
-		var cursor: float = g_start + _rng.randf_range(1.0, 3.5)
-		while cursor < g_end - 1.5:
+		# Road entrances get wide culvert slabs; individual shops place their own
+		# aligned access bridges, so none end at an arbitrary point on a wall.
+		for child in get_children():
+			if not child is CSGBox3D or not (String(child.name).begins_with("ResidentialStreet") or String(child.name).begins_with("CommercialAccess")):
+				continue
+			var runs_ns: bool = child.size.z > child.size.x
+			if runs_ns == (axis == 1):
+				continue
+			var along: float = child.position.z if axis == 1 else child.position.x
+			var across: float = child.position.x if axis == 1 else child.position.z
+			if signf(along) != dir_sign or signf(across) != side_sign:
+				continue
+			var span: float = 1.3
+			var entrance_width: float = child.size.z if axis == 1 else child.size.x
 			var slab := CSGBox3D.new()
-			slab.size = _orient_size(axis, 1.1, 0.06, span)
-			slab.position = _compute_position(axis, dir_sign, cursor,
+			slab.size = _orient_size(axis, entrance_width + 0.4, 0.08, span)
+			slab.position = _compute_position(axis, dir_sign, absf(along),
 					side_sign * (inner - GUTTER_RIM_W), side_sign, span) \
-					+ Vector3(0, GUTTER_RIM_H + 0.01, 0)
+					+ Vector3(0, 0.16, 0)
 			slab.material = _get_material(GUTTER_SLAB_COLOR)
 			slab.name = "GutterBridge"
 			add_child(slab)
-			cursor += GUTTER_BRIDGE_EVERY + _rng.randf_range(-1.5, 2.5)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -657,96 +566,42 @@ func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_corridor() -> void:
-	## Accra streetscape along the 3-junction corridor: building rows down both
-	## curbs of the N/S corridor + both curbs of every cross-street arm, plus a
-	## few landmark structures in the open blocks. Mirrors CorridorBuilder.gd
-	## geometry (junctions at Z 0/30/60, NS road half 3, cross/boundary arms 55).
-	var junctions: Array = [0.0, 30.0, 60.0]
-	var junc_half: float = 3.0
-	var ns_half: float = 3.0
-	var cross_arm: float = 55.0
-	var boundary: float = 55.0
-	var z_min: float = junctions[0] - junc_half - boundary    # -58
-	var z_max: float = junctions[2] + junc_half + boundary    # 118
-	var face_off: float = ns_half + SIDEWALK_WIDTH + BUILDING_OFFSET   # curb → building face
-
-	# Keep the institutional block (around the football pitch, +X / J0–J1) clear
-	# of generic frontage — registered BEFORE the frontage loops so they skip it.
-	# _corridor_institutional() then fills it deliberately (car park + trees),
-	# keeping only the big buildings (school + church).
-	_add_exclusion_zone(12.0, 5.0, 46.0, 27.0)
-	# Same for the hospital campus on the −X flank — it owns its block too.
+	# Districts own their land first. A single commercial strip faces each road;
+	# the former second row overlapped compounds and institutional grounds.
+	_add_exclusion_zone(12.0, 5.0, 60.0, 27.0)
 	_add_exclusion_zone(-50.0, 4.0, -10.0, 28.0)
-
-	# ── Building rows down both curbs of the N/S corridor ──────────────────
-	_placement_origin = Vector3(0, 0, z_min)
-	var span: float = z_max - z_min
-	for side_sign in [-1.0, 1.0]:
-		for row in range(2):                       # 2 frontage rows (districts fill behind)
-			var perp: float = side_sign * (face_off + row * 9.0)
-			var along: float = 4.0 + row * 3.0     # stagger so rows don't line up
-			while along < span - 4.0:
-				if _near_corridor_junction(z_min + along, junctions, junc_half + 6.0):
-					along += 5.0
-					continue
-				along += _place_corridor_building(1, 1.0, along, perp, side_sign) \
-						+ _rng.randf_range(MIN_GAP, MAX_GAP)
-	_placement_origin = Vector3.ZERO
-
-	# ── Building rows along each junction's E/W cross-street arms ───────────
-	for cz in junctions:
-		_placement_origin = Vector3(0, 0, cz)
-		for dir_sign in [-1.0, 1.0]:   # east reaches -X, west reaches +X (mirrored)
-			for side_sign in [-1.0, 1.0]:
-				for row in range(1):
-					var perp2: float = side_sign * (face_off + row * 9.0)
-					var d: float = junc_half + JUNCTION_MARGIN + row * 3.0
-					var d_end: float = junc_half + cross_arm - ROAD_END_MARGIN
-					while d < d_end:
-						d += _place_corridor_building(0, dir_sign, d, perp2, side_sign) \
-								+ _rng.randf_range(MIN_GAP, MAX_GAP)
-	_placement_origin = Vector3.ZERO
-
-	# ── Zoned districts — one themed district per flanking block, placed beyond
-	#    the frontage rows (mirrors the single-junction quadrants). Easy to
-	#    rearrange: just swap which helper goes at which block centre. ─────────
-	_placement_origin = Vector3.ZERO
-	_place_airport(38.0, 96.0)                # north boundary +X — shifted north so the runway clears the J2 cross-street frontage
-	_corridor_industrial(-38.0, 88.0)         # north boundary −X
-	_corridor_offices(38.0, 45.0)             # J1–J2 +X — commercial / skyscrapers
-	_corridor_residential(-38.0, 45.0, 3, 1)  # J1–J2 −X — homes
-	_corridor_institutional(38.0, 16.0)       # J0–J1 +X — school + pitch + church
-	_corridor_hospital(-38.0, 16.0)           # J0–J1 −X
-	_corridor_residential(38.0, -32.0, 3, 3)  # south boundary +X — suburb
-	_corridor_market(-38.0, -32.0)            # south boundary −X — market + trotro
+	_place_airport(38.0, 96.0)
+	_corridor_industrial(-38.0, 88.0)
+	_corridor_offices(38.0, 45.0)
+	for i in range(3):
+		_place_apartment(Vector3(-24.0 - i * 14.0, 0, 45.0), [8, 11, 9][i], 8.0, 6.0)
+	_corridor_institutional(38.0, 16.0)
+	_corridor_hospital(-38.0, 16.0)
+	_corridor_residential(38.0, -32.0, 3, 3)
+	_corridor_market(-38.0, -32.0)
 	_place_petrol_station(Vector3(24.0, 0, -10.0))
 	_place_petrol_station(Vector3(-24.0, 0, 70.0))
+	_reserve_district_buildings()
 
-
-func _place_corridor_building(axis: int, dir_sign: float, along: float,
-		perp: float, side_sign: float) -> float:
-	## Weighted random street building (mirrors _build_arm_buildings' picker).
-	# Skip spots inside a registered keep-clear zone (e.g. the institutional
-	# block) so a district can own its land instead of generic frontage.
-	var probe: Vector3 = _compute_position(axis, dir_sign, along + 1.5, perp, side_sign, 3.0)
-	if _in_exclusion_zone(probe.x, probe.z):
-		return 3.0   # advance the cursor past this spot without building
-	var roll: float = _rng.randf()
-	if roll < 0.45:
-		return _place_block_building(axis, dir_sign, along, perp, side_sign)
-	elif roll < 0.75:
-		return _place_shop_front(axis, dir_sign, along, perp, side_sign)
-	elif roll < 0.85:
-		return _place_compound_wall(axis, dir_sign, along, perp, side_sign)
-	else:
-		return _place_market_stalls(axis, dir_sign, along, perp, side_sign)
-
-
-func _near_corridor_junction(z: float, junctions: Array, margin: float) -> bool:
-	for cz in junctions:
-		if absf(z - cz) < margin:
-			return true
-	return false
+	# The corridor sidewalk is 0.7 wide; every frontage faces the actual curb.
+	var junctions: Array[float] = [0.0, 30.0, 60.0]
+	for side in range(2):
+		var side_sign: float = -1.0 if side == 0 else 1.0
+		var face: float = side_sign * (3.0 + 0.7 + BUILDING_OFFSET)
+		# Separate stretches preserve junction sightlines and crossing space.
+		for stretch in range(4):
+			var starts: Array[float] = [-53.0, 10.0, 40.0, 70.0]
+			var ends: Array[float] = [-10.0, 20.0, 50.0, 113.0]
+			_build_frontage_strip(1, 1.0, starts[stretch], ends[stretch], face, side_sign, stretch * 2 + side)
+	for j in range(3):
+		_placement_origin = Vector3(0, 0, junctions[j])
+		for direction in [-1.0, 1.0]:
+			var road_width: float = [5.0, 5.0, 3.0][j] if direction < 0 else [3.0, 5.0, 3.0][j]
+			for side in range(2):
+				var side_sign: float = -1.0 if side == 0 else 1.0
+				var face: float = side_sign * (road_width * 0.5 + 0.7 + BUILDING_OFFSET)
+				_build_frontage_strip(0, direction, 10.0, 53.0, face, side_sign, j * 2 + side + (2 if direction > 0 else 0))
+	_placement_origin = Vector3.ZERO
 
 
 ## ── Corridor districts — compose existing primitives at offsets from a block
@@ -755,9 +610,11 @@ func _near_corridor_junction(z: float, junctions: Array, margin: float) -> bool:
 
 func _corridor_offices(cx: float, cz: float) -> void:
 	## Commercial core: tall glassy towers + mid-rise + parking.
-	_place_office_tower(Vector3(cx - 12, 0, cz - 4), 8, 6.5, 6.5)
-	_place_office_tower(Vector3(cx + 2, 0, cz + 5), 6, 6.0, 6.0)
-	_place_midrise_office(Vector3(cx + 14, 0, cz - 5), 4, 5.0, 5.0)
+	_place_residential_street(Vector3(cx - 20, 0, cz), 30.0, true, 2.5, "CommercialAccess")
+	_place_residential_street(Vector3(cx, 0, cz - 10), 40.0, false, 2.5, "CommercialAccess")
+	_place_office_tower(Vector3(cx - 12, 0, cz - 4), 12, 7.0, 7.0)
+	_place_office_tower(Vector3(cx + 2, 0, cz + 4), 10, 7.0, 6.5)
+	_place_midrise_office(Vector3(cx + 14, 0, cz - 4), 8, 6.0, 6.0)
 	_place_midrise_office(Vector3(cx - 4, 0, cz + 7), 3, 4.5, 4.5)
 	_place_parking_lot(Vector3(cx + 13, 0, cz + 6), 9.0, 5.0, 6)
 	_place_stadium_light(Vector3(cx + 6, 0, cz))
@@ -773,7 +630,14 @@ func _corridor_residential(cx: float, cz: float, cols: int, rows: int) -> void:
 			var x: float = cx + (float(i) - (cols - 1) / 2.0) * 14.0
 			var z: float = cz + (float(j) - (rows - 1) / 2.0) * 15.0
 			var st: int = 1 if _rng.randf() < 0.4 else 2
-			_place_house_compound(Vector3(x, 0, z), 11.0, st)
+			if j == rows - 1:
+				# The row nearest the cross street is a service/commercial buffer.
+				_streetscape.commercial(Vector3(x, 0, z), Vector3.BACK, 8.0, 5.0,
+					["supermarket", "shop", "police"][i % 3])
+			elif i == 1 and j == 1:
+				_place_apartment(Vector3(x, 0, z), 9, 8.0, 8.0)
+			else:
+				_place_house_compound(Vector3(x, 0, z), 11.0, st)
 	# Internal streets between the rows/columns of compounds.
 	var ns_len: float = (float(rows) - 1.0) * 15.0 + 14.0
 	if cols >= 2:
@@ -856,473 +720,30 @@ func _corridor_market(cx: float, cz: float) -> void:
 	_place_stadium_light(Vector3(cx, 0, cz))
 
 
-func _place_airport(cx: float, cz: float) -> void:
-	## Airport district — a clean runway (centreline + threshold "piano keys"),
-	## a concrete apron set off on the +X side carrying a long glass terminal
-	## with a KOTOKA sign, a tall control tower with a red beacon, an arched
-	## hangar, and parked jets at the gates. ALL buildings sit on the apron, well
-	## clear of the runway (x ≥ ~50; runway right edge ≈ cx+4.5).
-	var asphalt: StandardMaterial3D = _get_material(Color(0.15, 0.15, 0.17))
-	var concrete: StandardMaterial3D = _get_material(Color(0.33, 0.33, 0.36))
-	var paint: StandardMaterial3D = _get_material(Color(0.92, 0.92, 0.92))
-
-	# ── Runway (long in Z) + centreline + threshold bars ──
-	var runway := CSGBox3D.new()
-	runway.size = Vector3(9.0, 0.12, 44.0)
-	runway.position = Vector3(cx, 0.06, cz)
-	runway.material = asphalt
-	runway.name = "Runway"
-	add_child(runway)
-	var z: float = cz - 18.0
-	while z <= cz + 18.0:
-		var dash := CSGBox3D.new()
-		dash.size = Vector3(0.5, 0.04, 2.6)
-		dash.position = Vector3(cx, 0.13, z)
-		dash.material = paint
-		add_child(dash)
-		z += 5.6
-	for end_z in [cz - 20.5, cz + 20.5]:
-		for k in range(-2, 3):
-			var bar := CSGBox3D.new()
-			bar.size = Vector3(0.7, 0.04, 3.0)
-			bar.position = Vector3(cx + k * 1.5, 0.13, end_z)
-			bar.material = paint
-			add_child(bar)
-
-	# ── Concrete apron on the +X side + taxiway link to the runway ──
-	var apron := CSGBox3D.new()
-	apron.size = Vector3(22.0, 0.08, 38.0)
-	apron.position = Vector3(cx + 17.0, 0.04, cz)
-	apron.material = concrete
-	apron.name = "Apron"
-	add_child(apron)
-	var taxi := CSGBox3D.new()
-	taxi.size = Vector3(8.0, 0.08, 8.0)
-	taxi.position = Vector3(cx + 7.0, 0.05, cz)
-	taxi.material = concrete
-	add_child(taxi)
-
-	# ── Terminal — long, low, glass curtain wall facing the runway (-X) ──
-	var tx: float = cx + 22.0    # 60
-	var term := CSGBox3D.new()
-	term.size = Vector3(8.0, 6.0, 24.0)
-	term.position = Vector3(tx, 3.0, cz)
-	term.material = _get_material(Color(0.82, 0.84, 0.88))
-	term.name = "AirportTerminal"
-	add_child(term)
-	var glassfront := CSGBox3D.new()           # glass curtain wall on the runway face
-	glassfront.size = Vector3(1.4, 5.0, 23.0)
-	glassfront.position = Vector3(tx - 4.4, 2.8, cz)
-	glassfront.material = _get_glass_material(GLASS_COLORS[0])
-	add_child(glassfront)
-	var fascia := CSGBox3D.new()               # roof overhang
-	fascia.size = Vector3(9.2, 0.6, 24.8)
-	fascia.position = Vector3(tx, 6.3, cz)
-	fascia.material = _get_material(Color(0.5, 0.52, 0.56))
-	add_child(fascia)
-	# KOTOKA rooftop sign facing the runway (Accra's real airport)
-	var sign := Label3D.new()
-	sign.text = "KOTOKA"
-	sign.font_size = 48
-	sign.pixel_size = 0.030
-	sign.modulate = Color(0.95, 0.22, 0.20)
-	sign.outline_size = 8
-	sign.outline_modulate = Color(0, 0, 0, 0.5)
-	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	sign.rotation.y = -PI / 2.0                # face -X (toward the runway/approach)
-	sign.position = Vector3(tx - 4.7, 7.5, cz)
-	sign.name = "AirportSign"
-	add_child(sign)
-
-	# ── Control tower — tall, glass cab, red beacon ──
-	var ctx: float = cx + 13.0   # 51 — between runway and terminal, clear of both
-	var ctz: float = cz - 16.0
-	var tower := CSGCylinder3D.new()
-	tower.radius = 1.0
-	tower.height = 17.0
-	tower.sides = 12
-	tower.position = Vector3(ctx, 8.5, ctz)
-	tower.material = _get_material(Color(0.86, 0.87, 0.90))
-	tower.name = "ControlTower"
-	add_child(tower)
-	var cab := CSGBox3D.new()
-	cab.size = Vector3(3.4, 2.4, 3.4)
-	cab.position = Vector3(ctx, 17.6, ctz)
-	cab.material = _get_glass_material(GLASS_COLORS[1])
-	add_child(cab)
-	var cabroof := CSGCylinder3D.new()
-	cabroof.radius = 2.1
-	cabroof.height = 0.4
-	cabroof.sides = 12
-	cabroof.position = Vector3(ctx, 18.9, ctz)
-	cabroof.material = _get_material(Color(0.4, 0.42, 0.45))
-	add_child(cabroof)
-	var beacon := CSGSphere3D.new()
-	beacon.radius = 0.35
-	beacon.radial_segments = 8
-	beacon.rings = 5
-	beacon.position = Vector3(ctx, 19.5, ctz)
-	var beacon_mat := StandardMaterial3D.new()
-	beacon_mat.albedo_color = Color(1.0, 0.10, 0.10)
-	beacon_mat.emission_enabled = true
-	beacon_mat.emission = Color(1.0, 0.15, 0.12)
-	beacon_mat.emission_energy_multiplier = 6.0
-	beacon_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	beacon.material = beacon_mat
-	beacon.name = "TowerBeacon"
-	add_child(beacon)
-
-	# ── Arched hangar past the north end of the terminal ──
-	_place_hangar(Vector3(cx + 20.0, 0, cz + 17.0))
-
-	# ── Parked jets at the gates (on the apron, wings clear of the runway) ──
-	_place_plane(Vector3(cx + 11.0, 0, cz - 3.0))
-	_place_plane(Vector3(cx + 11.0, 0, cz + 9.0))
-
-	# ── Apron / perimeter floods (bright at night) ──
-	for fl in [Vector3(cx + 6.0, 0, cz - 20.0), Vector3(cx + 6.0, 0, cz + 20.0),
-			Vector3(cx + 20.0, 0, cz - 18.0), Vector3(cx + 20.0, 0, cz + 18.0),
-			Vector3(cx + 14.0, 0, cz)]:
-		_place_yard_light(fl)
-
-	# ── Runway edge lights (emissive, always-on) + end OmniLights ──
-	var rl_mat := StandardMaterial3D.new()
-	rl_mat.albedo_color = Color(0.80, 0.90, 1.0)
-	rl_mat.emission_enabled = true
-	rl_mat.emission = Color(0.70, 0.85, 1.0)
-	rl_mat.emission_energy_multiplier = 8.0
-	var rz: float = cz - 20.0
-	while rz <= cz + 20.0:
-		for ex in [-1.0, 1.0]:
-			var bulb := CSGSphere3D.new()
-			bulb.radius = 0.22
-			bulb.position = Vector3(cx + ex * 5.0, 0.4, rz)
-			bulb.material = rl_mat
-			bulb.name = "RunwayLight"
-			add_child(bulb)
-		rz += 4.0
-	for endz in [cz - 22.0, cz + 22.0]:
-		var rl := OmniLight3D.new()
-		rl.position = Vector3(cx, 1.2, endz)
-		rl.omni_range = 18.0
-		rl.light_energy = 6.0
-		rl.light_color = Color(0.80, 0.90, 1.0)
-		rl.shadow_enabled = false
-		add_child(rl)
-
-	_add_exclusion_zone(cx - 8, cz - 28, cx + 32, cz + 28)
-
-
-func _place_hangar(center: Vector3) -> void:
-	## Arched-roof (Quonset) aircraft hangar with a big dark door facing the
-	## runway (-X). Box body + half-cylinder roof reads clearly as a hangar.
-	var w: float = 13.0
-	var d: float = 10.0
-	var hh: float = 5.0
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, hh, d)
-	body.position = center + Vector3(0, hh / 2.0, 0)
-	body.material = _get_material(Color(0.58, 0.60, 0.64))
-	body.name = "Hangar"
-	add_child(body)
-	var roof := CSGCylinder3D.new()             # arched roof, axis along Z
-	roof.radius = w / 2.0
-	roof.height = d
-	roof.sides = 18
-	roof.rotation = Vector3(deg_to_rad(90.0), 0, 0)
-	roof.position = center + Vector3(0, hh, 0)
-	roof.material = _get_material(Color(0.48, 0.50, 0.54))
-	add_child(roof)
-	var door := CSGBox3D.new()                  # big hangar door on the runway side
-	door.size = Vector3(0.3, hh * 0.85, d * 0.8)
-	door.position = center + Vector3(-w / 2.0, hh * 0.45, 0)
-	door.material = _get_material(Color(0.20, 0.21, 0.24))
-	add_child(door)
-
-
-func _place_plane(center: Vector3) -> void:
-	## A parked twin-engine jet — fuselage along Z, swept tail, engine nacelles
-	## under the wings. Wings are 10 wide so they clear the runway from the apron.
-	var white: StandardMaterial3D = _get_material(Color(0.93, 0.93, 0.95))
-	var body := CSGCylinder3D.new()
-	body.radius = 0.85
-	body.height = 9.0
-	body.rotation_degrees = Vector3(90, 0, 0)   # lie the fuselage along Z
-	body.position = center + Vector3(0, 1.3, 0)
-	body.material = white
-	body.name = "Plane"
-	add_child(body)
-	var wing := CSGBox3D.new()
-	wing.size = Vector3(10.0, 0.25, 2.2)
-	wing.position = center + Vector3(0, 1.3, 0.5)
-	wing.material = white
-	add_child(wing)
-	for ex in [-2.6, 2.6]:                       # under-wing engine nacelles
-		var eng := CSGCylinder3D.new()
-		eng.radius = 0.42
-		eng.height = 1.8
-		eng.sides = 12
-		eng.rotation_degrees = Vector3(90, 0, 0)
-		eng.position = center + Vector3(ex, 0.85, 0.9)
-		eng.material = _get_material(Color(0.5, 0.52, 0.55))
-		add_child(eng)
-	var tailwing := CSGBox3D.new()
-	tailwing.size = Vector3(4.0, 0.2, 1.2)
-	tailwing.position = center + Vector3(0, 1.5, -3.8)
-	tailwing.material = white
-	add_child(tailwing)
-	var tailfin := CSGBox3D.new()
-	tailfin.size = Vector3(0.25, 2.2, 1.6)
-	tailfin.position = center + Vector3(0, 2.4, -3.8)
-	tailfin.material = _get_material(Color(0.85, 0.2, 0.2))
-	add_child(tailfin)
+func _place_airport(_cx: float, _cz: float) -> void:
+	var layout = preload("res://scripts/AirportLayout.gd")
+	var plot: Rect2 = layout.SITE
+	_add_exclusion_zone(plot.position.x, plot.position.y, plot.end.x, plot.end.y)
+	var access: Rect2 = layout.ACCESS
+	_add_exclusion_zone(access.position.x, access.position.y, access.end.x, access.end.y)
+	var airport = preload("res://scripts/AirportBuilder.gd").new()
+	airport.name = "Airport"
+	add_child(airport)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # BUILDING TYPES
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _place_block_building(axis: int, dir_sign: float, along: float,
-						   perp: float, side_sign: float) -> float:
-	## Place a simple block building with roof parapet. Returns building length.
-	var width: float = _rng.randf_range(2.5, 5.0)
-	var depth: float = _rng.randf_range(2.5, 4.0)
-	var height: float = _rng.randf_range(1.8, 5.0)
-	var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
-
-	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
-
-	# Body
-	var body := CSGBox3D.new()
-	body.size = _orient_size(axis, width, height, depth)
-	body.position = pos + Vector3(0, height / 2.0, 0)
-	body.material = _get_material(facade_color)
-	body.name = "BlockBody"
-	add_child(body)
-
-	# Roof parapet (slightly wider, darker)
-	var parapet := CSGBox3D.new()
-	parapet.size = _orient_size(axis, width + 0.1, 0.15, depth + 0.1)
-	parapet.position = pos + Vector3(0, height + 0.075, 0)
-	parapet.material = _get_material(facade_color * 0.7)
-	parapet.name = "BlockParapet"
-	add_child(parapet)
-
-	# Road-facing door + windows with their own interior glow, so the building
-	# has presence at night instead of just catching street-light spill.
-	var road_dir: Vector3 = Vector3(0.0, 0.0, -side_sign) if axis == 0 else Vector3(-side_sign, 0.0, 0.0)
-	var lateral_dir: Vector3 = Vector3(1.0, 0.0, 0.0) if axis == 0 else Vector3(0.0, 0.0, 1.0)
-	_decorate_roadside_facade(body.position, width, height, depth,
-							  road_dir, lateral_dir, false)
-
-	return width
-
-
-func _place_shop_front(axis: int, dir_sign: float, along: float,
-					   perp: float, side_sign: float) -> float:
-	## Place a shop with awning. Returns building length.
-	var width: float = _rng.randf_range(2.0, 4.0)
-	var depth: float = _rng.randf_range(2.0, 3.5)
-	var height: float = _rng.randf_range(1.5, 3.0)
-	var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
-	var awning_color: Color = AWNING_COLORS[_rng.randi() % AWNING_COLORS.size()]
-
-	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
-
-	# Building body
-	var body := CSGBox3D.new()
-	body.size = _orient_size(axis, width, height, depth)
-	body.position = pos + Vector3(0, height / 2.0, 0)
-	body.material = _get_material(facade_color)
-	body.name = "ShopBody"
-	add_child(body)
-
-	# Awning — extends toward the road
-	var awning := CSGBox3D.new()
-	var awning_depth: float = 1.2
-	awning.size = _orient_size(axis, width - 0.2, 0.06, awning_depth)
-	# Position awning toward the road side (negative side_sign direction)
-	var awning_offset: Vector3
-	if axis == 0:  # E/W road: perpendicular is Z
-		awning_offset = Vector3(0, height * 0.6, -side_sign * (depth / 2.0 + awning_depth / 2.0 - 0.2))
-	else:  # N/S road: perpendicular is X
-		awning_offset = Vector3(-side_sign * (depth / 2.0 + awning_depth / 2.0 - 0.2), height * 0.6, 0)
-	awning.position = pos + awning_offset
-	awning.material = _get_material(awning_color)
-	awning.name = "ShopAwning"
-	add_child(awning)
-
-	# Awning support pillar
-	var pillar := CSGCylinder3D.new()
-	pillar.radius = 0.04
-	pillar.height = height * 0.6
-	var pillar_offset: Vector3
-	if axis == 0:
-		pillar_offset = Vector3(0, height * 0.3, -side_sign * (depth / 2.0 + awning_depth - 0.4))
-	else:
-		pillar_offset = Vector3(-side_sign * (depth / 2.0 + awning_depth - 0.4), height * 0.3, 0)
-	pillar.position = pos + pillar_offset
-	pillar.material = _get_material(Color(0.3, 0.3, 0.32))
-	pillar.name = "ShopPillar"
-	add_child(pillar)
-
-	# Storefront door + windows — shops get a wider, more-often-open door and
-	# lit front-window so they read as "open for business" at dusk/night.
-	var road_dir: Vector3 = Vector3(0.0, 0.0, -side_sign) if axis == 0 else Vector3(-side_sign, 0.0, 0.0)
-	var lateral_dir: Vector3 = Vector3(1.0, 0.0, 0.0) if axis == 0 else Vector3(0.0, 0.0, 1.0)
-	_decorate_roadside_facade(body.position, width, height, depth,
-							  road_dir, lateral_dir, true)
-
-	return width
-
-
-func _place_compound_wall(axis: int, dir_sign: float, along: float,
-						  perp: float, side_sign: float) -> float:
-	## Place a low compound wall. Returns wall length.
-	var width: float = _rng.randf_range(4.0, 8.0)
-	var height: float = _rng.randf_range(0.6, 0.9)
-	var depth: float = 0.2
-	var wall_color: Color = WALL_COLORS[_rng.randi() % WALL_COLORS.size()]
-
-	var pos := _compute_position(axis, dir_sign, along + width / 2.0, perp, side_sign, depth)
-
-	var wall := CSGBox3D.new()
-	wall.size = _orient_size(axis, width, height, depth)
-	wall.position = pos + Vector3(0, height / 2.0, 0)
-	wall.material = _get_material(wall_color)
-	wall.name = "CompoundWall"
-	add_child(wall)
-
-	return width
-
-
-func _place_market_stalls(axis: int, dir_sign: float, along: float,
-						  perp: float, side_sign: float) -> float:
-	## Place a cluster of 3-5 small market stalls. Returns cluster length.
-	var stall_count: int = _rng.randi_range(3, 5)
-	var total_width: float = 0.0
-
-	for i in range(stall_count):
-		var sw: float = _rng.randf_range(0.8, 1.4)
-		var sd: float = _rng.randf_range(0.8, 1.2)
-		var sh: float = _rng.randf_range(1.0, 1.6)
-		var canopy_color: Color = CANOPY_COLORS[_rng.randi() % CANOPY_COLORS.size()]
-
-		var pos := _compute_position(axis, dir_sign, along + total_width + sw / 2.0, perp, side_sign, sd)
-
-		# Canopy top
-		var canopy := CSGBox3D.new()
-		canopy.size = _orient_size(axis, sw, 0.04, sd)
-		canopy.position = pos + Vector3(0, sh, 0)
-		canopy.material = _get_material(canopy_color)
-		canopy.name = "StallCanopy"
-		add_child(canopy)
-
-		# Support poles (2 corners)
-		for j in range(2):
-			var pole := CSGCylinder3D.new()
-			pole.radius = 0.025
-			pole.height = sh
-			var pole_along_offset: float = (sw / 2.0 - 0.1) * (1.0 if j == 0 else -1.0)
-			var pole_pos: Vector3
-			if axis == 1:  # N/S
-				pole_pos = pos + Vector3(0, sh / 2.0, dir_sign * pole_along_offset)
-			else:  # E/W
-				pole_pos = pos + Vector3(dir_sign * pole_along_offset, sh / 2.0, 0)
-			pole.position = pole_pos
-			pole.material = _get_material(Color(0.3, 0.28, 0.25))
-			pole.name = "StallPole"
-			add_child(pole)
-
-		total_width += sw + 0.2  # Tiny gap between stalls
-
-	return total_width
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# JUNCTION CORNER BUILDINGS
-# ═════════════════════════════════════════════════════════════════════════════
-
 func _build_junction_corners() -> void:
-	## Place distinctive anchor buildings at the 4 corners of the junction.
-	## Faces respect the same setback line as the arm buildings (sidewalk +
-	## BUILDING_OFFSET), so corners no longer crowd the TL poles or the road.
 	var face_line: float = JUNCTION_HALF + SIDEWALK_WIDTH + BUILDING_OFFSET
-	var corner_signs: Array = [
-		Vector2(-1,  1),   # NW
-		Vector2( 1,  1),   # NE
-		Vector2(-1, -1),   # SW
-		Vector2( 1, -1),   # SE
-	]
+	var signs: Array[Vector2] = [Vector2(-1, 1), Vector2(1, 1), Vector2(-1, -1), Vector2(1, -1)]
+	for i in range(signs.size()):
+		var sgn: Vector2 = signs[i]
+		var pos := Vector3(sgn.x * (face_line + 2.1), 0, sgn.y * (face_line + 2.1))
+		var facing := Vector3(0, 0, -sgn.y) if i % 2 == 0 else Vector3(-sgn.x, 0, 0)
+		_streetscape.commercial(pos, facing, 4.2, 4.2, "shop")
 
-	for i in range(corner_signs.size()):
-		var height: float = _rng.randf_range(3.0, 5.5)
-		var width: float = _rng.randf_range(3.5, 5.0)
-		var depth: float = _rng.randf_range(3.0, 4.5)
-		var sgn: Vector2 = corner_signs[i]
-		# Center sits half a footprint behind the setback line on BOTH axes
-		var pos := Vector3(sgn.x * (face_line + width / 2.0), 0,
-						   sgn.y * (face_line + depth / 2.0))
-		var facade_color: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
-		var awning_color: Color = AWNING_COLORS[_rng.randi() % AWNING_COLORS.size()]
-
-		# Main building body
-		var body := CSGBox3D.new()
-		body.size = Vector3(width, height, depth)
-		body.position = pos + Vector3(0, height / 2.0, 0)
-		body.material = _get_material(facade_color)
-		body.name = "CornerBody_%d" % i
-		add_child(body)
-
-		# Roof parapet
-		var parapet := CSGBox3D.new()
-		parapet.size = Vector3(width + 0.15, 0.2, depth + 0.15)
-		parapet.position = pos + Vector3(0, height + 0.1, 0)
-		parapet.material = _get_material(facade_color * 0.65)
-		parapet.name = "CornerParapet_%d" % i
-		add_child(parapet)
-
-		# Awning on the road-facing side (toward junction center)
-		var awning := CSGBox3D.new()
-		var awning_w: float = width - 0.3
-		var awning_d: float = 1.4
-		awning.size = Vector3(awning_w, 0.06, awning_d)
-		# Position awning toward junction center
-		var dir_to_center: Vector3 = -pos.normalized()
-		awning.position = pos + Vector3(0, height * 0.45, 0) + dir_to_center * (depth / 2.0 + awning_d / 2.0 - 0.3)
-		awning.material = _get_material(awning_color)
-		awning.name = "CornerAwning_%d" % i
-		add_child(awning)
-
-		# Door + windows on the road-facing facade. Alternate the facing axis
-		# per-corner so 2 corners face the N/S arm and 2 face the E/W arm —
-		# avoids all 4 corner doors looking in the same direction.
-		# Corner body size is Vector3(width, height, depth) (X-along, Z-perp).
-		var facing_x_road: bool = (i % 2 == 0)   # i=0,2 face E/W arm (road_dir along Z)
-		var corner_road_dir: Vector3
-		var corner_lateral: Vector3
-		var corner_facade_w: float
-		var corner_facade_d: float
-		if facing_x_road:
-			# Facade faces the E/W arm: road_dir along Z toward junction
-			corner_road_dir = Vector3(0.0, 0.0, -sign(pos.z))
-			corner_lateral = Vector3(1.0, 0.0, 0.0)
-			corner_facade_w = width   # lateral is X (= width)
-			corner_facade_d = depth   # into-building is Z (= depth)
-		else:
-			# Facade faces the N/S arm: road_dir along X toward junction
-			corner_road_dir = Vector3(-sign(pos.x), 0.0, 0.0)
-			corner_lateral = Vector3(0.0, 0.0, 1.0)
-			corner_facade_w = depth   # lateral is Z (= depth)
-			corner_facade_d = width   # into-building is X (= width)
-		_decorate_roadside_facade(body.position, corner_facade_w, height,
-								  corner_facade_d, corner_road_dir,
-								  corner_lateral, true)  # corners act as shops (have awnings)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ═════════════════════════════════════════════════════════════════════════════
 
 func _compute_position(axis: int, dir_sign: float, along: float,
 					   perp: float, side_sign: float, depth: float) -> Vector3:
@@ -1344,16 +765,14 @@ func _orient_size(axis: int, width: float, height: float, depth: float) -> Vecto
 		return Vector3(width, height, depth)
 
 
-func _get_material(color: Color) -> StandardMaterial3D:
-	## Get or create a material for the given color (shared to reduce draw calls).
-	var key: int = color.to_rgba32()
-	if _materials.has(key):
-		return _materials[key]
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.8
-	_materials[key] = mat
-	return mat
+func _get_material(color: Color) -> Material:
+	# Existing landmarks now share the same tactile surfaces as the new kit.
+	var kind: int = 0
+	if color.is_equal_approx(ASPHALT):
+		kind = 1
+	elif color.is_equal_approx(ROOF_DARK):
+		kind = 4
+	return SurfaceMaterials.surface(kind, color)
 
 
 func _get_glass_material(color: Color) -> StandardMaterial3D:
@@ -1385,11 +804,6 @@ func _build_quadrants() -> void:
 	# Residential: SE  (compound houses)
 	_build_residential_quadrant(-1.0, -1.0)
 
-	# Scatter trees through all quadrants
-	for xs in [-1.0, 1.0]:
-		for zs in [-1.0, 1.0]:
-			_scatter_trees(xs, zs, TREES_PER_QUADRANT)
-
 	# One petrol station (SW inner corner — visible from junction)
 	_place_petrol_station(Vector3(22, 0, -22))
 
@@ -1398,14 +812,17 @@ func _build_quadrants() -> void:
 
 func _build_commercial_quadrant(xs: float, zs: float) -> void:
 	## NE quadrant — offices, tall towers, shopping mall, parking.
-	# Anchor tower (7 stories) — closest to junction, most visible
-	_place_office_tower(Vector3(xs * 24, 0, zs * 26), 7, 6.5, 6.5)
+	# Interior access connects the offices and mall to two clear street mouths.
+	_place_residential_street(Vector3(xs * 35, 0, zs * 45), 80.0, true, 3.0, "CommercialAccess")
+	_place_residential_street(Vector3(xs * 45, 0, zs * 45), 80.0, false, 3.0, "CommercialAccess")
+	# Taller offices step back behind the low commercial frontage.
+	_place_office_tower(Vector3(xs * 24, 0, zs * 26), 11, 7.5, 7.5)
 
-	# Secondary tower (6 stories) — mid-depth
-	_place_office_tower(Vector3(xs * 52, 0, zs * 36), 6, 6.0, 6.0)
+	# Secondary tower — mid-depth
+	_place_office_tower(Vector3(xs * 52, 0, zs * 36), 9, 7.0, 7.0)
 
-	# Tertiary tower (5 stories) — back
-	_place_office_tower(Vector3(xs * 26, 0, zs * 58), 5, 5.5, 5.5)
+	# Tertiary tower — back
+	_place_office_tower(Vector3(xs * 26, 0, zs * 58), 8, 6.5, 6.5)
 
 	# Shopping mall — long flat block at the far corner
 	_place_shopping_mall(Vector3(xs * 65, 0, zs * 65), 18.0, 5.5, 9.0)
@@ -1418,6 +835,8 @@ func _build_commercial_quadrant(xs: float, zs: float) -> void:
 	_place_midrise_office(Vector3(xs * 70, 0, zs * 25), 3, 4.5, 4.5)
 	_place_midrise_office(Vector3(xs * 42, 0, zs * 55), 4, 4.8, 4.8)
 	_place_midrise_office(Vector3(xs * 72, 0, zs * 50), 3, 4.5, 5.0)
+
+	_place_office_tower(Vector3(xs * 68, 0, zs * 39), 10, 7.0, 7.0)
 
 	# Extra area lights so the commercial quadrant reads at night.
 	_place_stadium_light(Vector3(xs * 16, 0, zs * 18))   # corner by junction
@@ -1515,7 +934,12 @@ func _build_residential_quadrant(xs: float, zs: float) -> void:
 	]
 	for pos in grid_positions:
 		var stories: int = 1 if _rng.randf() < 0.4 else 2
-		_place_house_compound(pos, 14.0, stories)
+		if pos.is_equal_approx(Vector3(xs * 46, 0, zs * 74)):
+			_place_apartment(pos, 11, 10.0, 9.0)
+		elif pos.is_equal_approx(Vector3(xs * 68, 0, zs * 50)):
+			_place_apartment(pos, 9, 10.0, 9.0)
+		else:
+			_place_house_compound(pos, 14.0, stories)
 
 	# ─── Internal residential street grid ─────────────────────────────
 	# Two N-S + two E-W streets thread between the compound rows. They
@@ -1568,197 +992,28 @@ func _build_residential_quadrant(xs: float, zs: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _place_office_tower(center: Vector3, stories: int, base_w: float, base_d: float) -> void:
-	## Stepped office tower: wider base + narrower top (modern Accra office style).
-	## Each story = 2.0 units tall. Glass bands alternate with slab bands.
-	var story_h: float = 2.0
-	var base_stories: int = int(ceil(stories * 0.55))
-	var top_stories: int = stories - base_stories
-	var base_h: float = base_stories * story_h
-	var top_h: float = top_stories * story_h
-
-	var base_col: Color = TOWER_BASE_COLORS[_rng.randi() % TOWER_BASE_COLORS.size()]
-	var glass_col: Color = GLASS_COLORS[_rng.randi() % GLASS_COLORS.size()]
-
-	# Base body
-	var base := CSGBox3D.new()
-	base.size = Vector3(base_w, base_h, base_d)
-	base.position = center + Vector3(0, base_h / 2.0, 0)
-	base.material = _get_material(base_col)
-	base.name = "TowerBase"
-	add_child(base)
-
-	# Horizontal glass bands on base (one per story, centred).
-	# ~70% lit (emissive at night), rest dark glass — reads as "some offices occupied".
-	for i in range(base_stories):
-		var band := CSGBox3D.new()
-		band.size = Vector3(base_w + 0.05, 0.7, base_d + 0.05)
-		band.position = center + Vector3(0, i * story_h + story_h * 0.55, 0)
-		if _rng.randf() < 0.7:
-			band.material = _pick_window_cool()
-		else:
-			band.material = _get_glass_material(glass_col)
-		band.name = "TowerGlassBand"
-		add_child(band)
-
-	# Upper tower (narrower, inset by ~15%)
-	if top_stories > 0:
-		var top_w: float = base_w * 0.82
-		var top_d: float = base_d * 0.82
-		var top := CSGBox3D.new()
-		top.size = Vector3(top_w, top_h, top_d)
-		top.position = center + Vector3(0, base_h + top_h / 2.0, 0)
-		top.material = _get_material(base_col)
-		top.name = "TowerTop"
-		add_child(top)
-
-		for i in range(top_stories):
-			var band := CSGBox3D.new()
-			band.size = Vector3(top_w + 0.05, 0.7, top_d + 0.05)
-			band.position = center + Vector3(0, base_h + i * story_h + story_h * 0.55, 0)
-			if _rng.randf() < 0.7:
-				band.material = _pick_window_cool()
-			else:
-				band.material = _get_glass_material(glass_col)
-			band.name = "TowerGlassBand"
-			add_child(band)
-
-	# Rooftop unit (antenna / AC housing)
-	var rooftop := CSGBox3D.new()
-	rooftop.size = Vector3(base_w * 0.35, 0.8, base_d * 0.35)
-	var total_h: float = base_h + top_h
-	rooftop.position = center + Vector3(0, total_h + 0.4, 0)
-	rooftop.material = _get_material(base_col * 0.8)
-	rooftop.name = "TowerRooftop"
-	add_child(rooftop)
+	_streetscape.office(center, stories, base_w, base_d)
 
 
 func _place_midrise_office(center: Vector3, stories: int, w: float, d: float) -> void:
-	## Shorter 3-4 story office — flat roof, simple bands.
-	var story_h: float = 1.8
-	var h: float = stories * story_h
-	var col: Color = TOWER_BASE_COLORS[_rng.randi() % TOWER_BASE_COLORS.size()]
-	var glass: Color = GLASS_COLORS[_rng.randi() % GLASS_COLORS.size()]
-
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, h, d)
-	body.position = center + Vector3(0, h / 2.0, 0)
-	body.material = _get_material(col)
-	body.name = "MidriseBody"
-	add_child(body)
-
-	for i in range(stories):
-		var band := CSGBox3D.new()
-		band.size = Vector3(w + 0.05, 0.55, d + 0.05)
-		band.position = center + Vector3(0, i * story_h + story_h * 0.55, 0)
-		if _rng.randf() < 0.65:
-			band.material = _pick_window_cool()
-		else:
-			band.material = _get_glass_material(glass)
-		band.name = "MidriseGlassBand"
-		add_child(band)
-
-	# Parapet
-	var parapet := CSGBox3D.new()
-	parapet.size = Vector3(w + 0.2, 0.25, d + 0.2)
-	parapet.position = center + Vector3(0, h + 0.125, 0)
-	parapet.material = _get_material(col * 0.75)
-	parapet.name = "MidriseParapet"
-	add_child(parapet)
+	_streetscape.office(center, stories, w, d)
 
 
-func _place_shopping_mall(center: Vector3, w: float, h: float, d: float) -> void:
-	## Long flat block with signage band. 2-3 stories equivalent height.
-	var base_col: Color = Color(0.78, 0.76, 0.74)
+func _place_apartment(center: Vector3, stories: int, w: float, d: float) -> void:
+	_streetscape.apartment(center, Vector3.BACK, stories, w, d)
 
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, h, d)
-	body.position = center + Vector3(0, h / 2.0, 0)
-	body.material = _get_material(base_col)
-	body.name = "MallBody"
-	add_child(body)
 
-	# Signage stripe near top of facade — shared emissive so it glows at night
-	var signage := CSGBox3D.new()
-	signage.size = Vector3(w + 0.08, 1.0, d + 0.08)
-	signage.position = center + Vector3(0, h - 0.8, 0)
-	signage.material = _mat_sign_glow
-	signage.name = "MallSign"
-	add_child(signage)
-
-	# Flat roof unit
-	var roof := CSGBox3D.new()
-	roof.size = Vector3(w * 0.4, 0.5, d * 0.6)
-	roof.position = center + Vector3(0, h + 0.25, 0)
-	roof.material = _get_material(ROOF_DARK)
-	roof.name = "MallRoof"
-	add_child(roof)
+func _place_shopping_mall(center: Vector3, w: float, _h: float, d: float) -> void:
+	_streetscape.commercial(center, Vector3.BACK, w, d, "mall")
 
 
 func _place_parking_lot(center: Vector3, w: float, d: float, num_cars: int) -> void:
-	## Flat asphalt slab + a few tiny colored boxes as parked cars.
-	var slab := CSGBox3D.new()
-	slab.size = Vector3(w, 0.08, d)
-	slab.position = center + Vector3(0, 0.04, 0)
-	slab.material = _get_material(ASPHALT)
-	slab.name = "ParkingSlab"
-	add_child(slab)
-
-	# Parked cars arranged in a rough grid
-	var cols: int = 4
-	var rows: int = max(1, int(ceil(float(num_cars) / cols)))
-	var col_spacing: float = w / (cols + 1)
-	var row_spacing: float = d / (rows + 1)
-	var placed: int = 0
-	for r in range(rows):
-		for c in range(cols):
-			if placed >= num_cars:
-				break
-			var car_col: Color = CAR_COLORS[_rng.randi() % CAR_COLORS.size()]
-			var car := CSGBox3D.new()
-			car.size = Vector3(0.55, 0.28, 1.0)
-			var cx: float = -w / 2.0 + (c + 1) * col_spacing
-			var cz: float = -d / 2.0 + (r + 1) * row_spacing
-			car.position = center + Vector3(cx, 0.22, cz)
-			car.material = _get_material(car_col)
-			car.name = "ParkedCar"
-			add_child(car)
-			placed += 1
+	_add_exclusion_zone(center.x - w * 0.5, center.z - d * 0.5, center.x + w * 0.5, center.z + d * 0.5)
+	_streetscape.parking_lot(center, w, d, num_cars)
 
 
 func _place_school_building(center: Vector3, stories: int, w: float, d: float) -> void:
-	## Classroom block — cream colored, window bands, low parapet.
-	var story_h: float = 1.9
-	var h: float = stories * story_h
-	var col: Color = SCHOOL_COLORS[_rng.randi() % SCHOOL_COLORS.size()]
-
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, h, d)
-	body.position = center + Vector3(0, h / 2.0, 0)
-	body.material = _get_material(col)
-	body.name = "SchoolBody"
-	add_child(body)
-
-	# Horizontal window bands (teal/green trim). ~40% lit at night — most
-	# classrooms are empty but a few admin / security lights stay on.
-	var window_col := Color(0.35, 0.55, 0.62)
-	for i in range(stories):
-		var band := CSGBox3D.new()
-		band.size = Vector3(w + 0.05, 0.45, d + 0.05)
-		band.position = center + Vector3(0, i * story_h + story_h * 0.6, 0)
-		if _rng.randf() < 0.4:
-			band.material = _pick_window_cool()
-		else:
-			band.material = _get_glass_material(window_col)
-		band.name = "SchoolWindowBand"
-		add_child(band)
-
-	# Parapet (red-brown to match common school roofs)
-	var parapet := CSGBox3D.new()
-	parapet.size = Vector3(w + 0.2, 0.3, d + 0.2)
-	parapet.position = center + Vector3(0, h + 0.15, 0)
-	parapet.material = _get_material(Color(0.55, 0.30, 0.22))
-	parapet.name = "SchoolParapet"
-	add_child(parapet)
+	_streetscape.building(center, Vector3.BACK, w, d, stories, false, true)
 
 
 func _place_football_pitch(center: Vector3, w: float, d: float) -> void:
@@ -1920,6 +1175,7 @@ func _place_stadium_light(base: Vector3) -> void:
 
 
 func _place_church(center: Vector3) -> void:
+	_add_exclusion_zone(center.x - 4.4, center.z - 7.5, center.x + 4.4, center.z + 5.4)
 	## Small chapel with a cross tower.
 	var hall_w := 8.0
 	var hall_h := 4.5
@@ -1966,162 +1222,15 @@ func _place_church(center: Vector3) -> void:
 
 
 func _place_clinic(center: Vector3) -> void:
-	## Small H-shape clinic. Central block + 2 wings.
-	var clinic_col := Color(0.92, 0.92, 0.90)
-	var h := 4.0
-
-	# Central block
-	var core := CSGBox3D.new()
-	core.size = Vector3(7.0, h, 3.5)
-	core.position = center + Vector3(0, h / 2.0, 0)
-	core.material = _get_material(clinic_col)
-	core.name = "ClinicCore"
-	add_child(core)
-
-	# Left wing
-	var wl := CSGBox3D.new()
-	wl.size = Vector3(2.8, h, 6.0)
-	wl.position = center + Vector3(-2.6, h / 2.0, 0)
-	wl.material = _get_material(clinic_col)
-	wl.name = "ClinicWingL"
-	add_child(wl)
-
-	# Right wing
-	var wr := CSGBox3D.new()
-	wr.size = Vector3(2.8, h, 6.0)
-	wr.position = center + Vector3(2.6, h / 2.0, 0)
-	wr.material = _get_material(clinic_col)
-	wr.name = "ClinicWingR"
-	add_child(wr)
-
-	# Red cross on front (signals "clinic") — emissive so it reads as a night beacon
-	var red_h := CSGBox3D.new()
-	red_h.size = Vector3(1.0, 0.25, 0.08)
-	red_h.position = center + Vector3(0, h - 0.8, -3.5 / 2.0 - 0.04)
-	red_h.material = _mat_cross_red
-	red_h.name = "ClinicCrossH"
-	add_child(red_h)
-	var red_v := CSGBox3D.new()
-	red_v.size = Vector3(0.25, 1.0, 0.08)
-	red_v.position = center + Vector3(0, h - 0.8, -3.5 / 2.0 - 0.04)
-	red_v.material = _mat_cross_red
-	red_v.name = "ClinicCrossV"
-	add_child(red_v)
+	_streetscape.building(center, Vector3.BACK, 8.0, 5.5, 2, false, true, "COMMUNITY\nHEALTH CENTRE")
 
 
 func _place_house_compound(center: Vector3, compound_size: float, stories: int) -> void:
-	## Low perimeter wall with a 1-2 story house inside.
-	var wall_h := 0.7
-	var wall_t := 0.15
-	var wall_col: Color = WALL_COLORS[_rng.randi() % WALL_COLORS.size()]
-	var half := compound_size / 2.0
-
-	# 4 walls
-	var walls: Array = [
-		[Vector3(0, wall_h / 2.0, half - wall_t / 2.0), Vector3(compound_size, wall_h, wall_t)],
-		[Vector3(0, wall_h / 2.0, -half + wall_t / 2.0), Vector3(compound_size, wall_h, wall_t)],
-		[Vector3(half - wall_t / 2.0, wall_h / 2.0, 0), Vector3(wall_t, wall_h, compound_size)],
-		[Vector3(-half + wall_t / 2.0, wall_h / 2.0, 0), Vector3(wall_t, wall_h, compound_size)],
-	]
-	for w_data in walls:
-		var wall := CSGBox3D.new()
-		wall.size = w_data[1]
-		wall.position = center + w_data[0]
-		wall.material = _get_material(wall_col)
-		wall.name = "CompoundWall"
-		add_child(wall)
-
-	# House inside
-	var house_col: Color = FACADE_COLORS[_rng.randi() % FACADE_COLORS.size()]
-	var house_w: float = _rng.randf_range(5.0, 7.0)
-	var house_d: float = _rng.randf_range(5.0, 7.0)
-	var story_h: float = 2.2
-	var house_h: float = stories * story_h
-	# Slight offset within compound
-	var offset_x: float = _rng.randf_range(-1.5, 1.5)
-	var offset_z: float = _rng.randf_range(-1.5, 1.5)
-
-	var house := CSGBox3D.new()
-	house.size = Vector3(house_w, house_h, house_d)
-	house.position = center + Vector3(offset_x, house_h / 2.0, offset_z)
-	house.material = _get_material(house_col)
-	house.name = "HouseBody"
-	add_child(house)
-
-	# Pitched roof cap
-	var roof := CSGBox3D.new()
-	roof.size = Vector3(house_w + 0.4, 0.5, house_d + 0.4)
-	roof.position = center + Vector3(offset_x, house_h + 0.25, offset_z)
-	roof.material = _get_material(Color(0.55, 0.25, 0.18))
-	roof.name = "HouseRoof"
-	add_child(roof)
-
-	# Warm-glow windows on all four facades (reads as "someone's home at night")
-	var house_center := center + Vector3(offset_x, 0, offset_z)
-	var window_w := 0.55
-	var window_h := 0.55
-	var win_depth := 0.05
-	for s in range(stories):
-		var row_y: float = s * story_h + story_h * 0.55
-		# Front (+Z) and back (-Z) faces — windows across the width
-		var num_x: int = int(max(2, round(house_w / 1.8)))
-		for n in range(num_x):
-			var wx: float = -house_w / 2.0 + house_w * (n + 1.0) / (num_x + 1.0)
-			var front := CSGBox3D.new()
-			front.size = Vector3(window_w, window_h, win_depth)
-			front.position = house_center + Vector3(wx, row_y, house_d / 2.0 + win_depth / 2.0)
-			front.material = _pick_window_warm()
-			front.name = "HouseWindowFront"
-			add_child(front)
-			var back := CSGBox3D.new()
-			back.size = Vector3(window_w, window_h, win_depth)
-			back.position = house_center + Vector3(wx, row_y, -house_d / 2.0 - win_depth / 2.0)
-			back.material = _pick_window_warm()
-			back.name = "HouseWindowBack"
-			add_child(back)
-		# Left (-X) and right (+X) faces — windows across the depth
-		var num_z: int = int(max(2, round(house_d / 1.8)))
-		for n in range(num_z):
-			var wz: float = -house_d / 2.0 + house_d * (n + 1.0) / (num_z + 1.0)
-			var right := CSGBox3D.new()
-			right.size = Vector3(win_depth, window_h, window_w)
-			right.position = house_center + Vector3(house_w / 2.0 + win_depth / 2.0, row_y, wz)
-			right.material = _pick_window_warm()
-			right.name = "HouseWindowRight"
-			add_child(right)
-			var left := CSGBox3D.new()
-			left.size = Vector3(win_depth, window_h, window_w)
-			left.position = house_center + Vector3(-house_w / 2.0 - win_depth / 2.0, row_y, wz)
-			left.material = _pick_window_warm()
-			left.name = "HouseWindowLeft"
-			add_child(left)
+	_streetscape.compound(center, compound_size, stories)
 
 
 func _place_warehouse(center: Vector3, w: float, h: float, d: float) -> void:
-	## Large plain industrial block with corrugated-look roof cap.
-	var col := Color(0.65, 0.63, 0.60)
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, h, d)
-	body.position = center + Vector3(0, h / 2.0, 0)
-	body.material = _get_material(col)
-	body.name = "WarehouseBody"
-	add_child(body)
-
-	# Rollup door (darker panel on front face)
-	var door := CSGBox3D.new()
-	door.size = Vector3(w * 0.35, h * 0.7, 0.06)
-	door.position = center + Vector3(0, h * 0.35, -d / 2.0 - 0.03)
-	door.material = _get_material(Color(0.3, 0.3, 0.32))
-	door.name = "WarehouseDoor"
-	add_child(door)
-
-	# Roof cap (slightly darker, wider)
-	var roof := CSGBox3D.new()
-	roof.size = Vector3(w + 0.2, 0.25, d + 0.2)
-	roof.position = center + Vector3(0, h + 0.125, 0)
-	roof.material = _get_material(col * 0.75)
-	roof.name = "WarehouseRoof"
-	add_child(roof)
+	_streetscape.warehouse(center, w, h, d)
 
 
 func _place_trotro_station(center: Vector3) -> void:
@@ -2173,95 +1282,14 @@ func _place_trotro_station(center: Vector3) -> void:
 
 
 func _place_dense_market_stalls(center: Vector3, rows: int, cols: int) -> void:
-	## Dense grid of market stalls (much denser than the along-road clusters).
-	var stall_w := 1.8
-	var stall_d := 1.8
-	var stall_h := 2.0
-	var gap := 0.5
-	var total_w: float = cols * stall_w + (cols - 1) * gap
-	var total_d: float = rows * stall_d + (rows - 1) * gap
-
-	for r in range(rows):
-		for c in range(cols):
-			var canopy_col: Color = CANOPY_COLORS[_rng.randi() % CANOPY_COLORS.size()]
-			var cx: float = -total_w / 2.0 + stall_w / 2.0 + c * (stall_w + gap)
-			var cz: float = -total_d / 2.0 + stall_d / 2.0 + r * (stall_d + gap)
-			var stall_center: Vector3 = center + Vector3(cx, 0, cz)
-
-			# Canopy top
-			var canopy := CSGBox3D.new()
-			canopy.size = Vector3(stall_w, 0.08, stall_d)
-			canopy.position = stall_center + Vector3(0, stall_h, 0)
-			canopy.material = _get_material(canopy_col)
-			canopy.name = "DenseStallCanopy"
-			add_child(canopy)
-
-			# 2 support poles (corners)
-			for sx in [-1.0, 1.0]:
-				var pole := CSGCylinder3D.new()
-				pole.radius = 0.04
-				pole.height = stall_h
-				pole.position = stall_center + Vector3(sx * (stall_w / 2.0 - 0.15), stall_h / 2.0, 0)
-				pole.material = _get_material(Color(0.3, 0.28, 0.25))
-				pole.name = "DenseStallPole"
-				add_child(pole)
+	for row in range(rows):
+		for col in range(cols):
+			var pos := center + Vector3((col - (cols - 1) * 0.5) * 2.3, 0, (row - (rows - 1) * 0.5) * 2.8)
+			_streetscape.market_stall(pos, Vector3.BACK, 1.8, 1.7)
 
 
 func _place_factory(center: Vector3, w: float, h: float, d: float) -> void:
-	## Large industrial shed with corrugated roof, chimney stacks, lit windows,
-	## and a rollup loading door on the front face.
-	var wall_col := Color(0.60, 0.58, 0.55)
-	var roof_col := Color(0.40, 0.38, 0.36)
-
-	# Body
-	var body := CSGBox3D.new()
-	body.size = Vector3(w, h, d)
-	body.position = center + Vector3(0, h / 2.0, 0)
-	body.material = _get_material(wall_col)
-	body.name = "FactoryBody"
-	add_child(body)
-
-	# Corrugated roof cap
-	var roof := CSGBox3D.new()
-	roof.size = Vector3(w + 0.3, 0.3, d + 0.3)
-	roof.position = center + Vector3(0, h + 0.15, 0)
-	roof.material = _get_material(roof_col)
-	roof.name = "FactoryRoof"
-	add_child(roof)
-
-	# 2 chimney stacks
-	for sx in [-1.0, 1.0]:
-		var stack := CSGCylinder3D.new()
-		stack.radius = 0.45
-		stack.height = h * 0.7
-		stack.position = center + Vector3(sx * w * 0.3, h + stack.height / 2.0, -d * 0.25)
-		stack.material = _get_material(Color(0.50, 0.48, 0.46))
-		stack.name = "FactoryStack"
-		add_child(stack)
-		# Red safety stripe near top
-		var stripe := CSGCylinder3D.new()
-		stripe.radius = 0.48
-		stripe.height = 0.25
-		stripe.position = stack.position + Vector3(0, stack.height / 2.0 - 0.4, 0)
-		stripe.material = _get_material(Color(0.82, 0.18, 0.15))
-		stripe.name = "FactoryStackStripe"
-		add_child(stripe)
-
-	# Window band on the long face (facing +z side here)
-	var win_band := CSGBox3D.new()
-	win_band.size = Vector3(w * 0.8, h * 0.22, 0.05)
-	win_band.position = center + Vector3(0, h * 0.55, d / 2.0 + 0.03)
-	win_band.material = _pick_window_warm()
-	win_band.name = "FactoryWindows"
-	add_child(win_band)
-
-	# Rollup loading door (front-center, dark gray)
-	var door := CSGBox3D.new()
-	door.size = Vector3(w * 0.22, h * 0.55, 0.08)
-	door.position = center + Vector3(0, h * 0.275, -d / 2.0 - 0.04)
-	door.material = _get_material(Color(0.28, 0.28, 0.30))
-	door.name = "FactoryDoor"
-	add_child(door)
+	_streetscape.factory(center, w, h, d)
 
 
 func _place_storage_tank(center: Vector3, radius: float, height: float) -> void:
@@ -2347,7 +1375,7 @@ func _place_container_yard(center: Vector3) -> void:
 
 
 func _place_residential_street(center: Vector3, length: float, is_ns: bool,
-							   width: float = 3.0) -> void:
+							   width: float = 3.0, street_name: String = "ResidentialStreet") -> void:
 	## Flat asphalt slab for an internal neighborhood street. Sits just above
 	## the ground plane; buildings and lamps placed on top render correctly.
 	var slab := CSGBox3D.new()
@@ -2355,9 +1383,11 @@ func _place_residential_street(center: Vector3, length: float, is_ns: bool,
 		slab.size = Vector3(width, 0.08, length)
 	else:
 		slab.size = Vector3(length, 0.08, width)
+	_add_exclusion_zone(center.x - slab.size.x * 0.5 - 0.25, center.z - slab.size.z * 0.5 - 0.25,
+		center.x + slab.size.x * 0.5 + 0.25, center.z + slab.size.z * 0.5 + 0.25)
 	slab.position = center + Vector3(0, 0.04, 0)
 	slab.material = _get_material(ASPHALT)
-	slab.name = "ResidentialStreet"
+	slab.name = street_name
 	add_child(slab)
 
 
@@ -2580,32 +1610,11 @@ func _place_goal_post(center: Vector3, facing_x: float) -> void:
 
 
 func _place_tree(center: Vector3) -> void:
-	## Simple tree: trunk cylinder + spherical canopy.
-	var trunk_h: float = _rng.randf_range(1.8, 3.0)
-	var canopy_r: float = _rng.randf_range(0.9, 1.6)
-	var canopy_col: Color = TREE_GREENS[_rng.randi() % TREE_GREENS.size()]
-
-	var trunk := CSGCylinder3D.new()
-	trunk.radius = 0.16
-	trunk.height = trunk_h
-	trunk.position = center + Vector3(0, trunk_h / 2.0, 0)
-	trunk.material = _get_material(TRUNK_COLOR)
-	trunk.name = "TreeTrunk"
-	add_child(trunk)
-
-	var canopy := CSGSphere3D.new()
-	canopy.radius = canopy_r
-	canopy.position = center + Vector3(0, trunk_h + canopy_r * 0.7, 0)
-	canopy.material = _get_material(canopy_col)
-	canopy.name = "TreeCanopy"
-	add_child(canopy)
+	_streetscape.tree(center, _rng.randf() < 0.18)
 
 
 func _scatter_trees(xs: float, zs: float, count: int) -> void:
-	## Scatter trees randomly across a quadrant. Honours _exclusion_zones so
-	## trees don't spawn on football pitch / factory footprints / etc. Minor
-	## overlap with houses / small buildings is still acceptable (reads as
-	## "tree in compound yard" visually).
+	## Keep scattered trees outside buildings, forecourts and access streets.
 	for _i in range(count):
 		# Up to 6 retries per tree to find a non-excluded spot
 		for _attempt in range(6):
@@ -2613,12 +1622,13 @@ func _scatter_trees(xs: float, zs: float, count: int) -> void:
 			var az: float = _rng.randf_range(16.0, 82.0)
 			var wx: float = xs * ax
 			var wz: float = zs * az
-			if not _in_exclusion_zone(wx, wz):
+			if _plot_available(Rect2(wx - 1.0, wz - 1.0, 2.0, 2.0)):
 				_place_tree(Vector3(wx, 0, wz))
 				break
 
 
 func _place_petrol_station(center: Vector3) -> void:
+	_add_exclusion_zone(center.x - 4.8, center.z - 3.8, center.x + 7.8, center.z + 3.8)
 	## Canopy on 4 pillars + 2 fuel pumps + small kiosk.
 	var canopy_w := 7.0
 	var canopy_d := 5.0

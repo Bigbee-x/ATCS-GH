@@ -48,7 +48,7 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   Brave/Edge/Chromium/Firefox), not the default browser. Keep local web UIs on
   127.0.0.1 + a non-Safari browser.
 - `visualizer/` — Godot 4.6.3 project (open + F5; binary at
-  `~/Downloads/Godot.app/Contents/MacOS/Godot`). Kenney Car Kit vehicles,
+  `/Applications/Godot 4.6.3.app/Contents/MacOS/Godot`). Kenney Car Kit vehicles,
   dual signal heads (horizontal overhead + 2-light pole head), township with
   setbacks + gutters. The corridor scene (`CorridorMain`) now
   matches the single junction: dual signal heads + stretched/widened junctions
@@ -63,6 +63,26 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   roadside concrete gutters, and utility poles were added (PR #14; the drone was
   reworked from a helicopter to the small quad in PR #15; sensors mount on the
   actual mast-arm side in PR #17; cars cast real headlight beams in PR #18).
+  **Nov 2026**: the pole camera + separate radar are replaced by the **TSH-1 sensor
+  head** (radar, wide/tele cameras, thermal) on a band-clamp saddle above the mast arm
+  (`SensorBuilder.gd`). `Sensor_CCTV` / `Sensor_Radar` remain as anchors on the head
+  so `tools/validate_street_details.gd` and `preview_street_details.gd` still work.
+  Each junction has ONE NEMA TS2 signal cabinet (`SignalCabinet_<jid>`: battery backup + 5G
+  antenna, beside the south pole on the SE corner, door facing away from the junction) in place of
+  the old box at every pole; each pole has a `PullBox`, and **K** also draws the duct runs to the
+  cabinet in magenta. Every approach also has a far-side through head + left arrow
+  (`SignalHardware.far_side`, `_lights[approach]["far"]`) on the pole at its far-left corner, lit with
+  the approach's own state. Each corner pole also carries two ITE pedestrian heads (hand /
+  walking person; `shaders/ped_lens.gdshader`), one per crossing at that corner, run by
+  `PedestrianSignals.gd`: WALK while SUMO's crossing is green, a flashing hand while walkers are
+  still on a crossing after WALK ends (crossing_safety.py holds traffic for them), steady hand
+  otherwise. `validate_street_details.gd` checks all of this.
+  **K** now paints each sensor's road footprint (wide camera, thermal, tele, radar) from
+  its true field of view, head height and 10° tilt; ranges are shortened to the scene
+  (`COVERAGE` in `SensorBuilder.gd`). The drone airframe (`DroneAirframe.gd`) is now a
+  compact folding consumer quad: slate fuselage, top battery, staggered front/rear arms,
+  short feet and a single-sided 3-axis gimbal. The `animate_flight` API is unchanged, and the
+  `RotorBlur` name stays because `validate_drone.gd` skips it in the envelope check.
   **PR #23**: the corridor overview panel (UI.gd) shows per-approach N/E/S/W
   queue mini-bars per junction (severity-colored, wait tooltips) — fed from the
   per-approach `queues`/`wait_times` the server always sent. **PR #24** added a

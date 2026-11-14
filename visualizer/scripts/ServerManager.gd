@@ -57,6 +57,8 @@ var server_pid: int = -1
 var _dashboard_pid: int = -1
 var _log_file_pos: int = 0
 var _is_starting: bool = false
+var active_port: int = PORT
+var last_error: String = ""
 var _poll_timer: Timer
 
 # ── Computed paths ──────────────────────────────────────────────────────────
@@ -123,13 +125,13 @@ func _resolve_project_root() -> void:
 # PUBLIC API
 # ═════════════════════════════════════════════════════════════════════════════
 
-func start_server(type: ServerType, args: Dictionary = {}) -> void:
+func start_server(type: ServerType, args: Dictionary = {}) -> bool:
 	## Start a Python SUMO server. Stops any existing server first.
 	## args: { "demo": bool, "speed": float, "port": int }
 	if _is_starting:
-		return
+		return false
 	if type == ServerType.NONE:
-		return
+		return false
 
 	_is_starting = true
 
@@ -139,13 +141,14 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 		# Brief wait for port release
 		await get_tree().create_timer(0.8).timeout
 
-	# Kill any ORPHAN processes on our ports (e.g. leftovers from a prior
-	# Godot session that exited without cleanup). Without this, the new
-	# server crashes immediately with EADDRINUSE and the UI loops on reconnect.
-	var orphaned: bool = _kill_orphans_on_ports([PORT, DASHBOARD_PORT])
-	if orphaned:
-		# Give the OS a moment to release the sockets
-		await get_tree().create_timer(0.5).timeout
+	# Never evict another application from a shared local port.
+	active_port = _available_port(int(args.get("port", PORT)))
+	last_error = ""
+	if active_port < 0:
+		_is_starting = false
+		last_error = "No free local port available for traffic."
+		server_error.emit(last_error)
+		return false
 
 	current_server = type
 	_log_file_pos = 0
@@ -160,19 +163,23 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 	var script_rel: String = SERVER_SCRIPTS.get(type, "")
 	if script_rel.is_empty():
 		_is_starting = false
-		server_error.emit("Unknown server type")
-		return
+		last_error = "Unknown server type"
+		current_server = ServerType.NONE
+		server_error.emit(last_error)
+		return false
 	var script_path: String = _project_root.path_join(script_rel)
 
 	# Verify the script exists
 	if not FileAccess.file_exists(script_path):
 		_is_starting = false
-		server_error.emit("Server script not found: %s" % script_path)
-		return
+		last_error = "Server script not found: %s" % script_path
+		current_server = ServerType.NONE
+		server_error.emit(last_error)
+		return false
 
 	# Build CLI arguments
 	var speed: float = args.get("speed", DEFAULT_SIM_SPEED)
-	var port: int = args.get("port", PORT)
+	var port: int = active_port
 	var demo: bool = args.get("demo", false)
 
 	var py_args: String = ""
@@ -184,9 +191,9 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 		py_args += " --port %d" % port
 
 	# Build bash command with exec (replaces bash with Python so PID is correct)
-	# Paths are double-quoted to handle spaces in "BIG PROJECT"
-	var bash_cmd: String = 'cd "%s" && exec "%s" "%s"%s > "%s" 2>&1' % [
-		_project_root, PYTHON_PATH, script_path, py_args, LOG_FILE
+	# Shell-quote paths, including spaces and apostrophes.
+	var bash_cmd: String = 'cd %s && exec %s -u %s%s > %s 2>&1' % [
+		_shell_quote(_project_root), _shell_quote(PYTHON_PATH), _shell_quote(script_path), py_args, _shell_quote(LOG_FILE)
 	]
 
 	print("[ServerManager] Running: %s" % bash_cmd)
@@ -197,19 +204,25 @@ func start_server(type: ServerType, args: Dictionary = {}) -> void:
 	if server_pid <= 0:
 		_is_starting = false
 		current_server = ServerType.NONE
-		server_error.emit("Failed to start server (OS.create_process returned %d)" % server_pid)
-		return
+		last_error = "Failed to start server (OS.create_process returned %d)" % server_pid
+		server_error.emit(last_error)
+		return false
 
 	print("[ServerManager] Started %s server — PID %d" % [get_server_type_name(), server_pid])
 
-	# Launch the dashboard and open browser
-	_start_dashboard()
-
-	# Start the poll timer
-	_poll_timer.start()
-
+	# A live process is not sufficient: wait until SUMO sends a state packet.
+	var ready: bool = await _wait_for_traffic(float(args.get("startup_timeout", 45.0)))
 	_is_starting = false
+	if not ready:
+		last_error = "Traffic server failed to produce simulation data. See the server log."
+		stop_server()
+		server_error.emit(last_error)
+		return false
+	_poll_timer.start()
 	server_started.emit(get_server_type_name())
+	if bool(args.get("dashboard", true)):
+		_start_dashboard()
+	return true
 
 
 func stop_server() -> void:
@@ -309,13 +322,16 @@ func _start_dashboard() -> void:
 		_open_dashboard_browser()
 		return
 
+	if not _port_is_available(DASHBOARD_PORT):
+		push_warning("[ServerManager] Dashboard port is in use; traffic continues without opening a dashboard.")
+		return
 	var dash_script: String = _project_root.path_join(DASHBOARD_SCRIPT)
 	if not FileAccess.file_exists(dash_script):
 		push_warning("[ServerManager] Dashboard script not found: %s" % dash_script)
 		return
 
-	var dash_cmd: String = 'cd "%s" && exec "%s" "%s" > "%s" 2>&1' % [
-		_project_root, PYTHON_PATH, dash_script, DASHBOARD_LOG
+	var dash_cmd: String = 'cd %s && exec env ATCS_WS_PORT=%d %s -u %s > %s 2>&1' % [
+		_shell_quote(_project_root), active_port, _shell_quote(PYTHON_PATH), _shell_quote(dash_script), _shell_quote(DASHBOARD_LOG)
 	]
 
 	_dashboard_pid = OS.create_process("/bin/bash", ["-c", dash_cmd])
@@ -368,42 +384,58 @@ func _stop_dashboard() -> void:
 		_dashboard_pid = -1
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# ORPHAN PROCESS CLEANUP
-# ═════════════════════════════════════════════════════════════════════════════
+func get_websocket_url() -> String:
+	return "ws://127.0.0.1:%d" % active_port
 
-func _kill_orphans_on_ports(ports: Array) -> bool:
-	## Find and kill any process listening on the given ports.
-	## Handles the common case where a previous Godot session left behind a
-	## zombie Python server, causing the next launch to fail with EADDRINUSE.
-	## Returns true if at least one orphan was killed.
-	var killed_any: bool = false
-	for p in ports:
-		var pids: Array = _find_pids_on_port(int(p))
-		for pid in pids:
-			# Don't kill processes we already track (server_pid, _dashboard_pid)
-			if int(pid) == server_pid or int(pid) == _dashboard_pid:
-				continue
-			print("[ServerManager] Killing orphan process PID %d on port %d" % [pid, p])
-			var output: Array = []
-			OS.execute("/bin/kill", ["-9", str(pid)], output, true)
-			killed_any = true
-	return killed_any
+func _port_is_available(port: int) -> bool:
+	var probe := TCPServer.new()
+	var available: bool = probe.listen(port, "127.0.0.1") == OK
+	probe.stop()
+	return available
 
+func _available_port(preferred: int) -> int:
+	for port in range(preferred, mini(preferred + 32, 65536)):
+		if _port_is_available(port):
+			return port
+	return -1
 
-func _find_pids_on_port(port: int) -> Array:
-	## Use `lsof -ti :<port>` to list PIDs owning a TCP port.
-	## Returns empty array if nothing is listening or lsof is unavailable.
-	var output: Array = []
-	var exit_code: int = OS.execute("/usr/sbin/lsof", ["-ti", ":%d" % port], output, true)
-	if exit_code != 0 or output.is_empty():
-		return []
-	var raw: String = str(output[0]).strip_edges()
-	if raw.is_empty():
-		return []
-	var pids: Array = []
-	for line in raw.split("\n"):
-		var s: String = line.strip_edges()
-		if s.is_valid_int():
-			pids.append(int(s))
-	return pids
+func _wait_for_traffic(timeout: float) -> bool:
+	var probe := WebSocketClient.create_traffic_socket()
+	var deadline: int = Time.get_ticks_msec() + int(timeout * 1000)
+	var retry_at: int = 0
+	while Time.get_ticks_msec() < deadline and is_running():
+		probe.poll()
+		if probe.get_ready_state() == WebSocketPeer.STATE_CLOSED and Time.get_ticks_msec() >= retry_at:
+			probe = WebSocketClient.create_traffic_socket()
+			probe.connect_to_url(get_websocket_url())
+			retry_at = Time.get_ticks_msec() + 500
+		elif probe.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			while probe.get_available_packet_count() > 0:
+				var packet = JSON.parse_string(probe.get_packet().get_string_from_utf8())
+				if packet is Dictionary and packet.get("type") in ["state_update", "vehicle_update"]:
+					probe.close()
+					print("[ServerManager] Live traffic ready at ", get_websocket_url())
+					return true
+		await get_tree().create_timer(0.1).timeout
+	probe.close()
+	return false
+
+func _shell_quote(value: String) -> String:
+	return "'" + value.replace("'", "'\"'\"'") + "'"
+
+func ensure_traffic(type: ServerType, client: Node, ui: Control) -> void:
+	# Direct scene play (F6) needs the same startup as the launcher (F5).
+	# Offline previews and explicitly configured external servers remain opt-in.
+	if not client.auto_connect or not client.auto_start_server or client.server_url not in ["ws://localhost:8765", "ws://127.0.0.1:8765", get_websocket_url()]:
+		return
+	client.suspend_connection()
+	ui.set_traffic_status("STARTING LIVE TRAFFIC…")
+	var ready: bool = is_running() and current_server == type
+	if not ready:
+		ready = await start_server(type)
+	if not is_instance_valid(client) or not is_instance_valid(ui):
+		return
+	if ready:
+		client.connect_to_server(get_websocket_url())
+	else:
+		ui.show_simulation_error(last_error)

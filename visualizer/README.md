@@ -2,7 +2,65 @@
 
 Real-time 3D visualisation of the ATCS-GH adaptive traffic control system, powered by **Valiborn Technologies**.
 
-Watch a Double DQN AI agent control the **Achimota/Neoplan Junction** (N6 Nsawam Road, Accra), or an entire **3-junction corridor**, live in a Godot 4 3D environment — fully procedural geometry, no external assets, no plugins.
+Watch a Double DQN AI agent control the **Achimota/Neoplan Junction** (N6 Nsawam Road, Accra), or an entire **3-junction corridor**, live in a Godot 4 3D environment — detailed procedural architecture, weathered materials, and a shared vehicle fleet with working trotro pickups.
+
+## Realistic Accra streetscape
+
+Both scenes now use a shared architectural kit with hipped metal roofs,
+verandas and balconies, framed windows and security bars, shop shutters,
+local shop signs, rooftop water tanks, air conditioners, and compound gates.
+Bundled photographed textures add asphalt, plaster and dry-ground detail;
+paving and roofs use procedural seams, corrugation and weathering. Surrounding
+neighbourhood blocks fill the horizon. Branching
+broadleaf trees, palms, soft clouds, subtle atmospheric haze, and wet road
+materials replace the original flat surfaces and geometric tree canopies.
+
+Main-road plots now contain supermarkets, malls, mechanic workshops, police
+stations, shops and kiosks. Homes sit inside the neighbourhoods behind this
+commercial frontage. Additional 8–12-storey offices and apartment blocks have
+balconies or sunshades, paved entrances and rooftop details. Full plot checks
+keep buildings clear of each other, access streets, signs and trotro stations.
+
+The corridor airport now has a curved-roof glass terminal, boarding bridges,
+two detailed airliners, a control tower, hangar, baggage carts and tugs, parking,
+and an access road. A separate taxiway serves the marked runway and apron;
+airfield and apron lights turn on at night and in heavy rain. This is a
+compressed Accra-inspired precinct, not a surveyed airport replica.
+
+The four weather settings now share continuous cloud layers and wind. Rain
+slants with gusts, follows the active camera, stops at rooftops, and leaves
+reflective puddles with ripples that dry gradually. Harmattan brings warm dust
+haze; overcast brings a continuous cloud deck. Foliage and the airport windsock
+respond to the same wind. Rain ambience accompanies the existing thunder.
+
+The overview starts in perspective. Press **P** to switch to the orthographic
+plan view; normal orbit, pan, reset, and zoom controls work in both modes.
+Use **V** in the single-junction scene to walk the streets, or **H** to fly
+the drone in either scene. The existing time and weather controls still work.
+
+See [Streetscape implementation and validation](../docs/streetscape.md) for
+source locations, offline previews, and the scene checks.
+
+## Live traffic startup
+
+Use **F5** and choose Single Junction or N6 Corridor. Direct scene play with
+**F6** also starts the matching traffic backend. Startup waits for real SUMO
+state data before the launcher opens the scene. If startup fails, the launcher
+keeps the error and server log visible instead of opening an empty town.
+
+Port 8765 is preferred. If another application occupies it, the launcher
+selects a free local port and passes it to both the scene and dashboard;
+other applications are not stopped. The scene's connection indicator should
+read **CONNECTED** before traffic appears. For a manually managed server on
+the default endpoint, disable `WebSocketClient.auto_start_server` in the scene;
+custom non-default server URLs are also supported. Offline art previews set
+`auto_connect = false` and intentionally contain no SUMO traffic.
+
+For an end-to-end check with actual SUMO vehicles and changing signal bulbs:
+
+```sh
+godot --headless --path visualizer --script res://tools/validate_live_traffic.gd
+```
 
 ## Architecture
 
@@ -30,7 +88,7 @@ The Python server runs the SUMO traffic simulation with the trained DQN agent(s)
 
 ## Quick Start — Godot Launcher (recommended)
 
-The launcher handles everything: killing orphan Python processes on ports 8765/5050, starting the correct WebSocket server, spawning the Flask dashboard, opening a browser tab, and connecting the 3D client.
+The launcher selects a free traffic port, starts the correct WebSocket server, opens the Flask dashboard when port 5050 is available, and connects the 3D client. Applications already using those ports remain running.
 
 1. Open **Godot 4.6+** → Import → `visualizer/project.godot`
 2. Press **F5**
@@ -43,12 +101,12 @@ The launcher handles everything: killing orphan Python processes on ports 8765/5
 
 | Step | What happens | File |
 |------|--------------|------|
-| 1 | Kill any orphan server on ports 8765/5050 (`lsof -ti`) | `ServerManager.gd` |
+| 1 | Select a free traffic port starting at 8765; preserve existing port owners | `ServerManager.gd` |
 | 2 | Spawn `visualizer_server.py` or `corridor_visualizer_server.py` | `ServerManager.gd` |
-| 3 | Start `dashboard/app.py` (Flask) as background process | `ServerManager.gd` |
-| 4 | Open `http://localhost:5050?tab=live` in default browser | `ServerManager.gd` |
+| 3 | Start `dashboard/app.py` (Flask) if port 5050 is available | `ServerManager.gd` |
+| 4 | Open `http://127.0.0.1:5050?tab=live` in an available Chromium/Firefox browser, falling back to the default | `ServerManager.gd` |
 | 5 | Load the correct scene and connect via WebSocket | `Main.gd` / `CorridorMain.gd` |
-| 6 | Clean shutdown: kill both processes when Godot exits | `ServerManager.gd` |
+| 6 | Clean shutdown: stop only the traffic and dashboard processes started by this launcher | `ServerManager.gd` |
 
 ## Manual Workflow (terminal)
 
@@ -84,10 +142,41 @@ Then open `visualizer/project.godot` in Godot and press **F5** — skip the laun
 | **Override Buttons** | Force green on N/S/E/W (bottom bar — single junction) |
 | **Junction Selector** | Switch focus between J0/J1/J2 (corridor mode) |
 
+### Drone navigation
+
+Press **H** in either scene. Flight accelerates smoothly, settles into a hover
+when movement keys are released, and slides along building collisions. The
+chase camera retracts near walls; **F** switches to an unobstructed stabilised
+gimbal view. The compass, minimap and instruments help you keep your bearings.
+The quadcopter has a sculpted pearl-grey shell, detailed folding-arm hinges,
+vented motors, swept two-blade propellers, stereo sensors, landing feet and a
+suspended camera gimbal that counteracts body tilt.
+
+| While flying | Action |
+| --- | --- |
+| **Mouse / Arrow Keys** | Look and turn |
+| **WASD** | Fly horizontally |
+| **Space / Ctrl or C** | Ascend / descend |
+| **1 / 2 / 3** | Inspect / Cruise / Fast speed |
+| **Shift** | Temporary speed boost |
+| **X** | Brake immediately |
+| **F** | Chase / stabilised gimbal camera |
+| **Wheel / trackpad pinch** | Lens zoom |
+| **R** | Reset to the safe launch point |
+| **Tab** | Hover and release the cursor for dashboard controls; press again to fly |
+| **K** | Toggle sensor coverage and the cable runs to the signal cabinet |
+| **H / Esc** | Exit and restore the overview |
+
+The drone remembers its position, view and speed between toggles until the
+scene reloads. Losing window focus engages hover and releases the cursor;
+press **Tab** to resume. Simulation traffic keeps running while you use the
+dashboard. Height and speed use the scene's compressed world units (`u`).
+Rain follows the active camera at its current altitude.
+
 ## Modes
 
 ### AI Mode (default)
-Trained DQN agent(s) decide every signal change. `NS_ALL` / `EW_ALL` picks are alternated between protected through/left phases by the runtime `ActionSanitizer` — see the main [README](../README.md) for the rationale. Emergency preemption is active.
+Trained Double-DQN agents select from HOLD and four protected through/left phases. The environment enforces phase transitions; the visual rebuild changes presentation only.
 
 ### Baseline Mode (`--baseline`)
 Fixed-timer cycle matching the real Achimota ATMC signal plan. Used for side-by-side visual comparison with the AI.
@@ -100,11 +189,14 @@ Random actions (60% HOLD, 40% random protected phase). No trained model required
 
 ## 3D Scene Features
 
-- **Detailed vehicles** — cars (4-part: body + cabin step + windshield + undercarriage), trotros (with roof rack), ambulances with light bars. All have **headlights + taillights** that turn on at night.
-- **Day/night cycle** — interpolated keyframes for sun energy, sun colour, sun pitch, sky gradient, ambient light, and fog across 24 hours. Traffic lights and vehicle windshields glow brighter at night.
-- **Accra streetscape** — procedural buildings behind sidewalks on every arm: block buildings (ochre/terracotta/cream palette), shops with coloured awnings, compound walls, market stall clusters. Seeded RNG so placement is deterministic.
+- **Detailed vehicles** — curved car bodies, fitted glass, mirrors, wheel arches, alloy wheels, multiple paint colours and taxi trim. Wheels rotate with travel and front wheels steer into turns. Headlights and brake lights respond to conditions; ambulances retain flashing light bars.
+- **Trotros and stations** — dedicated minibuses with destination boards, stripes, roof racks and sliding doors; two stations per scene with shelters, benches, route desks, waiting passengers and loading bays. Existing SUMO trotros stop, board actual passengers and depart after a dwell. Use `--no-transit` on either Python visualizer server to disable this service; training and benchmark routes are unchanged.
+- **Day/night cycle** — interpolated keyframes for sun energy, sun colour, sun pitch, sky gradient, ambient light, and fog across 24 hours. Building windows, vehicle headlights, station lighting and street lamps respond to the time of day.
+- **Accra streetscape** — commercial main-road frontage with supermarkets, malls, open mechanic bays, police stations, shops and kiosks. Houses occupy interior compounds; taller offices and apartments form the skyline. Building plots preserve neighbourhood access, station bays and billboard space. Placement is deterministic.
 - **Pedestrians** — ambient sidewalk strollers + SUMO-integrated crosswalk pedestrians that obey the walk signal.
-- **Overhead traffic lights** — mast-arm poles with dedicated protected-left arrow heads, emissive glow, and OmniLight3D illumination that intensifies at night.
+- **Natural walking** — varied procedural characters with cloth shading, bending knees, planted feet, counter-swinging arms and idle motion. Walkers ease into stops and turns, keep following distances and pass in separate sidewalk lanes.
+- **Traffic lights and sensors** — galvanized mast arms, braces, bolted bases, hooded LED lenses, protected-left arrows and three-aspect roadside repeaters, plus a far-side through head and left arrow for every approach, and two pedestrian heads on each corner pole (WALK on green, a flashing hand while people are still crossing, steady hand otherwise). A TSH-1 sensor head rides each mast arm; its cable drops down the pole to a pull box and under the road to the junction's one signal cabinet (NEMA TS2 with a side battery backup and roof antenna). **K** toggles sensor coverage and the cable runs.
+- **Signs and billboards** — fitted shop fascia signs, roadside direction boards and printed advertising on reserved plots away from crossings, with floodlights after dusk. Two billboards in the single-junction scene; three in the corridor.
 - **Street lights** — line both sides of every arm, glow after sundown.
 - **Ambient city audio** — drone soundscape + directional ambulance sirens during emergency preemption.
 
@@ -165,11 +257,11 @@ Random actions (60% HOLD, 40% random protected phase). No trained model required
 
 | Problem | Cause / Fix |
 |---------|-------------|
-| Sim keeps connecting/reconnecting | An orphan Python server from a previous Godot session was holding port 8765. The launcher now auto-cleans these — if it still happens, check `/tmp/atcs_gh_server.log` for EADDRINUSE and run `lsof -ti :8765 \| xargs kill -9` once. |
-| "DISCONNECTED" in top bar | Python server didn't start. Check the Log panel (Launcher → Log button) or `/tmp/atcs_gh_server.log`. |
+| Sim keeps connecting/reconnecting | Check the Godot output for the WebSocket close code. Code **1009, "Message too big"** occurred when dense traffic exceeded the old 64 KiB receive buffer. The client and startup probe now use a **16 MiB** receive buffer; stop and restart the running viewer to load the fix. If the issue persists, inspect the Launcher Log panel or `/tmp/atcs_gh_server.log`. |
+| No live traffic / connection pending | Check the Launcher Log panel or `/tmp/atcs_gh_server.log` for startup errors. The launcher selects a free traffic port starting at **8765** and preserves other applications using those ports. For an externally started server, ensure the client URL matches its port. |
 | "SUMO not found" in server log | Set `SUMO_HOME` or install: `pip install eclipse-sumo` |
 | "Model not found" | Use `--demo` mode, or train first: `python scripts/train_agent.py` |
-| Dashboard doesn't open | Check `/tmp/atcs_gh_dashboard.log`. Port 5050 may be held by another Flask process — launcher cleans this, but if stuck: `lsof -ti :5050 \| xargs kill -9`. |
+| Dashboard doesn't open | Check `/tmp/atcs_gh_dashboard.log` and the Godot output. If port **5050** is occupied, the launcher skips opening its dashboard and leaves the existing application running; traffic simulation continues. Close that application yourself only if you want to free the dashboard port. |
 | Godot can't import project | Ensure you're using Godot **4.6+ (Standard, not .NET)**. |
 | Vehicles invisible / scene black | Press **R** to reset the camera — it may have drifted out of view. |
 | Traffic lights not updating | Usually a runtime type error in `Intersection.gd`. Check the Errors panel in the Godot debugger. |

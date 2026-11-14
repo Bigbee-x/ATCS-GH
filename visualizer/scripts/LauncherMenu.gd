@@ -407,13 +407,11 @@ func _launch_mode(scene_path: String) -> void:
 	print("[Launcher] Starting server for %s..." % scene_path)
 	_update_status_starting()
 
-	sm.start_server(server_type)
-
-	# Give server time to initialize, then load scene
-	# WebSocketClient will handle reconnecting if the server needs more time
-	await get_tree().create_timer(2.0).timeout
-
+	var ready: bool = await sm.start_server(server_type)
 	_launching = false
+	if not ready:
+		# Keep the error/log visible instead of opening an empty town.
+		return
 	get_tree().change_scene_to_file(scene_path)
 
 

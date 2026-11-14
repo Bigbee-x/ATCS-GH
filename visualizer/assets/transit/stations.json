@@ -1,0 +1,56 @@
+{
+  "single": [
+    {
+      "id": "achimota_north",
+      "name": "ACHIMOTA STATION",
+      "destination": "NSAWAM",
+      "edge": "ACH_J2N",
+      "pos": 320.0,
+      "side": -1,
+      "z": 22.9855305466,
+      "road_half": 3.2,
+      "sidewalk": 1.5
+    },
+    {
+      "id": "neoplan_south",
+      "name": "NEOPLAN STATION",
+      "destination": "CIRCLE / ACCRA",
+      "edge": "ACH_J2S",
+      "pos": 320.0,
+      "side": 1,
+      "z": -22.9855305466,
+      "road_half": 3.2,
+      "sidewalk": 1.5
+    }
+  ],
+  "corridor": [
+    {
+      "id": "achimota_corridor",
+      "name": "ACHIMOTA STATION",
+      "destination": "CIRCLE / ACCRA",
+      "edge": "ACH_J0toS",
+      "pos": 320.0,
+      "side": 1,
+      "z": -23.0,
+      "road_half": 3.0,
+      "sidewalk": 0.7,
+      "sumo_y": 1169.6,
+      "parking": true,
+      "bay_x": 4.15
+    },
+    {
+      "id": "tesano_corridor",
+      "name": "TESANO STATION",
+      "destination": "NIMA / NSAWAM",
+      "edge": "ACH_J2toN",
+      "pos": 320.0,
+      "side": -1,
+      "z": 83.0,
+      "road_half": 3.0,
+      "sidewalk": 0.7,
+      "sumo_y": 2427.2,
+      "parking": true,
+      "bay_x": -4.15
+    }
+  ]
+}

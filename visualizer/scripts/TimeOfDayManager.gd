@@ -47,7 +47,7 @@ var _is_dusk: bool = false
 # ── Node references (set by parent script) ──────────────────────────────────
 var sun: DirectionalLight3D
 var world_env: WorldEnvironment
-var _sky_material: ProceduralSkyMaterial
+var _sky_material: Material
 var _environment: Environment
 
 # ── Sun azimuth (preserved from scene, only pitch changes) ──────────────────
@@ -191,7 +191,7 @@ func _apply_time(hour: float) -> void:
 	if _environment == null:
 		_environment = world_env.environment
 	if _sky_material == null and _environment and _environment.sky:
-		_sky_material = _environment.sky.sky_material as ProceduralSkyMaterial
+		_sky_material = _environment.sky.sky_material
 
 	# Find the two keyframes to interpolate between
 	var kf_a: Array = KEYFRAMES[KEYFRAMES.size() - 1]  # wrap-around default
@@ -226,7 +226,8 @@ func _apply_time(hour: float) -> void:
 	var sun_color: Color = kf_a[2].lerp(kf_b[2], t)
 	var sun_pitch: float = lerpf(kf_a[3], kf_b[3], t)
 
-	sun.light_energy = sun_energy
+	sun.light_energy = sun_energy * 0.9
+	sun.light_angular_distance = 0.7
 	sun.light_color = sun_color
 	sun.visible = sun_energy > 0.01
 
@@ -244,23 +245,25 @@ func _apply_time(hour: float) -> void:
 
 	# ── Apply ambient ──────────────────────────────────────────────────
 	if _environment:
-		_environment.ambient_light_energy = lerpf(kf_a[4], kf_b[4], t)
+		_environment.ambient_light_energy = lerpf(kf_a[4], kf_b[4], t) * 0.85
 		_environment.ambient_light_color = kf_a[5].lerp(kf_b[5], t)
 
 	# ── Apply sky ──────────────────────────────────────────────────────
 	if _sky_material:
-		_sky_material.sky_top_color = kf_a[6].lerp(kf_b[6], t)
-		_sky_material.sky_horizon_color = kf_a[7].lerp(kf_b[7], t)
-		_sky_material.ground_bottom_color = kf_a[8].lerp(kf_b[8], t)
-		_sky_material.ground_horizon_color = kf_a[9].lerp(kf_b[9], t)
+		_set_sky_color("sky_top_color", kf_a[6].lerp(kf_b[6], t))
+		_set_sky_color("sky_horizon_color", kf_a[7].lerp(kf_b[7], t))
+		_set_sky_color("ground_bottom_color", kf_a[8].lerp(kf_b[8], t))
+		_set_sky_color("ground_horizon_color", kf_a[9].lerp(kf_b[9], t))
 
 	# ── Apply fog ──────────────────────────────────────────────────────
 	if _environment:
 		var fog_density: float = lerpf(kf_a[10], kf_b[10], t)
+		fog_density = maxf(fog_density, 0.0012)
 		_environment.fog_enabled = fog_density > 0.0005
 		if _environment.fog_enabled:
 			_environment.fog_density = fog_density
-			_environment.fog_light_color = kf_a[5].lerp(kf_b[5], t)  # Tint fog with ambient
+			_environment.fog_light_color = kf_a[7].lerp(kf_b[7], t)
+			_environment.fog_sky_affect = 0.18
 
 	# ── Night mode detection ───────────────────────────────────────────
 	var now_night: bool = (hour >= NIGHT_START_HOUR or hour < MORNING_HOUR)
@@ -275,3 +278,10 @@ func _apply_time(hour: float) -> void:
 	if now_dusk != _is_dusk:
 		_is_dusk = now_dusk
 		dusk_mode_changed.emit(_is_dusk)
+
+
+func _set_sky_color(key: String, color: Color) -> void:
+	if _sky_material is ShaderMaterial:
+		_sky_material.set_shader_parameter(key, color)
+	elif _sky_material:
+		_sky_material.set(key, color)

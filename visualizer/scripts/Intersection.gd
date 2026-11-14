@@ -1,4 +1,11 @@
 extends Node3D
+const CrossingFurniture = preload("res://scripts/CrossingFurniture.gd")
+const StreetLamp = preload("res://scripts/StreetLamp.gd")
+
+const Signals = preload("res://scripts/SignalHardware.gd")
+const PedSignals = preload("res://scripts/PedestrianSignals.gd")
+
+const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
 ## Builds and manages the 3D intersection geometry and traffic lights.
 ##
 ## All geometry is constructed from Godot primitives (CSGBox3D, CSGCylinder3D,
@@ -7,8 +14,8 @@ extends Node3D
 ## Coordinate mapping (SUMO → Godot):
 ##   SUMO North (Y+) → Godot +Z
 ##   SUMO South (Y-) → Godot -Z
-##   SUMO East  (X+) → Godot +X
-##   SUMO West  (X-) → Godot -X
+##   SUMO East  (X+) → Godot -X
+##   SUMO West  (X-) → Godot +X
 ##   Road surface sits at Y = 0
 ##
 ## Phase-to-light mapping (8 phases):
@@ -44,21 +51,14 @@ const SIDEWALK_WIDTH  := 1.5    # Sidewalk width alongside road
 # ── Traffic light references ─────────────────────────────────────────────────
 # Structure: { "north": {"red": {mesh, glow}, "yellow": {...}, "green": {...}}, ... }
 var _lights: Dictionary = {}
+var _peds: Node   # PedestrianSignals: two heads per corner pole, live from the crossings
 
 # ── Materials (created once, reused everywhere) ──────────────────────────────
-var _mat_road: StandardMaterial3D
-var _mat_sidewalk: StandardMaterial3D
-var _mat_marking: StandardMaterial3D
-var _mat_grass: StandardMaterial3D
+var _mat_road: Material
+var _mat_sidewalk: Material
+var _mat_marking: Material
+var _mat_grass: Material
 var _mat_pole: StandardMaterial3D
-var _mat_light_off: StandardMaterial3D
-var _mat_red_on: StandardMaterial3D
-var _mat_yellow_on: StandardMaterial3D
-var _mat_green_on: StandardMaterial3D
-
-# ── Turn arrow materials ───────────────────────────────────────────────────
-var _mat_arrow_on: StandardMaterial3D
-var _mat_arrow_off: StandardMaterial3D
 
 # ── Lane congestion overlays ──────────────────────────────────────────────
 ## Maps lane_id (e.g. "ACH_N2J_0") to {mesh: MeshInstance3D, mat: StandardMaterial3D}
@@ -95,7 +95,6 @@ func _ready() -> void:
 	#_build_lane_overlays()  # Disabled — visual clutter on dark roads
 	_build_street_lights()
 	_build_utility_poles()
-	_build_watermark()
 	_build_emergency_overlay()
 	_build_stop_lines()
 	_build_crosswalks()
@@ -126,6 +125,14 @@ func update_lights(data: Dictionary) -> void:
 	## Update traffic light colors and turn arrows based on phase from server.
 	var phase: int = data.get("phase", 0)
 	_emergency_active = data.get("emergency", {}).get("active", false)
+	if _peds:
+		_peds.update(data, data.get("pedestrians", []))
+
+	if data.has("signals"):
+		for arm in data.signals:
+			_set_light(arm, data.signals[arm].main)
+			_set_arrow(arm, data.signals[arm].arrow)
+		return
 
 	# Determine light state and arrow state for each approach pair
 	var ns_state: String = "red"
@@ -173,60 +180,22 @@ func update_lights(data: Dictionary) -> void:
 func _create_materials() -> void:
 	## Create all shared materials once.
 	# Road surface — dark grey asphalt
-	_mat_road = StandardMaterial3D.new()
-	_mat_road.albedo_color = Color(0.18, 0.18, 0.20)
+	_mat_road = SurfaceMaterials.surface(1, Color("343834"))
 
 	# Sidewalk — lighter concrete
-	_mat_sidewalk = StandardMaterial3D.new()
-	_mat_sidewalk.albedo_color = Color(0.42, 0.40, 0.38)
+	_mat_sidewalk = SurfaceMaterials.surface(2, Color("a59d88"))
 
 	# Lane markings — white
-	_mat_marking = StandardMaterial3D.new()
-	_mat_marking.albedo_color = Color(0.92, 0.92, 0.92)
+	_mat_marking = SurfaceMaterials.surface(0, Color("c8c1a9"))
 
 	# Grass / ground plane
-	_mat_grass = StandardMaterial3D.new()
-	_mat_grass.albedo_color = Color(0.22, 0.38, 0.18)
+	_mat_grass = SurfaceMaterials.surface(3, Color("796d4b"))
 
-	# Traffic light pole — dark metal
+	# Street-lamp pole — dark metal
 	_mat_pole = StandardMaterial3D.new()
 	_mat_pole.albedo_color = Color(0.25, 0.25, 0.28)
 	_mat_pole.metallic = 0.6
 	_mat_pole.roughness = 0.4
-
-	# Light bulb OFF state
-	_mat_light_off = StandardMaterial3D.new()
-	_mat_light_off.albedo_color = Color(0.12, 0.12, 0.12)
-
-	# Emissive materials for active lights
-	_mat_red_on = StandardMaterial3D.new()
-	_mat_red_on.albedo_color = Color(1.0, 0.1, 0.1)
-	_mat_red_on.emission_enabled = true
-	_mat_red_on.emission = Color(1.0, 0.0, 0.0)
-	_mat_red_on.emission_energy_multiplier = 4.0
-
-	_mat_yellow_on = StandardMaterial3D.new()
-	_mat_yellow_on.albedo_color = Color(1.0, 0.85, 0.0)
-	_mat_yellow_on.emission_enabled = true
-	_mat_yellow_on.emission = Color(1.0, 0.85, 0.0)
-	_mat_yellow_on.emission_energy_multiplier = 4.0
-
-	_mat_green_on = StandardMaterial3D.new()
-	_mat_green_on.albedo_color = Color(0.0, 1.0, 0.2)
-	_mat_green_on.emission_enabled = true
-	_mat_green_on.emission = Color(0.0, 1.0, 0.2)
-	_mat_green_on.emission_energy_multiplier = 4.0
-
-	# Turn arrow ON (green arrow, emissive)
-	_mat_arrow_on = StandardMaterial3D.new()
-	_mat_arrow_on.albedo_color = Color(0.0, 1.0, 0.3)
-	_mat_arrow_on.emission_enabled = true
-	_mat_arrow_on.emission = Color(0.0, 1.0, 0.3)
-	_mat_arrow_on.emission_energy_multiplier = 5.0
-
-	# Turn arrow OFF (dim)
-	_mat_arrow_off = StandardMaterial3D.new()
-	_mat_arrow_off.albedo_color = Color(0.08, 0.08, 0.08)
 
 	# Street lamp housing — dark metal with warm emissive face
 	# (emission energy is 0 during day, bumped at night by set_street_lights_night)
@@ -261,7 +230,8 @@ func _create_materials() -> void:
 func _build_ground() -> void:
 	## Build the ground plane (grass area surrounding the intersection).
 	var ground := CSGBox3D.new()
-	ground.size = Vector3(200.0, 0.02, 200.0)
+	# Extend beyond the camera clip distance so the horizon has no exposed edge.
+	ground.size = Vector3(2000.0, 0.02, 2000.0)
 	ground.position = Vector3(0, -0.06, 0)
 	ground.material = _mat_grass
 	ground.name = "Ground"
@@ -357,37 +327,16 @@ func _build_sidewalks(center: Vector3, direction: Vector3, length: float, road_w
 
 
 func _build_stop_lines() -> void:
-	## Build white stop lines at the junction edge for each approach.
-	var half_junc: float = JUNCTION_SIZE / 2.0
-	var configs: Array = [
-		# approach, position, size
-		["north", Vector3(0, 0.11, half_junc - 0.1), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
-		["south", Vector3(0, 0.11, -(half_junc - 0.1)), Vector3(NS_ROAD_WIDTH * 0.45, 0.02, 0.2)],
-		["east",  Vector3(-(half_junc - 0.1), 0.11, 0), Vector3(0.2, 0.02, E_ROAD_WIDTH * 0.45)],
-		["west",  Vector3(half_junc - 0.1, 0.11, 0), Vector3(0.2, 0.02, W_ROAD_WIDTH * 0.45)],
-	]
-
-	for cfg in configs:
-		var line := CSGBox3D.new()
-		line.position = cfg[1]
-		line.size = cfg[2]
-		line.material = _mat_marking
-		line.name = "StopLine_%s" % cfg[0]
-		add_child(line)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TRAFFIC LIGHTS
-# ═════════════════════════════════════════════════════════════════════════════
+	CrossingFurniture.stop_lines(self, false, 0, _mat_marking)
 
 func _build_traffic_lights() -> void:
 	## Build overhead mast-arm traffic lights for each approach.
-	## Each pole stands on its own road's sidewalk, pushed 2 units past the
+	## Each pole stands beyond its own road's sidewalk and drain, pushed 2 units past the
 	## junction edge along the road arm so it's clearly on the correct road.
 	## A horizontal mast arm extends from the pole top over the road lanes.
 
-	# Curb offset: how far from road center the pole sits (on sidewalk)
-	var curb: float = NS_ROAD_WIDTH / 2.0 + 0.5   # 3.7 — on sidewalk
+	# Curb offset: how far from road center the pole sits (on the verge)
+	var curb: float = NS_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH + 1.0   # clear of the gutter and walking strip
 
 	# Along-road offset: how far from junction center, along the road arm.
 	# Pushed 2 units past the junction edge so the pole is clearly on its
@@ -396,9 +345,9 @@ func _build_traffic_lights() -> void:
 
 	# Overhead structure constants
 	const POLE_HEIGHT: float = 5.5
-	const ARM_LEN: float = 3.7                     # Reaches to road center
+	var ARM_LEN: float = curb                     # Reaches to road center
 
-	# Pole positions — each pole is on its OWN road's sidewalk:
+	# Pole positions — each pole is on its own road's verge:
 	#   north/south: X = ±curb (beside N/S road), Z = ±along (along N/S road)
 	#   east/west:   X = ±along (along E/W road), Z = ±curb (beside E/W road)
 	var configs: Dictionary = {
@@ -428,41 +377,8 @@ func _build_traffic_lights() -> void:
 		pole_root.name = "TrafficLight_%s" % approach
 		add_child(pole_root)
 
-		# ── Vertical pole ────────────────────────────────────────────────
-		var pole := CSGCylinder3D.new()
-		pole.radius = 0.1
-		pole.height = POLE_HEIGHT
-		pole.position = Vector3(0, POLE_HEIGHT / 2.0, 0)
-		pole.material = _mat_pole
-		pole.name = "Pole"
-		pole_root.add_child(pole)
+		Signals.structure(pole_root, -1.0, ARM_LEN)
 
-		# ── Horizontal mast arm (extends over road in local -X) ──────────
-		var arm := CSGBox3D.new()
-		arm.size = Vector3(ARM_LEN, 0.14, 0.14)
-		arm.position = Vector3(-ARM_LEN / 2.0, POLE_HEIGHT, 0)
-		arm.material = _mat_pole
-		arm.name = "MastArm"
-		pole_root.add_child(arm)
-
-		# ── Diagonal brace ───────────────────────────────────────────────
-		var brace_h: float = ARM_LEN * 0.55
-		var brace_v: float = 1.6
-		var brace_len: float = sqrt(brace_h * brace_h + brace_v * brace_v)
-		var brace := CSGBox3D.new()
-		brace.size = Vector3(brace_len, 0.06, 0.06)
-		brace.rotation.z = -atan2(brace_v, brace_h)
-		brace.position = Vector3(-brace_h / 2.0, POLE_HEIGHT - brace_v / 2.0, 0)
-		brace.material = _mat_pole
-		brace.name = "Brace"
-		pole_root.add_child(brace)
-
-		# ── Signal heads (2026-06-11): the real-world double setup ───────
-		# 1. HORIZONTAL overhead head hung from the mast arm (3 aspects
-		#    side-by-side + the left-arrow doghouse below) — the main signal.
-		# 2. Compact 2-aspect pole head (red/green) at driver height — assists
-		#    THROUGH/RIGHT traffic only; it NEVER signals the left turn.
-		#    Left-turners read the overhead arrow exclusively.
 		var head_over: Dictionary = _build_overhead_head(pole_root, -(ARM_LEN - 0.45), POLE_HEIGHT)
 		var head_pole: Dictionary = _build_pole_head(pole_root, 3.5)
 
@@ -471,230 +387,53 @@ func _build_traffic_lights() -> void:
 			"yellow": head_over["yellow"],
 			"green":  head_over["green"],
 			"arrow":  head_over["arrow"],
-			"pole":   head_pole,           # {"red": {mesh,glow}, "green": {mesh,glow}}
+			"pole":   head_pole,           # Three-aspect roadside repeater
 		}
+
+	# Every approach also gets a far-side through head and left arrow, on the pole
+	# standing at its far-left corner: the next approach's pole across the junction.
+	# They share the approach's channel, so they show exactly what its main head shows.
+	var served_by: Dictionary = {"north": "south", "south": "north", "east": "west", "west": "east"}
+	for approach in configs:
+		var host: Node3D = get_node("TrafficLight_%s" % approach)
+		_lights[served_by[approach]]["far"] = Signals.far_side(host, 3.5)
+
+	# Two pedestrian heads per corner pole, one at the end of each crossing beside
+	# it, facing the walkers waiting at the far end: its own arm's crossing (pole
+	# -X) and the neighbouring arm's (pole -Z).
+	_peds = PedSignals.new()
+	_peds.name = "PedestrianSignals"
+	_peds.junction = "J0"
+	add_child(_peds)
+	var second_crossing: Dictionary = {"north": "west", "east": "north", "south": "east", "west": "south"}
+	for approach in configs:
+		var host: Node3D = get_node("TrafficLight_%s" % approach)
+		_peds.add(approach, Signals.pedestrian_head(host, Vector3(-0.42, 2.42, 0), -PI / 2.0, Vector3(-0.07, 0, 0)))
+		_peds.add(second_crossing[approach], Signals.pedestrian_head(host, Vector3(-0.42, 2.42, -0.40), PI, Vector3(-0.05, 0, -0.07)))
 
 
 func _build_overhead_head(pole_root: Node3D, cx: float, arm_y: float) -> Dictionary:
-	## Horizontal 3-aspect signal head hung under the mast arm at local x = cx,
-	## bulbs side-by-side (driver's view: red | yellow | green), plus the
-	## left-arrow "doghouse" unit below. Bulbs face local +Z (the approach).
-	var head: Dictionary = {}
-	var hub_y: float = arm_y - 0.32          # housing centre, just under the arm
-
-	var housing := CSGBox3D.new()
-	housing.size = Vector3(1.30, 0.45, 0.30)
-	housing.position = Vector3(cx, hub_y, 0)
-	housing.material = _mat_pole
-	housing.name = "Housing_Over"
-	pole_root.add_child(housing)
-
-	# Single wide visor over the top edge
-	var visor := CSGBox3D.new()
-	visor.size = Vector3(1.40, 0.06, 0.40)
-	visor.position = Vector3(cx, hub_y + 0.26, 0.15)
-	visor.material = _mat_pole
-	visor.name = "Visor_Over"
-	pole_root.add_child(visor)
-
-	# Three bulbs left→right from the driver's POV: red, yellow, green.
-	# (+X is the driver's left in the pole_root local frame.)
-	var bulb_data: Array = [
-		{"name": "red",    "x": cx + 0.40, "color": Color(1, 0, 0)},
-		{"name": "yellow", "x": cx,        "color": Color(1, 0.85, 0)},
-		{"name": "green",  "x": cx - 0.40, "color": Color(0, 1, 0.2)},
-	]
-	for bd in bulb_data:
-		var bulb := CSGSphere3D.new()
-		bulb.radius = 0.13
-		bulb.radial_segments = 12
-		bulb.rings = 6
-		bulb.position = Vector3(bd["x"], hub_y, 0.18)
-		bulb.material = _mat_light_off
-		bulb.name = "Bulb_%s_Over" % bd["name"]
-		pole_root.add_child(bulb)
-
-		var glow := OmniLight3D.new()
-		glow.position = Vector3(bd["x"], hub_y, 0.18)
-		glow.light_energy = 0.0
-		glow.light_color = bd["color"]
-		glow.omni_range = 5.0
-		glow.omni_attenuation = 1.5
-		glow.shadow_enabled = false
-		glow.name = "Glow_%s_Over" % bd["name"]
-		pole_root.add_child(glow)
-
-		head[bd["name"]] = {"mesh": bulb, "glow": glow}
-
-	# LEFT-TURN arrow doghouse below the horizontal head: green arrow =
-	# protected left, while the circles above control through traffic.
-	var arrow_y: float = hub_y - 0.48
-
-	var arrow_housing := CSGBox3D.new()
-	arrow_housing.size = Vector3(0.38, 0.38, 0.28)
-	arrow_housing.position = Vector3(cx, arrow_y, 0)
-	arrow_housing.material = _mat_pole
-	arrow_housing.name = "ArrowHousing_Over"
-	pole_root.add_child(arrow_housing)
-
-	var arrow_visor := CSGBox3D.new()
-	arrow_visor.size = Vector3(0.46, 0.04, 0.34)
-	arrow_visor.position = Vector3(cx, arrow_y + 0.20, 0.13)
-	arrow_visor.material = _mat_pole
-	arrow_visor.name = "ArrowVisor_Over"
-	pole_root.add_child(arrow_visor)
-
-	# Arrow mesh — extruded polygon, tip points to +X (driver's left in the
-	# pole_root local frame); extrudes along +Z so it reads from the driver's
-	# POV and the overhead camera.
-	var arrow_mesh := CSGPolygon3D.new()
-	arrow_mesh.polygon = PackedVector2Array([
-		Vector2(-0.11,  0.028),   # shaft tail — top
-		Vector2( 0.02,  0.028),   # shaft / head joint — top
-		Vector2( 0.02,  0.085),   # head outer-top
-		Vector2( 0.14,  0.000),   # arrow TIP (points to +X = driver's left)
-		Vector2( 0.02, -0.085),   # head outer-bottom
-		Vector2( 0.02, -0.028),   # shaft / head joint — bottom
-		Vector2(-0.11, -0.028),   # shaft tail — bottom
-	])
-	arrow_mesh.depth = 0.04
-	arrow_mesh.position = Vector3(cx, arrow_y, 0.14)
-	arrow_mesh.material = _mat_arrow_off
-	arrow_mesh.name = "Arrow_Over"
-	pole_root.add_child(arrow_mesh)
-
-	var arrow_glow := OmniLight3D.new()
-	arrow_glow.position = Vector3(cx, arrow_y, 0.16)
-	arrow_glow.light_energy = 0.0
-	arrow_glow.light_color = Color(0, 1, 0.3)
-	arrow_glow.omni_range = 3.5
-	arrow_glow.omni_attenuation = 1.5
-	arrow_glow.shadow_enabled = false
-	arrow_glow.name = "ArrowGlow_Over"
-	pole_root.add_child(arrow_glow)
-
-	head["arrow"] = {"mesh": arrow_mesh, "glow": arrow_glow}
-	return head
-
+	return Signals.overhead(pole_root, cx, arm_y)
 
 func _build_pole_head(pole_root: Node3D, top_y: float) -> Dictionary:
-	## Compact 2-aspect head (red over green) clamped to the pole at driver
-	## height. Serves THROUGH/RIGHT traffic only — there is deliberately no
-	## yellow aspect and no arrow: left-turners never take cues from this head.
-	var head: Dictionary = {}
-
-	var housing := CSGBox3D.new()
-	housing.size = Vector3(0.30, 0.72, 0.24)
-	housing.position = Vector3(0, top_y - 0.36, 0.12)
-	housing.material = _mat_pole
-	housing.name = "Housing_Pole"
-	pole_root.add_child(housing)
-
-	var visor := CSGBox3D.new()
-	visor.size = Vector3(0.36, 0.04, 0.28)
-	visor.position = Vector3(0, top_y + 0.02, 0.20)
-	visor.material = _mat_pole
-	visor.name = "Visor_Pole"
-	pole_root.add_child(visor)
-
-	var bulb_data: Array = [
-		{"name": "red",   "y": top_y - 0.19, "color": Color(1, 0, 0)},
-		{"name": "green", "y": top_y - 0.53, "color": Color(0, 1, 0.2)},
-	]
-	for bd in bulb_data:
-		var bulb := CSGSphere3D.new()
-		bulb.radius = 0.10
-		bulb.radial_segments = 12
-		bulb.rings = 6
-		bulb.position = Vector3(0, bd["y"], 0.27)
-		bulb.material = _mat_light_off
-		bulb.name = "Bulb_%s_Pole" % bd["name"]
-		pole_root.add_child(bulb)
-
-		var glow := OmniLight3D.new()
-		glow.position = Vector3(0, bd["y"], 0.27)
-		glow.light_energy = 0.0
-		glow.light_color = bd["color"]
-		glow.omni_range = 3.5
-		glow.omni_attenuation = 1.5
-		glow.shadow_enabled = false
-		glow.name = "Glow_%s_Pole" % bd["name"]
-		pole_root.add_child(glow)
-
-		head[bd["name"]] = {"mesh": bulb, "glow": glow}
-
-	return head
+	return Signals.repeater(pole_root, top_y)
 
 
 func _set_light(approach: String, active_color: String) -> void:
-	## Set one traffic light: turn on the active bulb, turn off others.
-	## approach: "north", "south", "east", "west"
-	## active_color: "red", "yellow", or "green"
 	if not _lights.has(approach):
 		return
-
 	var bulbs: Dictionary = _lights[approach]
-
-	# ── Overhead horizontal head (3 aspects) ─────────────────────────────
 	for color_name in ["red", "yellow", "green"]:
-		var is_on: bool = (color_name == active_color)
-		var mesh: CSGSphere3D = bulbs[color_name]["mesh"]
-		var glow: OmniLight3D = bulbs[color_name]["glow"]
-		if is_on:
-			match color_name:
-				"red":
-					mesh.material = _mat_red_on
-					glow.light_energy = 3.5
-					glow.light_color = Color(1, 0, 0)
-				"yellow":
-					mesh.material = _mat_yellow_on
-					glow.light_energy = 3.5
-					glow.light_color = Color(1, 0.85, 0)
-				"green":
-					mesh.material = _mat_green_on
-					glow.light_energy = 3.5
-					glow.light_color = Color(0, 1, 0.2)
-		else:
-			mesh.material = _mat_light_off
-			glow.light_energy = 0.0
-
-	# ── Pole-mounted 2-aspect head (through/right traffic ONLY) ──────────
-	# Green only on a through-green; red on red AND during yellow clearance
-	# (conservative — a 2-aspect head has no yellow). The left-arrow phase
-	# shows red here: left-turners take cues from the overhead arrow only.
-	if bulbs.has("pole"):
-		var pole: Dictionary = bulbs["pole"]
-		var p_green_on: bool = (active_color == "green")
-		var p_red_on: bool = not p_green_on
-
-		var pr_mesh: CSGSphere3D = pole["red"]["mesh"]
-		var pr_glow: OmniLight3D = pole["red"]["glow"]
-		pr_mesh.material = _mat_red_on if p_red_on else _mat_light_off
-		pr_glow.light_energy = 2.5 if p_red_on else 0.0
-
-		var pg_mesh: CSGSphere3D = pole["green"]["mesh"]
-		var pg_glow: OmniLight3D = pole["green"]["glow"]
-		pg_mesh.material = _mat_green_on if p_green_on else _mat_light_off
-		pg_glow.light_energy = 2.5 if p_green_on else 0.0
-
+		Signals.set_aspect(bulbs[color_name], color_name == active_color)
+		Signals.set_aspect(bulbs["pole"][color_name], color_name == active_color)
+		if bulbs.has("far"):
+			Signals.set_aspect(bulbs["far"][color_name], color_name == active_color)
 
 func _set_arrow(approach: String, is_on: bool) -> void:
-	## Set the turn arrow indicator on/off for an approach.
-	if not _lights.has(approach):
-		return
-	var bulbs: Dictionary = _lights[approach]
-	if not bulbs.has("arrow"):
-		return
-	# The arrow lives on the overhead head ONLY — the pole head never
-	# signals left-turners by design.
-	var arrow_mesh: CSGPolygon3D = bulbs["arrow"]["mesh"]
-	var arrow_glow: OmniLight3D = bulbs["arrow"]["glow"]
-	if is_on:
-		arrow_mesh.material = _mat_arrow_on
-		arrow_glow.light_energy = 4.0
-	else:
-		arrow_mesh.material = _mat_arrow_off
-		arrow_glow.light_energy = 0.0
+	if _lights.has(approach):
+		Signals.set_aspect(_lights[approach]["arrow"], is_on)
+		if _lights[approach].has("far"):
+			Signals.set_aspect(_lights[approach]["far"]["arrow"], is_on)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -765,22 +504,8 @@ func update_lane_overlays(data: Dictionary) -> void:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# WATERMARK & EMERGENCY OVERLAY
+# EMERGENCY OVERLAY
 # ═════════════════════════════════════════════════════════════════════════════
-
-func _build_watermark() -> void:
-	## Place 'Valiborn Technologies' text at the intersection center.
-	var label := Label3D.new()
-	label.text = "VALIBORN TECHNOLOGIES"
-	label.font_size = 48
-	label.position = Vector3(0, 0.12, 0)
-	label.rotation.x = -PI / 2.0  # Face upward (visible from above)
-	label.modulate = Color(0.35, 0.35, 0.40, 0.35)  # Subtle watermark
-	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	label.pixel_size = 0.01
-	label.name = "Watermark"
-	add_child(label)
-
 
 func _build_emergency_overlay() -> void:
 	## Build a semi-transparent red overlay for emergency mode.
@@ -806,137 +531,24 @@ func _build_emergency_overlay() -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_crosswalks() -> void:
-	## Build zebra crossing markings at the north and south junction edges only.
-	## These cross the E/W road — the main pedestrian routes at Achimota junction.
-	var half_junc: float = JUNCTION_SIZE / 2.0
-	var stripe_w: float = 0.3
-	var stripe_gap: float = 0.3
-	var y_pos: float = 0.11
-
-	# Only north and south crosswalks — positioned at the junction edge
-	# where SUMO pedestrians actually cross
-	var crosswalks: Array = [
-		{"name": "north", "center": Vector3(0, y_pos, half_junc), "width": NS_ROAD_WIDTH, "along_x": true},
-		{"name": "south", "center": Vector3(0, y_pos, -half_junc), "width": NS_ROAD_WIDTH, "along_x": true},
-	]
-
-	for cw in crosswalks:
-		var n_stripes: int = int(cw["width"] / (stripe_w + stripe_gap))
-		var total_span: float = n_stripes * (stripe_w + stripe_gap) - stripe_gap
-		var start_offset: float = -total_span / 2.0
-
-		for i in range(n_stripes):
-			var stripe := CSGBox3D.new()
-			var offset: float = start_offset + i * (stripe_w + stripe_gap)
-			stripe.size = Vector3(stripe_w, 0.02, 1.6)
-			stripe.position = cw["center"] + Vector3(offset + stripe_w / 2.0, 0, 0)
-			stripe.material = _mat_marking
-			stripe.name = "Crosswalk_%s_%d" % [cw["name"], i]
-			add_child(stripe)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# STREET LIGHTS
-# ═════════════════════════════════════════════════════════════════════════════
+	CrossingFurniture.crossings(self, false, 0, _mat_marking, _mat_sidewalk)
 
 func _build_street_lights() -> void:
-	## Place sodium-yellow street lamps along both sides of every road arm.
-	## Each lamp: thin pole + housing + OmniLight3D (off by default, toggled at night).
-	var half_junc: float = JUNCTION_SIZE / 2.0
-	var spacing: float = 15.0          # Distance between lamp posts
-	var pole_height: float = 4.0       # Lamp post height
-	# Sidewalk-edge offset is computed per-arm below from arm["width"];
-	# declared-but-unused here.
-	# var _curb: float = NS_ROAD_WIDTH / 2.0 + 0.6
-
-	# Road arm configs: direction vector, road width
-	var arms: Array = [
-		{"dir": Vector3(0, 0, 1),  "width": NS_ROAD_WIDTH},   # north
-		{"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH},   # south
-		{"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH},    # east
-		{"dir": Vector3(1, 0, 0),  "width": W_ROAD_WIDTH},    # west
-	]
-
-	for arm in arms:
-		var direction: Vector3 = arm["dir"]
-		var road_w: float = arm["width"]
-		var side_offset: float = road_w / 2.0 + 0.6
-
-		# Place lamps on both sides of the road
+	for arm in [{"dir": Vector3(0, 0, 1), "width": NS_ROAD_WIDTH}, {"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH}, {"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH}, {"dir": Vector3(1, 0, 0), "width": W_ROAD_WIDTH}]:
 		for side in [-1.0, 1.0]:
-			var lateral: Vector3  # Perpendicular to road direction
-			if abs(direction.z) > 0:
-				lateral = Vector3(side * side_offset, 0, 0)
-			else:
-				lateral = Vector3(0, 0, side * side_offset)
-
-			# Walk along the road arm from junction edge to near the end
-			var dist: float = half_junc + 5.0  # Start past junction
+			var lateral := Vector3(side, 0, 0) if absf(arm.dir.z) > 0 else Vector3(0, 0, side)
+			var dist: float = JUNCTION_SIZE / 2.0 + 11.0
 			while dist < ROAD_LENGTH - 5.0:
-				var pos: Vector3 = direction * dist + lateral
-
-				# Pole
-				var pole := CSGCylinder3D.new()
-				pole.radius = 0.04
-				pole.height = pole_height
-				pole.position = pos + Vector3(0, pole_height / 2.0, 0)
-				pole.material = _mat_pole
-				add_child(pole)
-
-				# Lamp arm (short horizontal extension toward road)
-				var arm_dir: Vector3
-				if abs(direction.z) > 0:
-					arm_dir = Vector3(-side * 0.6, 0, 0)
-				else:
-					arm_dir = Vector3(0, 0, -side * 0.6)
-				var lamp_arm := CSGBox3D.new()
-				lamp_arm.size = Vector3(0.6 if abs(direction.z) > 0 else 0.05, 0.05, 0.05 if abs(direction.z) > 0 else 0.6)
-				lamp_arm.position = pos + Vector3(0, pole_height, 0) + arm_dir * 0.5
-				lamp_arm.material = _mat_pole
-				add_child(lamp_arm)
-
-				# Lamp housing (small box at arm tip)
-				var housing := CSGBox3D.new()
-				housing.size = Vector3(0.25, 0.08, 0.25)
-				housing.position = pos + Vector3(0, pole_height - 0.04, 0) + arm_dir
-				housing.material = _mat_lamp_housing
-				add_child(housing)
-
-				# Light source (warm sodium yellow — off during day)
-				# Energy is high so the road reads bright near each lamp, but
-				# range + attenuation are tighter than a default lamp so the
-				# falloff reaches the far facade of roadside buildings without
-				# fully washing them out (their own windows stay dominant).
-				var light := OmniLight3D.new()
-				light.position = pos + Vector3(0, pole_height - 0.1, 0) + arm_dir
-				light.light_color = Color(1.0, 0.85, 0.5)  # Warm sodium yellow
-				light.light_energy = 0.0                     # Off by default (daytime)
-				light.omni_range = 15.0                      # Was 20 — pulled in some
-				light.omni_attenuation = 1.6                 # Steeper falloff (was 1.2)
-				light.shadow_enabled = false
-				light.name = "StreetLight"
-				add_child(light)
-				_street_lights.append(light)
-
-				dist += spacing
-
+				var lamp := StreetLamp.new()
+				lamp.position = arm.dir * dist + lateral * (arm.width / 2.0 + SIDEWALK_WIDTH - 0.12)
+				lamp.rotation.y = atan2(-lateral.x, -lateral.z)
+				add_child(lamp)
+				_street_lights.append(lamp)
+				dist += 15.0
 
 func set_street_lights_night(enabled: bool) -> void:
-	## Turn street lights on (night) or off (day). Also toggles the lamp housing
-	## emission so each lamp reads as a glowing bulb, not just a floating OmniLight.
-	## Energy is bumped up to 3.2 so the road pool reads bright near each lamp;
-	## the tighter range + attenuation above keep the light from drowning the
-	## warm glow of roadside shop/house windows.
-	var energy: float = 3.2 if enabled else 0.0
-	for light in _street_lights:
-		light.light_energy = energy
-	if _mat_lamp_housing:
-		_mat_lamp_housing.emission_energy_multiplier = 3.0 if enabled else 0.0
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# UTILITY POLES & OVERHEAD POWER LINES
-# ═════════════════════════════════════════════════════════════════════════════
+	for lamp in _street_lights:
+		lamp.set_night(enabled)
 
 func _build_utility_poles() -> void:
 	## Place wooden utility poles (taller than street lamps, further back) along
@@ -960,7 +572,7 @@ func _build_utility_poles() -> void:
 		var road_w: float = arm_info["width"]
 		var side: float = arm_info["side"]
 		# Sit further back than street lights (0.6) to avoid clashing
-		var side_offset: float = road_w / 2.0 + 1.9
+		var side_offset: float = road_w / 2.0 + SIDEWALK_WIDTH + 1.25
 		var is_ns: bool = abs(direction.z) > 0.0
 
 		var lateral: Vector3

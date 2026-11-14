@@ -1,4 +1,5 @@
 extends Node3D
+var signal_playback: Node
 ## Main controller for the ATCS-GH 3D Visualizer (Achimota/Neoplan Junction).
 ##
 ## Responsibilities:
@@ -30,7 +31,6 @@ extends Node3D
 
 # ── Drone/chopper flight mode ────────────────────────────────────────────────
 var _drone_mode_active: bool = false
-var _drone_hint_label: Label = null
 
 # ── Ground-level pedestrian mode ─────────────────────────────────────────────
 var _player: CharacterBody3D = null
@@ -72,9 +72,22 @@ var _corridor_switch_pending: bool = false
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _ready() -> void:
+	signal_playback = preload("res://scripts/SignalPlayback.gd").new()
+	signal_playback.name = "SignalPlayback"
+	signal_playback.intersection = intersection
+	signal_playback.vehicles = vehicle_manager
+	signal_playback.process_priority = 1
+	add_child(signal_playback)
+	pedestrian_manager.playback_clock = vehicle_manager._clock
+	call_deferred("_ensure_live_traffic")
 	print("[Main] ATCS-GH 3D Visualizer starting...")
 
 	# Store default camera transform for reset
+	# Perspective gives the rebuilt streetscape depth; P restores plan view.
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	camera.fov = 58.0
+	camera.position = Vector3(12, 29, 31)
+	camera.look_at(Vector3.ZERO)
 	_camera_default_position = camera.position
 	_camera_default_rotation = camera.rotation
 	_camera_default_size = camera.size
@@ -129,7 +142,7 @@ func _ready() -> void:
 	if cloud_manager.has_method("initialize"):
 		cloud_manager.initialize()
 
-	# ── Attach CCTV / radar / cabinet props to each signal pole ──────────
+	# ── Attach TSH-1 heads, pull boxes and the junction signal cabinet ───
 	# Intersection's _ready() has already run (children before parent), so
 	# the TrafficLight_<approach> nodes exist and we can walk them.
 	if sensor_builder and sensor_builder.has_method("attach_to_intersection"):
@@ -139,12 +152,11 @@ func _ready() -> void:
 	_setup_player()
 
 	# ── Drone/chopper mode (dormant until H pressed) ─────────────────────
-	_setup_drone_hint()
 	if drone.has_signal("mode_changed"):
 		drone.mode_changed.connect(_on_drone_mode_changed)
 
 	print("[Main] All signals connected. Waiting for server data...")
-	print("[Main] Tip: V = ground mode | H = chopper | K = sensor sightlines")
+	print("[Main] Tip: V = ground mode | H = drone | K = sensor sightlines")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -165,9 +177,10 @@ func _on_state_updated(data: Dictionary) -> void:
 		return
 
 	# Update each subsystem with the full data packet
-	intersection.update_lights(data)
 	intersection.update_lane_overlays(data)
 	vehicle_manager.update_vehicles(data)
+	signal_playback.feed(data)
+	$TrotroStationManager.update_transit(data.get("transit", {}))
 	audio_manager.update_audio(data)
 	ui.update_display(data)
 
@@ -178,7 +191,7 @@ func _on_state_updated(data: Dictionary) -> void:
 
 	# Update SUMO-driven crossing pedestrians
 	var ped_list: Array = data.get("pedestrians", [])
-	if ped_list.size() > 0:
+	if data.has("pedestrians"):
 		pedestrian_manager.update_crossing_pedestrians(
 			ped_list, float(data.get("sim_time", -1.0)))
 
@@ -190,10 +203,12 @@ func _on_vehicle_updated(data: Dictionary) -> void:
 		return
 
 	vehicle_manager.update_vehicles(data)
+	signal_playback.feed(data)
+	$TrotroStationManager.update_transit(data.get("transit", {}))
 
 	# Update SUMO-driven crossing pedestrians (sent every sim-second)
 	var ped_list: Array = data.get("pedestrians", [])
-	if ped_list.size() > 0:
+	if data.has("pedestrians"):
 		pedestrian_manager.update_crossing_pedestrians(
 			ped_list, float(data.get("sim_time", -1.0)))
 
@@ -209,7 +224,9 @@ func _on_sim_restarted(data: Dictionary) -> void:
 	var run: int = data.get("run", 0)
 	print("[Main] Simulation restarting (run #%d)..." % run)
 	vehicle_manager.clear_all()
+	signal_playback.reset()
 	pedestrian_manager.respawn()
+	$TrotroStationManager.reset()
 	audio_manager.reset_audio()
 	ui.reset_display()
 	_packets_received = 0
@@ -246,6 +263,7 @@ func _on_mode_changed(data: Dictionary) -> void:
 func _on_pedestrian_toggled(enabled: bool) -> void:
 	## Toggle pedestrians on/off from UI button.
 	pedestrian_manager.set_pedestrians_enabled(enabled)
+	$TrotroStationManager.set_passengers_enabled(enabled)
 	print("[Main] Pedestrians %s" % ("enabled" if enabled else "disabled"))
 
 
@@ -360,7 +378,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	# ── Escape: exit special modes first, else return to launcher ───────
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		if _drone_mode_active:
 			_toggle_drone_mode()
 		elif _ground_mode_active:
@@ -371,6 +389,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# ── Skip top-down camera controls while in a special mode ───────────
 	if _ground_mode_active or _drone_mode_active:
+		return
+
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_P:
+		camera.projection = Camera3D.PROJECTION_ORTHOGONAL if camera.projection == Camera3D.PROJECTION_PERSPECTIVE else Camera3D.PROJECTION_PERSPECTIVE
+		_apply_camera()
+		get_viewport().set_input_as_handled()
 		return
 
 	# ── R key: reset camera ─────────────────────────────────────────────
@@ -498,6 +522,8 @@ func _process_camera_keys(delta: float) -> void:
 func _apply_camera() -> void:
 	## Recalculate camera position from orbit parameters.
 	var base_dist: float = _camera_default_position.length()
+	if camera.projection == Camera3D.PROJECTION_PERSPECTIVE:
+		base_dist *= _zoom_level
 
 	# Derive base angles from the initial camera position
 	var base_dir: Vector3 = _camera_default_position.normalized()
@@ -507,7 +533,7 @@ func _apply_camera() -> void:
 	var yaw: float = base_yaw + _orbit_yaw
 	var pitch: float = clampf(base_pitch + _orbit_pitch, 0.15, 1.4)
 
-	# Keep camera at constant distance; orthographic size handles zoom
+	# Perspective zoom changes orbit distance; plan view changes camera size.
 	var offset := Vector3(
 		base_dist * cos(pitch) * sin(yaw),
 		base_dist * sin(pitch),
@@ -636,33 +662,6 @@ func _update_ground_hint() -> void:
 # DRONE / CHOPPER FLIGHT MODE
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _setup_drone_hint() -> void:
-	## Bottom-centered text overlay shown while drone mode is active.
-	## Mirrors the ground-mode hint so muscle memory carries over.
-	_drone_hint_label = Label.new()
-	_drone_hint_label.name = "DroneModeHint"
-	_drone_hint_label.anchor_left = 0.5
-	_drone_hint_label.anchor_right = 0.5
-	_drone_hint_label.anchor_top = 1.0
-	_drone_hint_label.anchor_bottom = 1.0
-	_drone_hint_label.offset_left  = -320.0
-	_drone_hint_label.offset_right =  320.0
-	_drone_hint_label.offset_top   = -60.0
-	_drone_hint_label.offset_bottom = -20.0
-	_drone_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_drone_hint_label.add_theme_color_override("font_color", Color(1, 1, 1))
-	_drone_hint_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_drone_hint_label.add_theme_constant_override("shadow_offset_x", 1)
-	_drone_hint_label.add_theme_constant_override("shadow_offset_y", 1)
-	_drone_hint_label.add_theme_font_size_override("font_size", 14)
-	_drone_hint_label.text = "CHOPPER MODE — Mouse look  •  WASD fly  •  Space/Ctrl up/down  •  Shift boost  •  K sensor FOV  •  H / Esc exit"
-	_drone_hint_label.visible = false
-	_drone_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ui_root := ui as Control
-	if ui_root:
-		ui_root.add_child(_drone_hint_label)
-
-
 func _toggle_drone_mode() -> void:
 	_drone_mode_active = not _drone_mode_active
 	if _drone_mode_active:
@@ -670,24 +669,24 @@ func _toggle_drone_mode() -> void:
 		_is_panning = false
 		_is_rotating = false
 		if drone and drone.has_method("activate"):
-			drone.activate()
-		if _drone_hint_label:
-			_drone_hint_label.visible = true
-		print("[Main] Chopper mode: ON")
+			drone.activate(camera)
+		print("[Main] Drone mode: ON")
 	else:
 		if drone and drone.has_method("deactivate"):
 			drone.deactivate()
 		camera.current = true   # restore the top-down isometric camera
-		if _drone_hint_label:
-			_drone_hint_label.visible = false
-		print("[Main] Chopper mode: OFF")
+		print("[Main] Drone mode: OFF")
 
 
 func _on_drone_mode_changed(active: bool) -> void:
 	## Fired by DroneController when it activates/deactivates. Keeps our
 	## local flag honest even if some future path toggles the drone directly.
 	_drone_mode_active = active
-	if _drone_hint_label:
-		_drone_hint_label.visible = active
 	if not active:
 		camera.current = true
+
+
+func _ensure_live_traffic() -> void:
+	var manager := get_node_or_null("/root/ServerManager")
+	if manager:
+		await manager.ensure_traffic(1, ws_client, ui)

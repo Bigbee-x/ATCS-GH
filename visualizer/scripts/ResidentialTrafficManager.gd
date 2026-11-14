@@ -1,4 +1,5 @@
 extends Node3D
+const FleetActor = preload("res://scripts/VehicleActor.gd")
 ## Ambient residential traffic for the SE quadrant's internal street grid.
 ##
 ## Purely client-side — these cars never touch SUMO, never report metrics,
@@ -211,6 +212,8 @@ func _update_car_transform(car: Dictionary, snap_yaw: bool, delta: float = 0.0) 
 	var right_vec := Vector3(-dir_world.z, 0.0, dir_world.x)
 	world_pos += right_vec * LANE_OFFSET
 
+	var old_position: Vector3 = car["node"].position
+	var old_yaw: float = car["node"].rotation.y
 	car["node"].position = world_pos
 
 	# Heading — Godot convention: mesh front is -Z, so yaw = atan2(-dx, -dz).
@@ -220,6 +223,8 @@ func _update_car_transform(car: Dictionary, snap_yaw: bool, delta: float = 0.0) 
 	else:
 		car["yaw"] = lerp_angle(float(car["yaw"]), target_yaw, clampf(delta * TURN_LERP_SPEED, 0.0, 1.0))
 	car["node"].rotation.y = float(car["yaw"])
+	if not snap_yaw:
+		car["node"].get_node("Coach").animate(old_position.distance_to(world_pos),angle_difference(old_yaw,car["yaw"]),delta,get_parent().get_node("TimeOfDayManager").is_night(),false,false)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -228,41 +233,10 @@ func _update_car_transform(car: Dictionary, snap_yaw: bool, delta: float = 0.0) 
 
 func _build_car_mesh() -> Node3D:
 	var root := Node3D.new()
-	root.name = "ResCar"
-
-	var body_color: Color = CAR_COLORS[_rng.randi() % CAR_COLORS.size()]
-
-	# Body
-	var body := CSGBox3D.new()
-	body.size = Vector3(0.6, 0.28, 1.0)
-	body.position = Vector3(0, 0.14, 0)
-	var body_mat := StandardMaterial3D.new()
-	body_mat.albedo_color = body_color
-	body_mat.metallic = 0.3
-	body_mat.roughness = 0.4
-	body.material = body_mat
-	body.name = "Body"
-	root.add_child(body)
-
-	# Cabin / roof step — darker shade of body color
-	var cabin := CSGBox3D.new()
-	cabin.size = Vector3(0.54, 0.14, 0.48)
-	cabin.position = Vector3(0, 0.34, -0.08)
-	var cabin_mat := StandardMaterial3D.new()
-	cabin_mat.albedo_color = body_color * 0.72
-	cabin_mat.metallic = 0.2
-	cabin.material = cabin_mat
-	cabin.name = "Cabin"
-	root.add_child(cabin)
-
-	# Undercarriage — reads as wheels from iso view
-	var under := CSGBox3D.new()
-	under.size = Vector3(0.64, 0.05, 0.92)
-	under.position = Vector3(0, -0.02, 0)
-	var under_mat := StandardMaterial3D.new()
-	under_mat.albedo_color = Color(0.08, 0.08, 0.08)
-	under.material = under_mat
-	under.name = "Under"
-	root.add_child(under)
-
+	root.name = "ResidentialCar"
+	var car := FleetActor.new()
+	car.name = "Coach"
+	car.configure("car",_rng.randi())
+	car.position.y = -0.05
+	root.add_child(car)
 	return root

@@ -1,4 +1,5 @@
 extends Node3D
+var playback_clock: RefCounted
 ## Pedestrian system with ambient sidewalk walkers + SUMO-driven crossing.
 ##
 ## Two modes of operation:
@@ -7,32 +8,16 @@ extends Node3D
 ##    (positions received from server via vehicle_update packets)
 ##
 ## SUMO coordinate mapping:
-##   SUMO (x,y) center = (500, 500) → Godot (0, 0)
-##   Scale: 1 SUMO unit = 0.04 Godot units (500m → 20 Godot units)
+##   Piecewise mapping matches the vehicle renderer. SUMO owns crossing routes.
+##   Ambient walkers stay inside the sidewalk strips; origin is at the feet.
 
-# ── Configuration ──────────────────────────────────────────────────────────────
-const NUM_AMBIENT       := 28      # Ambient sidewalk pedestrians
-const MIN_SPEED         := 0.4     # Slowest walk speed (Godot units/sec)
-const MAX_SPEED         := 1.2     # Fastest walk speed
-const BODY_WIDTH        := 0.10    # Torso width (X)
-const BODY_DEPTH        := 0.08    # Torso depth (Z)
-const BODY_HEIGHT       := 0.25    # Torso height (Y)
-const HEAD_RADIUS       := 0.045   # Head sphere radius
-const LEG_HEIGHT        := 0.18    # Legs (lower body)
-const TOTAL_HEIGHT      := 0.52    # Approximate total (legs + body + head)
-const SIDEWALK_Y        := 0.15    # Matches Intersection.gd SIDEWALK_HEIGHT
-
-# ── Procedural walk animation ──────────────────────────────────────────────────
-# Pedestrians now have articulated legs + arms that swing as they move, plus a
-# subtle vertical bob. All driven by a per-person `phase` (radians) advanced by
-# distance walked, so faster walkers stride faster. Pure transform animation —
-# no skeletons/imported rigs — so it stays cheap and matches the low-poly style.
-const STRIDE_RATE       := 9.0     # stride-phase radians gained per Godot unit walked
-const LEG_SWING         := 0.55    # peak leg swing angle (rad, ~31°)
-const ARM_SWING         := 0.42    # peak arm swing angle (rad), opposite the legs
-const BOB_HEIGHT        := 0.012   # vertical body bob amplitude (Godot units)
-const LEG_SPLIT_W       := 0.045   # each leg's width (two legs replace the old block)
-const ARM_LENGTH        := 0.16    # arm length
+const Layout = preload("res://scripts/TrafficLayout.gd")
+const Actor = preload("res://scripts/PedestrianActor.gd")
+const NUM_AMBIENT := 42
+const MIN_SPEED := 0.30
+const MAX_SPEED := 0.62
+const SIDEWALK_Y := 0.15
+var _rng := RandomNumberGenerator.new()
 
 # ── SUMO coordinate transform ──────────────────────────────────────────────────
 const SUMO_CENTER       := 1500.0  # SUMO junction center (single-junction mode)
@@ -58,7 +43,7 @@ var corridor_mode: bool = false
 const C_NS_ROAD_WIDTH   := 6.0
 const C_JUNCTION_SIZE   := 6.0
 const C_JUNCTION_HALF   := 3.0
-const C_SIDEWALK_WIDTH  := 0.5
+const C_SIDEWALK_WIDTH  := 0.7
 const C_CROSS_ARM       := 55.0
 const C_BOUNDARY_ARM    := 55.0
 const C_J0_Z            := 0.0
@@ -86,36 +71,6 @@ const C_GD_JUNC_HALF: float = 3.0
 const C_GD_ROAD_J0J1: float = 24.0
 const C_GD_ROAD_J1J2: float = 24.0
 const C_GD_BOUNDARY: float = 55.0
-
-# ── Appearance palettes ───────────────────────────────────────────────────────
-const SHIRT_COLORS: Array = [
-	Color(0.85, 0.15, 0.15),   # Red
-	Color(0.15, 0.45, 0.85),   # Blue
-	Color(0.95, 0.75, 0.05),   # Yellow
-	Color(0.20, 0.70, 0.25),   # Green
-	Color(0.90, 0.45, 0.10),   # Orange
-	Color(0.60, 0.20, 0.70),   # Purple
-	Color(0.95, 0.95, 0.95),   # White
-	Color(0.15, 0.15, 0.15),   # Black
-	Color(0.80, 0.40, 0.60),   # Pink
-	Color(0.10, 0.65, 0.65),   # Teal
-]
-
-const SKIN_COLORS: Array = [
-	Color(0.36, 0.22, 0.14),
-	Color(0.45, 0.30, 0.18),
-	Color(0.55, 0.38, 0.24),
-	Color(0.65, 0.48, 0.32),
-	Color(0.42, 0.26, 0.16),
-]
-
-const LEG_COLORS: Array = [
-	Color(0.15, 0.15, 0.20),
-	Color(0.20, 0.18, 0.15),
-	Color(0.10, 0.10, 0.12),
-	Color(0.30, 0.28, 0.25),
-	Color(0.18, 0.22, 0.30),
-]
 
 # ── Sidewalk path definitions ─────────────────────────────────────────────────
 var _sidewalk_paths: Array = []
@@ -174,6 +129,7 @@ func is_pedestrians_enabled() -> bool:
 
 
 func _ready() -> void:
+	_rng.seed = 5309
 	_define_sidewalk_paths()
 	_spawn_ambient()
 
@@ -182,7 +138,11 @@ func _process(delta: float) -> void:
 	if not _pedestrians_enabled:
 		return
 
-	_snap_clock.advance(delta)
+	if playback_clock != null:
+		_snap_clock.render_t = playback_clock.render_t
+	else:
+		_snap_clock.advance(delta)
+	_retire_crossing_pedestrians()
 
 	for ped in _ambient_peds:
 		_move_ambient(ped, delta)
@@ -199,10 +159,15 @@ func _process(delta: float) -> void:
 			node.position = _sample_ped_snaps(snaps, _snap_clock.render_t)
 		else:
 			node.position = node.position.lerp(data["target_pos"], minf(delta * 8.0, 1.0))
-		var moving: bool = node.position.distance_to(prev) > 0.0015
-		if moving:
-			data["phase"] = data.get("phase", 0.0) + delta * STRIDE_RATE * 0.9
-		_animate_walk(node, data.get("phase", 0.0), moving)
+		var displacement: Vector3 = node.position - prev
+		displacement.y = 0.0
+		var distance: float = displacement.length()
+		var target_yaw: float = data.get("target_yaw", node.rotation.y)
+		if distance > 0.0001:
+			target_yaw = atan2(displacement.x, displacement.z)
+		node.rotation.y = lerp_angle(node.rotation.y, target_yaw, 1.0 - exp(-delta * 9.0))
+		node.animate(distance, distance / maxf(delta, 0.0001), delta)
+
 
 
 static func _push_ped_snap(snaps: Array, t: float, pos: Vector3) -> void:
@@ -310,58 +275,82 @@ func _define_corridor_sidewalk_paths() -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _spawn_ambient() -> void:
-	for i in range(NUM_AMBIENT):
-		var path_idx: int = i % _sidewalk_paths.size()
+	for i in range(64 if corridor_mode else NUM_AMBIENT):
 		var ped_node: Node3D = _make_pedestrian_mesh()
 		add_child(ped_node)
-
-		var ped_data: Dictionary = {
-			"node": ped_node,
-			"path_idx": path_idx,
-			"progress": randf(),
-			"speed": MIN_SPEED + randf() * (MAX_SPEED - MIN_SPEED),
-			"forward": randf() > 0.5,
-			"phase": randf() * TAU,   # desync each walker's stride
+		var ped: Dictionary = {
+			"node": ped_node, "path_idx": i % _sidewalk_paths.size(),
+			"progress": _rng.randf_range(0.025, 0.975),
+			"speed": _rng.randf_range(MIN_SPEED, MAX_SPEED), "velocity": 0.0,
+			"forward": _rng.randf() > 0.5, "pause": 0.0,
+			"next_pause": _rng.randf_range(7.0, 28.0), "lateral": 0.0,
+			"interest": _rng.randf() * TAU,
 		}
-		_update_ambient_position(ped_data)
-		_ambient_peds.append(ped_data)
-
+		# Avoid spawning overlapping bodies on the same strip.
+		for attempt in range(12):
+			var crowded: bool = false
+			var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
+			var path_length: float = path["start"].distance_to(path["end"])
+			for other in _ambient_peds:
+				if other["path_idx"] == ped["path_idx"] and absf(other["progress"] - ped["progress"]) * path_length < 0.9:
+					crowded = true
+			if not crowded:
+				break
+			ped["progress"] = _rng.randf_range(0.025, 0.975)
+		_update_ambient_position(ped, 1.0, true)
+		_ambient_peds.append(ped)
 
 func _move_ambient(ped: Dictionary, delta: float) -> void:
 	var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
-	var path_length: float = path["start"].distance_to(path["end"])
-	var step: float = (ped["speed"] * delta) / path_length
+	var length: float = path["start"].distance_to(path["end"])
+	var forward: bool = ped["forward"]
+	var remaining: float = (1.0 - ped["progress"] if forward else ped["progress"]) * length
+	ped["next_pause"] -= delta
+	if ped["pause"] <= 0.0:
+		if remaining < 0.07:
+			ped["pause"] = _rng.randf_range(1.0, 1.8)
+			ped["forward"] = not forward
+			ped["velocity"] = 0.0
+		elif ped["next_pause"] <= 0.0:
+			ped["pause"] = _rng.randf_range(1.1, 3.8)
+			ped["next_pause"] = _rng.randf_range(13.0, 35.0)
+	var desired: float = ped["speed"] * clampf(remaining / 0.55, 0.12, 1.0)
+	if ped["pause"] > 0.0:
+		ped["pause"] = maxf(0.0, ped["pause"] - delta)
+		desired = 0.0
+	# Keep a following distance. Opposing walkers use separate passing lanes.
+	for other in _ambient_peds:
+		if other["node"] == ped["node"] or other["path_idx"] != ped["path_idx"]:
+			continue
+		var gap: float = (other["progress"] - ped["progress"]) * length * (1.0 if ped["forward"] else -1.0)
+		if gap > 0.0 and gap < 0.7 and other["forward"] == ped["forward"]:
+			desired = minf(desired, other["velocity"] * clampf((gap - 0.24) / 0.46, 0.0, 1.0))
+	ped["velocity"] = move_toward(ped["velocity"], desired, delta * 0.75)
+	var node: Node3D = ped["node"]
+	var previous: Vector3 = node.position
+	ped["progress"] = clampf(ped["progress"] + ped["velocity"] * delta / length * (1.0 if ped["forward"] else -1.0), 0.0, 1.0)
+	_update_ambient_position(ped, delta)
+	var distance: float = node.position.distance_to(previous)
+	node.animate(distance, distance / maxf(delta, 0.0001), delta)
 
-	if ped["forward"]:
-		ped["progress"] += step
-		if ped["progress"] >= 1.0:
-			ped["progress"] = 1.0
-			ped["forward"] = false
-	else:
-		ped["progress"] -= step
-		if ped["progress"] <= 0.0:
-			ped["progress"] = 0.0
-			ped["forward"] = true
-
-	# Advance the walk phase by distance covered this frame, then animate.
-	ped["phase"] += ped["speed"] * delta * STRIDE_RATE
-	_update_ambient_position(ped)
-	_animate_walk(ped["node"], ped["phase"], true)
-
-
-func _update_ambient_position(ped: Dictionary) -> void:
+func _update_ambient_position(ped: Dictionary, delta: float, snap: bool = false) -> void:
 	var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
+	var direction: Vector3 = (path["end"] - path["start"]).normalized()
+	var side := Vector3(direction.z, 0, -direction.x)
 	var pos: Vector3 = path["start"].lerp(path["end"], ped["progress"])
-	pos.y = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0
-	# Subtle vertical bob synced to the stride (2× the leg frequency).
-	pos.y += absf(sin(ped.get("phase", 0.0) * 2.0)) * BOB_HEIGHT
+	var lane_width: float = 0.17 if corridor_mode else 0.24
+	var lane: float = lane_width * (1.0 if ped["forward"] else -1.0)
+	# Slight individual drift, bounded well inside the sidewalk edge.
+	lane += sin(ped["progress"] * 16.0 + ped["interest"]) * (0.008 if corridor_mode else 0.025)
+	ped["lateral"] = lane if snap else move_toward(ped["lateral"], lane, delta * 0.25)
+	pos += side * ped["lateral"]
+	pos.y = SIDEWALK_Y
 	var node: Node3D = ped["node"]
 	node.position = pos
-	var dir: Vector3 = (path["end"] - path["start"]).normalized()
 	if not ped["forward"]:
-		dir = -dir
-	if dir.length() > 0.01:
-		node.rotation.y = atan2(dir.x, dir.z)
+		direction = -direction
+	var yaw: float = atan2(direction.x, direction.z)
+	node.rotation.y = yaw if snap else lerp_angle(node.rotation.y, yaw, 1.0 - exp(-delta * 5.0))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -402,36 +391,14 @@ func update_crossing_pedestrians(ped_list: Array, sim_time: float = -1.0) -> voi
 			# Skip — pedestrian is on a regular road edge (sidewalk in SUMO)
 			# If they were previously visible, release them
 			if _crossing_peds.has(pid):
-				_release_crossing_mesh(_crossing_peds[pid]["node"])
-				_crossing_peds.erase(pid)
+				_push_ped_snap(_crossing_peds[pid]["snaps"], sim_time, Layout.pedestrian(ped_data, corridor_mode))
 			continue
 
 		seen[pid] = true
+		if _crossing_peds.has(pid):
+			_crossing_peds[pid].erase("retire_at")
 
-		# Convert SUMO coords to Godot coords (piecewise mapping matching VehicleManager)
-		var sumo_x: float = float(ped_data.get("x", 1500.0))
-		var sumo_y: float = float(ped_data.get("y", 1500.0))
-		var godot_x: float
-		var godot_z: float
-		if corridor_mode:
-			var dx: float = sumo_x - SUMO_CENTER
-			var dy: float = sumo_y - SUMO_CENTER
-			godot_x = -_map_corridor_x(dx)  # Negated for right-hand visual
-			godot_z = _map_corridor_z(dy)
-		else:
-			var dx: float = sumo_x - SUMO_CENTER
-			var dz: float = sumo_y - SUMO_CENTER
-			godot_x = -_map_sj_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)  # Negated for right-hand visual
-			godot_z = _map_sj_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
-
-		# Crossings are at road level; walking areas are at sidewalk level
-		var target_y: float
-		if on_crossing:
-			target_y = LEG_HEIGHT + BODY_HEIGHT / 2.0  # Road level
-		else:
-			target_y = SIDEWALK_Y + LEG_HEIGHT + BODY_HEIGHT / 2.0  # Sidewalk level
-
-		var target_pos := Vector3(godot_x, target_y, godot_z)
+		var target_pos := Layout.pedestrian(ped_data, corridor_mode)
 
 		if _crossing_peds.has(pid):
 			# Update existing crossing pedestrian
@@ -440,30 +407,33 @@ func update_crossing_pedestrians(ped_list: Array, sim_time: float = -1.0) -> voi
 			# Acquire or create a pedestrian mesh
 			var new_mesh: Node3D = _acquire_crossing_mesh()
 			new_mesh.position = target_pos
+			new_mesh.rotation.y = deg_to_rad(-float(ped_data.get("angle", 0.0)))
 			_crossing_peds[pid] = {
 				"node": new_mesh,
 				"target_pos": target_pos,
 				"snaps": [],              # sim-time-stamped position history
-				"phase": randf() * TAU,   # desync stride per crosser
+				"target_yaw": 0.0,
 			}
 		if sim_time >= 0.0:
 			_push_ped_snap(_crossing_peds[pid]["snaps"], sim_time, target_pos)
 
 		# Update facing direction from SUMO angle
 		var angle_deg: float = float(ped_data.get("angle", 0.0))
-		var ped_node: Node3D = _crossing_peds[pid]["node"]
-		ped_node.rotation.y = deg_to_rad(-(angle_deg - 90.0))
+		_crossing_peds[pid]["target_yaw"] = deg_to_rad(-angle_deg)
 
-	# Remove pedestrians no longer in the update (left the area or no longer on crossing)
-	var to_remove: Array = []
+	# Retire on the playback clock, after their last crossing/curb snapshot.
 	for pid in _crossing_peds:
-		if not seen.has(pid):
-			to_remove.append(pid)
+		if not seen.has(pid) and not _crossing_peds[pid].has("retire_at"):
+			_crossing_peds[pid]["retire_at"] = sim_time
+	if sim_time < 0:
+		_retire_crossing_pedestrians()
 
-	for pid in to_remove:
-		var node: Node3D = _crossing_peds[pid]["node"]
-		_release_crossing_mesh(node)
-		_crossing_peds.erase(pid)
+func _retire_crossing_pedestrians() -> void:
+	for pid in _crossing_peds.keys():
+		var data: Dictionary = _crossing_peds[pid]
+		if data.has("retire_at") and (float(data.retire_at) < 0 or _snap_clock.render_t >= float(data.retire_at)):
+			_release_crossing_mesh(data.node)
+			_crossing_peds.erase(pid)
 
 
 func _acquire_crossing_mesh() -> Node3D:
@@ -486,69 +456,6 @@ func _release_crossing_mesh(node: Node3D) -> void:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CORRIDOR PIECEWISE MAPPING
-# ═══════════════════════════════════════════════════════════════════════════════
-
-func _map_corridor_x(dx: float) -> float:
-	## Map SUMO X (offset-subtracted) to Godot X (same logic as VehicleManager).
-	var s: float = 1.0 if dx >= 0.0 else -1.0
-	var a: float = absf(dx)
-	if a <= C_SUMO_JUNC_HALF_X:
-		return s * a * (C_GD_JUNC_HALF / C_SUMO_JUNC_HALF_X)
-	else:
-		var road_d: float = a - C_SUMO_JUNC_HALF_X
-		return s * (C_GD_JUNC_HALF + road_d * (C_CROSS_ARM / C_SUMO_CROSS_ROAD))
-
-
-func _map_corridor_z(dy: float) -> float:
-	## Map SUMO Y (offset-subtracted) to Godot Z (same logic as VehicleManager).
-	var j0_south: float = C_SUMO_J0_Y - C_SUMO_J0_HALF_Y
-	if dy < j0_south:
-		var south_dist: float = j0_south - dy
-		return (C_J0_Z - C_GD_JUNC_HALF) - south_dist * (C_GD_BOUNDARY / C_SUMO_SOUTH_ROAD)
-
-	var j0_north: float = C_SUMO_J0_Y + C_SUMO_J0_HALF_Y
-	if dy <= j0_north:
-		return C_J0_Z + (dy - C_SUMO_J0_Y) * (C_GD_JUNC_HALF / C_SUMO_J0_HALF_Y)
-
-	var j1_south: float = C_SUMO_J1_Y - C_SUMO_J1_HALF_Y
-	if dy < j1_south:
-		var t: float = (dy - j0_north) / (j1_south - j0_north)
-		return (C_J0_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J0J1
-
-	var j1_north: float = C_SUMO_J1_Y + C_SUMO_J1_HALF_Y
-	if dy <= j1_north:
-		return C_J1_Z + (dy - C_SUMO_J1_Y) * (C_GD_JUNC_HALF / C_SUMO_J1_HALF_Y)
-
-	var j2_south: float = C_SUMO_J2_Y - C_SUMO_J2_HALF_Y
-	if dy < j2_south:
-		var t: float = (dy - j1_north) / (j2_south - j1_north)
-		return (C_J1_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J1J2
-
-	var j2_north: float = C_SUMO_J2_Y + C_SUMO_J2_HALF_Y
-	if dy <= j2_north:
-		return C_J2_Z + (dy - C_SUMO_J2_Y) * (C_GD_JUNC_HALF / C_SUMO_J2_HALF_Y)
-
-	var north_dist: float = dy - j2_north
-	return (C_J2_Z + C_GD_JUNC_HALF) + north_dist * (C_GD_BOUNDARY / C_SUMO_NORTH_ROAD)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SINGLE-JUNCTION PIECEWISE MAPPING
-# ═══════════════════════════════════════════════════════════════════════════════
-
-func _map_sj_axis(d: float, junc_half: float, road_len: float) -> float:
-	## Map one axis from SUMO to Godot (same logic as VehicleManager._map_axis).
-	var s: float = 1.0 if d >= 0.0 else -1.0
-	var a: float = absf(d)
-	if a <= junc_half:
-		return s * a * (GODOT_JUNC_HALF / junc_half)
-	else:
-		var road_d: float = a - junc_half
-		return s * (GODOT_JUNC_HALF + road_d * (GODOT_ROAD_LEN / road_len))
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# RESET
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func respawn() -> void:
@@ -576,81 +483,8 @@ func respawn() -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _make_pedestrian_mesh() -> Node3D:
-	var root := Node3D.new()
-
-	var shirt_color: Color = SHIRT_COLORS[randi() % SHIRT_COLORS.size()]
-	var skin_color: Color = SKIN_COLORS[randi() % SKIN_COLORS.size()]
-	var leg_color: Color = LEG_COLORS[randi() % LEG_COLORS.size()]
-
-	var leg_mat := StandardMaterial3D.new()
-	leg_mat.albedo_color = leg_color
-	var shirt_mat := StandardMaterial3D.new()
-	shirt_mat.albedo_color = shirt_color
-	var skin_mat := StandardMaterial3D.new()
-	skin_mat.albedo_color = skin_color
-
-	# Legs — two of them, each on a hip pivot so they can swing fore/aft.
-	# The pivot sits at the torso base; the leg box hangs below it.
-	var hip_y: float = -BODY_HEIGHT / 2.0
-	var leg_size := Vector3(LEG_SPLIT_W, LEG_HEIGHT, BODY_DEPTH * 0.85)
-	_add_limb(root, "HipL", Vector3(-0.026, hip_y, 0), leg_size, LEG_HEIGHT, leg_mat)
-	_add_limb(root, "HipR", Vector3( 0.026, hip_y, 0), leg_size, LEG_HEIGHT, leg_mat)
-
-	# Torso
-	var torso := CSGBox3D.new()
-	torso.size = Vector3(BODY_WIDTH + 0.02, BODY_HEIGHT, BODY_DEPTH + 0.01)
-	torso.position = Vector3(0, 0, 0)
-	torso.material = shirt_mat
-	torso.name = "Torso"
-	root.add_child(torso)
-
-	# Arms — two of them, each on a shoulder pivot, swinging opposite the legs.
-	var sh_y: float = BODY_HEIGHT / 2.0 - 0.03
-	var arm_x: float = BODY_WIDTH / 2.0 + 0.018
-	var arm_size := Vector3(0.03, ARM_LENGTH, 0.03)
-	_add_limb(root, "ShoulderL", Vector3(-arm_x, sh_y, 0), arm_size, ARM_LENGTH, skin_mat)
-	_add_limb(root, "ShoulderR", Vector3( arm_x, sh_y, 0), arm_size, ARM_LENGTH, skin_mat)
-
-	# Head
-	var head := CSGSphere3D.new()
-	head.radius = HEAD_RADIUS
-	head.radial_segments = 8
-	head.rings = 4
-	head.position = Vector3(0, BODY_HEIGHT / 2.0 + HEAD_RADIUS, 0)
-	head.material = skin_mat
-	head.name = "Head"
-	root.add_child(head)
-
-	return root
-
-
-func _add_limb(parent: Node3D, pivot_name: String, pivot_pos: Vector3,
-			   box_size: Vector3, length: float, mat: StandardMaterial3D) -> void:
-	## Build a limb that pivots from `pivot_pos`: a named Node3D pivot with a
-	## CSGBox3D hanging below it (offset down by length/2). Animating the pivot's
-	## rotation.x swings the limb fore/aft without rebuilding the CSG geometry.
-	var pivot := Node3D.new()
-	pivot.name = pivot_name
-	pivot.position = pivot_pos
-	parent.add_child(pivot)
-	var box := CSGBox3D.new()
-	box.size = box_size
-	box.position = Vector3(0, -length / 2.0, 0)
-	box.material = mat
-	pivot.add_child(box)
-
-
-func _animate_walk(root: Node3D, phase: float, moving: bool) -> void:
-	## Swing the legs and arms from a per-person walk phase. Arms swing opposite
-	## the legs (natural counter-rotation). When not moving, limbs ease to rest.
-	var s: float = sin(phase)
-	var leg: float = s * LEG_SWING if moving else 0.0
-	var arm: float = s * ARM_SWING if moving else 0.0
-	var hip_l := root.get_node_or_null("HipL") as Node3D
-	var hip_r := root.get_node_or_null("HipR") as Node3D
-	var sh_l := root.get_node_or_null("ShoulderL") as Node3D
-	var sh_r := root.get_node_or_null("ShoulderR") as Node3D
-	if hip_l: hip_l.rotation.x = leg
-	if hip_r: hip_r.rotation.x = -leg
-	if sh_l: sh_l.rotation.x = -arm
-	if sh_r: sh_r.rotation.x = arm
+	var actor := Actor.new()
+	actor.configure(_rng.randi())
+	actor.name = "Pedestrian"
+	actor.visible = _pedestrians_enabled
+	return actor

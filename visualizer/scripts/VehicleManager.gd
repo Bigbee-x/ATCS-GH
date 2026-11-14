@@ -1,43 +1,16 @@
 extends Node3D
+
+const Layout = preload("res://scripts/TrafficLayout.gd")
+const FleetActor = preload("res://scripts/VehicleActor.gd")
 ## Per-vehicle tracking with smooth animation.
 ##
-## Each SUMO vehicle is represented 1:1 as a Godot CSGBox3D (or ambulance
-## Node3D). Positions stream from the Python server every decision step
-## and vehicles smoothly lerp toward their targets in _process().
-##
-## Vehicle lifecycle:
-##   Spawn  — new ID in server data, acquire node from pool, snap to position
-##   Update — existing ID, update target position/rotation (lerp animates)
-##   Despawn — ID gone from server data, release node back to pool
-##
-## Coordinate mapping:
-##   SUMO (x, y)  ->  Godot Vector3(x, 0.35, y)
-##   SUMO angle   ->  Godot rotation.y = deg_to_rad(angle - 180)
-
-# ── Vehicle geometry ─────────────────────────────────────────────────────────
-## Sizes tuned so cars look clear in the junction focal area and acceptably
-## close (bumper-to-bumper) on the compressed roads.
-const CAR_SIZE       := Vector3(0.6, 0.3, 1.0)
-const TROTRO_SIZE    := Vector3(0.6, 0.4, 1.4)
-const AMBULANCE_SIZE := Vector3(0.7, 0.45, 1.5)
-const VEHICLE_Y      := 0.35
-
-# ── Kenney Car Kit (CC0) realistic vehicle models ────────────────────────────
-# GLB bodies are ~2.55 long; scale ~0.4 matches the old 1.0-long stylized cars.
-# Wheels bottom out at model-y -0.30, so a small Y offset drops them to the road.
-# All models share one "colormap" material, so visual variety comes from using
-# DIFFERENT models (not per-car recolouring). Tunable — adjust after an F5 look.
-const MODEL_SCALE: float      = 0.40
-const MODEL_Y_OFFSET: float   = -0.30   # model origin is at ground level (wheel
-										# bottoms y=0), root y=0.35, road top y=0.05
-const MODEL_YAW_OFFSET: float = PI      # Kenney models face +Z; our forward is -Z
-const CAR_MODELS: Array[PackedScene] = [
-	preload("res://assets/vehicles/sedan.glb"),
-	preload("res://assets/vehicles/suv.glb"),
-	preload("res://assets/vehicles/taxi.glb"),
-	preload("res://assets/vehicles/hatchback-sports.glb"),
-]
-const TROTRO_MODEL: PackedScene    = preload("res://assets/vehicles/van.glb")
+## Each SUMO ID has a correctly typed pooled vehicle, with snapshot playback.
+## Cars and trotros use shared curved coachwork and animated wheels; ambulances
+## retain the bundled GLB and flashing light bar. Forward is local -Z.
+const VEHICLE_Y := 0.35
+const MODEL_SCALE := 0.40
+const MODEL_Y_OFFSET := -0.30
+const MODEL_YAW_OFFSET := PI
 const AMBULANCE_MODEL: PackedScene = preload("res://assets/vehicles/ambulance.glb")
 
 # ── SUMO → Godot coordinate transform ────────────────────────────────────────
@@ -116,18 +89,6 @@ const CR_FADE_DIST: float = 12.0      # Start fading 12 units before edge
 # ── Pool limits ──────────────────────────────────────────────────────────────
 var MAX_VEHICLES: int = 200
 
-# ── Accra street palette ─────────────────────────────────────────────────────
-const CAR_COLORS: Array = [
-	Color(0.15, 0.25, 0.65),   # Blue
-	Color(0.65, 0.10, 0.10),   # Red
-	Color(0.90, 0.90, 0.90),   # White
-	Color(0.12, 0.12, 0.14),   # Black
-	Color(0.55, 0.55, 0.55),   # Silver
-	Color(0.05, 0.45, 0.20),   # Green
-	Color(0.50, 0.30, 0.15),   # Brown
-	Color(0.75, 0.20, 0.55),   # Maroon
-]
-
 # ── Internal state ───────────────────────────────────────────────────────────
 ## Active vehicles: vid -> { node: Node3D, target_pos: Vector3,
 ##   target_rot: float, snaps: Array, type: String, opacity: float,
@@ -143,6 +104,7 @@ const MAX_SNAPS: int = 4     # per-vehicle history (4 s at 1 Hz packets)
 
 ## Recyclable car nodes (hidden, ready for reuse)
 var _car_pool: Array = []
+var _trotro_pool: Array = []
 
 ## Recyclable ambulance nodes
 var _amb_pool: Array = []
@@ -151,11 +113,6 @@ var _amb_pool: Array = []
 var _pulse_time: float = 0.0
 
 ## Shared vehicle materials (created once, reused across all vehicles)
-var _mat_windshield: StandardMaterial3D
-var _mat_undercarriage: StandardMaterial3D
-var _mat_roof_rack: StandardMaterial3D
-var _mat_headlight: StandardMaterial3D   # Warm white, emissive at night
-var _mat_taillight: StandardMaterial3D   # Red, emissive at night
 var _is_night: bool = false
 ## True from ~16:30 onwards. When set WITHOUT _is_night, roughly
 ## DUSK_LIGHTS_THRESHOLD % of vehicles run their lights — mimics real-world
@@ -174,40 +131,6 @@ func _ready() -> void:
 	var traffic_audio := preload("res://scripts/TrafficAudio.gd").new()
 	traffic_audio.name = "TrafficAudio"
 	add_child(traffic_audio)
-
-	## Create shared vehicle materials.
-	_mat_windshield = StandardMaterial3D.new()
-	_mat_windshield.albedo_color = Color(0.1, 0.15, 0.25, 0.7)
-	_mat_windshield.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mat_windshield.metallic = 0.6
-	_mat_windshield.roughness = 0.2
-
-	_mat_undercarriage = StandardMaterial3D.new()
-	_mat_undercarriage.albedo_color = Color(0.08, 0.08, 0.08, 1.0)
-	_mat_undercarriage.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mat_undercarriage.roughness = 0.9
-
-	_mat_roof_rack = StandardMaterial3D.new()
-	_mat_roof_rack.albedo_color = Color(0.35, 0.35, 0.38, 1.0)
-	_mat_roof_rack.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_mat_roof_rack.metallic = 0.5
-	_mat_roof_rack.roughness = 0.4
-
-	# Headlights — warm white, emission always on (nodes toggled via visibility)
-	_mat_headlight = StandardMaterial3D.new()
-	_mat_headlight.albedo_color = Color(1.0, 0.97, 0.85, 1.0)
-	_mat_headlight.emission_enabled = true
-	_mat_headlight.emission = Color(1.0, 0.95, 0.8)
-	_mat_headlight.emission_energy_multiplier = 4.0
-	_mat_headlight.roughness = 0.2
-
-	# Taillights — red, emission always on (nodes toggled via visibility)
-	_mat_taillight = StandardMaterial3D.new()
-	_mat_taillight.albedo_color = Color(0.9, 0.1, 0.05, 1.0)
-	_mat_taillight.emission_enabled = true
-	_mat_taillight.emission = Color(1.0, 0.1, 0.05)
-	_mat_taillight.emission_energy_multiplier = 3.0
-	_mat_taillight.roughness = 0.2
 
 	## Pre-warm the car pool with a few nodes.
 	for i in range(40):
@@ -241,14 +164,21 @@ func _process(delta: float) -> void:
 		# --- Position/rotation: snapshot interpolation between the two known
 		#     packets straddling render_t (never extrapolates); falls back to
 		#     the legacy exponential lerp when packets carry no sim_time. ---
+		var previous_position: Vector3 = node.position
+		var previous_yaw: float = node.rotation.y
 		var snaps: Array = info.get("snaps", [])
 		if _clock.is_active() and not snaps.is_empty():
 			var s: Dictionary = _sample_snaps(snaps, _clock.render_t)
 			node.position = s["pos"]
 			node.rotation.y = s["rot"]
+			info["display_boarding"] = s.get("boarding",false)
 		else:
 			node.position = node.position.lerp(info["target_pos"], LERP_SPEED * delta)
 			node.rotation.y = lerp_angle(node.rotation.y, info["target_rot"], LERP_SPEED * delta)
+
+		if node.has_node("Coach"):
+			var distance: float = previous_position.distance_to(node.position)
+			node.get_node("Coach").animate(distance, angle_difference(previous_yaw, node.rotation.y), delta, _lights_on_for(vid), float(info.get("speed", 0.0)) < 0.3, info.get("display_boarding", info.get("boarding", false)))
 
 		# --- Boundary fade: vehicles near road edges fade out smoothly ---
 		var bfade: float = _get_boundary_fade(node.position)
@@ -274,7 +204,7 @@ func _process(delta: float) -> void:
 		_release_vehicle(vid)
 
 
-static func _push_snap(snaps: Array, t: float, pos: Vector3, rot: float) -> void:
+static func _push_snap(snaps: Array, t: float, pos: Vector3, rot: float, boarding: bool = false) -> void:
 	## Append a sim-time-stamped snapshot, keeping the buffer monotonic:
 	## equal t (state_update repeating the last vehicle_update) is skipped;
 	## t going backwards (stale buffer across a sim restart) resets it.
@@ -284,7 +214,7 @@ static func _push_snap(snaps: Array, t: float, pos: Vector3, rot: float) -> void
 			return
 		if t < last_t:
 			snaps.clear()
-	snaps.append({"t": t, "pos": pos, "rot": rot})
+	snaps.append({"t": t, "pos": pos, "rot": rot, "boarding": boarding})
 	while snaps.size() > MAX_SNAPS:
 		snaps.pop_front()
 
@@ -308,6 +238,7 @@ static func _sample_snaps(snaps: Array, rt: float) -> Dictionary:
 				"t": rt,
 				"pos": (a["pos"] as Vector3).lerp(b["pos"], f),
 				"rot": lerp_angle(a["rot"], b["rot"], f),
+				"boarding": a.get("boarding",false) and b.get("boarding",false),
 			}
 	return last
 
@@ -378,16 +309,6 @@ func set_weather_lights_mode(mode: int) -> void:
 func _refresh_all_vehicle_lights() -> void:
 	## Recompute the windshield glow material + every vehicle's headlight
 	## visibility from the current (night, weather) state.
-	var force_all: bool = _is_night or _weather_lights == WeatherLights.ALL
-
-	# Windshield is a shared material → on only when ALL cars should have lights
-	# (can't do per-vehicle with a shared material). Partial overcast skips it.
-	if _mat_windshield:
-		_mat_windshield.emission_enabled = force_all
-		if force_all:
-			_mat_windshield.emission = Color(0.9, 0.85, 0.6)
-			_mat_windshield.emission_energy_multiplier = 1.5
-
 	# Per-vehicle: active cars (we know their vid) → exact decision
 	for vid in _active:
 		var veh_node: Node3D = _active[vid]["node"]
@@ -424,7 +345,7 @@ func set_corridor_mode(enabled: bool) -> void:
 	corridor_mode = enabled
 	if enabled:
 		MAX_VEHICLES = 500  # 3 junctions need more vehicles
-		print("[VehicleManager] Corridor mode enabled (linear mapping, max=%d)" % MAX_VEHICLES)
+		print("[VehicleManager] Corridor mode enabled (shared road layout, max=%d)" % MAX_VEHICLES)
 
 
 func update_vehicles(data: Dictionary) -> void:
@@ -432,7 +353,9 @@ func update_vehicles(data: Dictionary) -> void:
 	# Auto-detect corridor mode from server data
 	if data.get("mode", "") == "corridor" and not corridor_mode:
 		set_corridor_mode(true)
-	var vehicle_list: Array = data.get("vehicles", [])
+	var vehicle_list: Array = data.get("vehicles", []).duplicate()
+	# A busy overview may hit the rendering cap; keep station services visible.
+	vehicle_list.sort_custom(func(a, b): return a.has("station_id") and not b.has("station_id"))
 	var seen: Dictionary = {}
 
 	# Snapshot clock: feed the packet's authoritative sim_time. On sim restart
@@ -444,13 +367,27 @@ func update_vehicles(data: Dictionary) -> void:
 			_active[vid]["snaps"].clear()
 	_clock.feed(t)
 
+	var display_positions := Layout.vehicle_positions(vehicle_list, corridor_mode)
 	for v in vehicle_list:
 		var vid: String = str(v.get("id", ""))
 		if vid.is_empty():
 			continue
 		seen[vid] = true
 
-		var pos := _sumo_to_godot(v.get("x", 0.0), v.get("y", 0.0))
+		if not display_positions.has(vid):
+			seen.erase(vid)
+			continue
+		var pos: Vector3 = display_positions[vid]
+		# Curbside stop alignment is visual only; longitudinal motion remains SUMO's.
+		if v.has("station_id"):
+			var remaining: float = float(v.get("stop_distance",10000.0))
+			var approach: float = smoothstep(85.0,10.0,remaining) if remaining >= 0 else 1.0-smoothstep(0.0,32.0,-remaining)
+			if absf(remaining) < 85:
+				var curb: float = 2.42 if corridor_mode else 2.62
+				var bay: float = float(v.get("bay_x", signf(pos.x) * curb))
+				pos.x = lerpf(pos.x, bay, approach)
+				if v.has("bay_x"):
+					pos.y = lerpf(pos.y, 0.45, approach)
 		var rot := _sumo_angle_to_godot(v.get("angle", 0.0))
 		var vtype: String = str(v.get("type", "DEFAULT_VEHTYPE"))
 
@@ -461,18 +398,29 @@ func update_vehicles(data: Dictionary) -> void:
 				if not _active[vid].get("despawning", false):
 					_active[vid]["despawning"] = true
 			else:
+				_active[vid]["despawning"] = false
 				_active[vid]["target_pos"] = pos
 				_active[vid]["target_rot"] = rot
 				_active[vid]["speed"] = float(v.get("speed", 0.0))
 				if t >= 0.0:
-					_push_snap(_active[vid]["snaps"], t, pos, rot)
+					_push_snap(_active[vid]["snaps"], t, pos, rot, v.get("boarding",false))
 		else:
 			# Spawn new vehicle
 			if _active.size() >= MAX_VEHICLES:
-				continue
+				if v.has("station_id"):
+					_make_room_for_transit()
+				if _active.size() >= MAX_VEHICLES:
+					continue
 			_spawn_vehicle(vid, pos, rot, vtype)
 			if t >= 0.0 and _active.has(vid):
-				_push_snap(_active[vid]["snaps"], t, pos, rot)
+				_push_snap(_active[vid]["snaps"], t, pos, rot, v.get("boarding",false))
+
+		if _active.has(vid):
+			_active[vid]["speed"] = float(v.get("speed",0.0))
+			_active[vid]["boarding"] = v.get("boarding",false)
+			_active[vid]["station_id"] = v.get("station_id","")
+			if _active[vid]["node"].has_node("Coach") and v.has("destination"):
+				_active[vid]["node"].get_node("Coach").set_destination(v["destination"])
 
 	# Mark vehicles for despawn that are no longer in the server data
 	for vid in _active:
@@ -488,44 +436,29 @@ func clear_all() -> void:
 	_active.clear()
 
 
+func _make_room_for_transit() -> void:
+	var camera := get_viewport().get_camera_3d()
+	var origin: Vector3 = camera.global_position if camera else Vector3.ZERO
+	var candidate: String = ""
+	var farthest: float = -1.0
+	for vid in _active:
+		var info: Dictionary = _active[vid]
+		if info["type"] != "car" or not str(info.get("station_id", "")).is_empty():
+			continue
+		var distance: float = info["node"].global_position.distance_squared_to(origin)
+		if distance > farthest:
+			candidate = vid
+			farthest = distance
+	if not candidate.is_empty():
+		_release_vehicle(candidate)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # COORDINATE MAPPING
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _sumo_to_godot(sx: float, sy: float) -> Vector3:
-	## Map SUMO 2D coordinates → Godot 3D position.
-	## NOTE: X axis is negated to flip left/right so the isometric camera
-	## shows right-hand traffic (Ghana drives on the right).
-	if corridor_mode:
-		## Corridor: piecewise mapping that expands junction areas
-		## and stretches road widths to match visual geometry.
-		var dx: float = sx - CORRIDOR_OFFSET_X  # Offset-subtracted
-		var dy: float = sy - CORRIDOR_OFFSET_Y
-		var gx: float = -_map_corridor_x(dx)  # Negated for right-hand visual
-		var gz: float = _map_corridor_z(dy)
-		return Vector3(gx, VEHICLE_Y, gz)
-	else:
-		## Single junction: piecewise linear mapping
-		## Uses per-axis junction boundaries (junction is NOT square in SUMO).
-		## N/S edges at ±7.2 from center, E/W edges at ±10.4 from center.
-		var dx: float = sx - SUMO_ORIGIN_X
-		var dz: float = sy - SUMO_ORIGIN_Y
-		var gx: float = -_map_axis(dx, SUMO_JUNC_HALF_X, SUMO_ROAD_LEN_X)  # Negated for right-hand visual
-		var gz: float = _map_axis(dz, SUMO_JUNC_HALF_Z, SUMO_ROAD_LEN_Z)
-		return Vector3(gx, VEHICLE_Y, gz)
-
-
-func _map_axis(d: float, junc_half: float, road_len: float) -> float:
-	## Map one axis: SUMO distance from center → Godot distance from center.
-	var s: float = 1.0 if d >= 0.0 else -1.0
-	var a: float = absf(d)
-	if a <= junc_half:
-		## Inside junction area: scale so junction edges align
-		return s * a * (GODOT_JUNC_HALF / junc_half)
-	else:
-		## On road: junction edge → junction edge, then road scales separately
-		var road_d: float = a - junc_half
-		return s * (GODOT_JUNC_HALF + road_d * (GODOT_ROAD_LEN / road_len))
+	return Layout.map_position(sx, sy, corridor_mode)
 
 
 func _sumo_angle_to_godot(angle_deg: float) -> float:
@@ -537,66 +470,6 @@ func _sumo_angle_to_godot(angle_deg: float) -> float:
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CORRIDOR PIECEWISE MAPPING
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _map_corridor_x(dx: float) -> float:
-	## Map SUMO X (offset-subtracted) to Godot X.
-	## Inside junction width → linear scale to Godot junction half.
-	## Beyond junction edge → cross-street road scale.
-	var s: float = 1.0 if dx >= 0.0 else -1.0
-	var a: float = absf(dx)
-	if a <= C_JUNC_HALF_X:
-		return s * a * (C_GD_JUNC_HALF / C_JUNC_HALF_X)
-	else:
-		var road_d: float = a - C_JUNC_HALF_X
-		return s * (C_GD_JUNC_HALF + road_d * (C_GD_CROSS_ARM / C_CROSS_ROAD))
-
-
-func _map_corridor_z(dy: float) -> float:
-	## Map SUMO Y (offset-subtracted) to Godot Z.
-	## Piecewise linear through 3 junction zones and 4 road segments.
-	## Each zone boundary is continuous with its neighbor.
-
-	# ── Zone 1: South boundary road (dy < J0 south edge) ────────────
-	var j0_south: float = C_J0_Y - C_J0_HALF_Y  # -10.4
-	if dy < j0_south:
-		var south_dist: float = j0_south - dy  # positive distance south
-		return (C_GD_J0_Z - C_GD_JUNC_HALF) - south_dist * (C_GD_BOUNDARY / C_SOUTH_ROAD)
-
-	# ── Zone 2: J0 junction ─────────────────────────────────────────
-	var j0_north: float = C_J0_Y + C_J0_HALF_Y  # 10.4
-	if dy <= j0_north:
-		return C_GD_J0_Z + (dy - C_J0_Y) * (C_GD_JUNC_HALF / C_J0_HALF_Y)
-
-	# ── Zone 3: Road J0 → J1 ────────────────────────────────────────
-	var j1_south: float = C_J1_Y - C_J1_HALF_Y  # 289.6
-	if dy < j1_south:
-		var t: float = (dy - j0_north) / (j1_south - j0_north)
-		return (C_GD_J0_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J0J1
-
-	# ── Zone 4: J1 junction ─────────────────────────────────────────
-	var j1_north: float = C_J1_Y + C_J1_HALF_Y  # 310.4
-	if dy <= j1_north:
-		return C_GD_J1_Z + (dy - C_J1_Y) * (C_GD_JUNC_HALF / C_J1_HALF_Y)
-
-	# ── Zone 5: Road J1 → J2 ────────────────────────────────────────
-	var j2_south: float = C_J2_Y - C_J2_HALF_Y  # 592.8
-	if dy < j2_south:
-		var t: float = (dy - j1_north) / (j2_south - j1_north)
-		return (C_GD_J1_Z + C_GD_JUNC_HALF) + t * C_GD_ROAD_J1J2
-
-	# ── Zone 6: J2 junction ─────────────────────────────────────────
-	var j2_north: float = C_J2_Y + C_J2_HALF_Y  # 607.2
-	if dy <= j2_north:
-		return C_GD_J2_Z + (dy - C_J2_Y) * (C_GD_JUNC_HALF / C_J2_HALF_Y)
-
-	# ── Zone 7: North boundary road ─────────────────────────────────
-	var north_dist: float = dy - j2_north  # positive distance north
-	return (C_GD_J2_Z + C_GD_JUNC_HALF) + north_dist * (C_GD_BOUNDARY / C_NORTH_ROAD)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# SPAWN / DESPAWN
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> void:
@@ -611,7 +484,7 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 	if is_ambulance:
 		node = _acquire_ambulance()
 	else:
-		node = _acquire_car(vid)
+		node = _acquire_car(vid, vtype)
 
 	node.position = pos
 	node.rotation.y = rot
@@ -646,6 +519,8 @@ func _release_vehicle(vid: String) -> void:
 
 	if info["is_ambulance"]:
 		_amb_pool.append(node)
+	elif info["type"] == "trotro":
+		_trotro_pool.append(node)
 	else:
 		_car_pool.append(node)
 
@@ -656,119 +531,41 @@ func _release_vehicle(vid: String) -> void:
 # NODE POOL — CARS
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _acquire_car(vid: String) -> Node3D:
-	## Get a car node from the pool, or create one.
-	if _car_pool.size() > 0:
-		var recycled: Node3D = _car_pool.pop_back()
-		_color_car(recycled, vid)
-		return recycled
-
-	# Pool empty — create new
-	var new_car := _make_car_mesh_for_vid(vid)
-	add_child(new_car)
-	return new_car
-
-
-func _make_car_mesh_for_vid(vid: String) -> Node3D:
-	## Create a realistic vehicle: tro-tro (van) for ~1 in 7, else a car model.
-	var h: int = vid.hash()
-	if abs(h) % 7 == 0:
-		return _build_trotro_node("Car_%s" % vid.substr(0, 12))
-	return _build_car_node("Car_%s" % vid.substr(0, 12))
-
+func _acquire_car(vid: String, vtype: String = "car") -> Node3D:
+	var pool: Array = _trotro_pool if vtype == "trotro" else _car_pool
+	if not pool.is_empty():
+		return pool.pop_back()
+	var node := _build_fleet_node("TrafficVehicle", "trotro" if vtype == "trotro" else "car", vid.hash())
+	add_child(node)
+	return node
 
 func _make_car_mesh(index: int) -> Node3D:
-	## Pre-warm variant.
-	if index % 7 == 0:
-		return _build_trotro_node("PoolCar_%d" % index)
-	return _build_car_node("PoolCar_%d" % index)
-
+	return _build_fleet_node("PoolCar_%d" % index, "car", index)
 
 func _build_car_node(node_name: String) -> Node3D:
-	## A realistic car — a random Kenney model (sedan / suv / taxi / hatchback).
-	var model: PackedScene = CAR_MODELS[randi() % CAR_MODELS.size()]
-	return _build_model_vehicle(node_name, model, false)
+	return _build_fleet_node(node_name, "car", node_name.hash())
 
+func _build_trotro_node(node_name: String) -> Node3D:
+	return _build_fleet_node(node_name, "trotro", node_name.hash())
 
-func _build_model_vehicle(node_name: String, model: PackedScene, is_trotro: bool) -> Node3D:
-	## Wrap a GLB model in a Node3D root: scaled, grounded, with night-light boxes.
+func _build_fleet_node(node_name: String, kind: String, seed_value: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = node_name
-	root.set_meta("is_trotro", is_trotro)
-	root.set_meta("is_model", true)
-
-	var m: Node3D = model.instantiate()
-	m.name = "Model"
-	m.scale = Vector3(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
-	m.position = Vector3(0.0, MODEL_Y_OFFSET, 0.0)
-	m.rotation.y = MODEL_YAW_OFFSET
-	_prepare_model_for_fade(m)
-	root.add_child(m)
-
-	_add_vehicle_lights(root)
+	root.set_meta("is_trotro", kind == "trotro")
+	var coach := FleetActor.new()
+	coach.name = "Coach"
+	coach.configure(kind, seed_value)
+	coach.position.y = -0.30
+	root.add_child(coach)
 	return root
 
-
-func _add_vehicle_lights(root: Node3D) -> void:
-	## Front headlights (-Z) / rear taillights (+Z) — hidden by day, shown at
-	## night. The L/R boxes are the visible lamp lenses; a single SpotLight3D
-	## ("Headlight_Beam") throws the actual light cone on the road ahead.
-	## All toggled by name via _set_lights_visible; -Z matches the vehicle's
-	## heading after _sumo_angle_to_godot.
-	for side in [-1.0, 1.0]:
-		var hl := CSGBox3D.new()
-		hl.size = Vector3(0.1, 0.06, 0.04)
-		hl.position = Vector3(side * 0.2, 0.04, -0.52)
-		hl.material = _mat_headlight
-		hl.name = "Headlight_L" if side < 0 else "Headlight_R"
-		hl.visible = _is_night
-		root.add_child(hl)
-	for side in [-1.0, 1.0]:
-		var tl := CSGBox3D.new()
-		tl.size = Vector3(0.1, 0.06, 0.04)
-		tl.position = Vector3(side * 0.2, 0.04, 0.52)
-		tl.material = _mat_taillight
-		tl.name = "Taillight_L" if side < 0 else "Taillight_R"
-		tl.visible = _is_night
-		root.add_child(tl)
-
-	# Forward beam — an actual SpotLight3D that pools warm light on the road
-	# ahead (the boxes above are just the lamp lenses). ONE no-shadow light per
-	# car keeps the cost sane; because the name starts with "Headlight" it
-	# inherits the same night/dusk/rain gating as the lenses (hidden = ~zero
-	# render cost by day). distance_fade culls far beams, so even a 500-car
-	# corridor only lights the handful of cars near the camera.
-	var beam := SpotLight3D.new()
-	beam.name = "Headlight_Beam"
-	beam.position = Vector3(0.0, 0.10, -0.55)    # front centre, just above the road
-	beam.rotation.x = -deg_to_rad(13.0)          # aim -Z forward + slightly down onto the road
-	beam.light_color = Color(1.0, 0.95, 0.82)    # warm white, matches the lenses
-	beam.light_energy = 3.0
-	beam.spot_range = 9.0                         # ~a few car-lengths of throw
-	beam.spot_angle = 26.0
-	beam.spot_angle_attenuation = 1.3            # soft cone edge
-	beam.spot_attenuation = 1.2                  # falloff along the beam
-	beam.shadow_enabled = false                  # light the road, skip shadows (perf)
-	beam.distance_fade_enabled = true            # fade distant beams → bounded active-light count
-	beam.distance_fade_begin = 45.0
-	beam.distance_fade_length = 18.0
-	beam.visible = _is_night
-	root.add_child(beam)
-
-
 func _prepare_model_for_fade(model_root: Node3D) -> void:
-	## Give each mesh its own transparent material copy so per-vehicle opacity
-	## (spawn-in + boundary fade) works without disturbing the shared colormap.
 	for mi in _all_mesh_instances(model_root):
 		var src: Material = mi.get_active_material(0)
-		if src == null:
-			continue
-		var dup := src.duplicate() as BaseMaterial3D
-		if dup == null:
-			continue
-		dup.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
-		mi.material_override = dup
-
+		if src is BaseMaterial3D:
+			var material := src.duplicate() as BaseMaterial3D
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_HASH
+			mi.material_override = material
 
 func _all_mesh_instances(n: Node) -> Array:
 	var out: Array = []
@@ -777,18 +574,6 @@ func _all_mesh_instances(n: Node) -> Array:
 	for c in n.get_children():
 		out.append_array(_all_mesh_instances(c))
 	return out
-
-
-func _build_trotro_node(node_name: String) -> Node3D:
-	## A tro-tro / minibus — the Kenney van model.
-	return _build_model_vehicle(node_name, TROTRO_MODEL, true)
-
-
-func _color_car(_car_node: Node3D, _vid: String) -> void:
-	## Realistic GLB cars get their variety from the MODEL itself (the colormap
-	## material is shared, so per-instance recolouring isn't possible). Pooled
-	## nodes keep whatever model they were created with — nothing to do on reuse.
-	pass
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -875,6 +660,9 @@ func _pulse_light_bar(amb_node: Node3D) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _set_node_opacity(node: Node3D, alpha: float) -> void:
+	if node.has_node("Coach"):
+		node.get_node("Coach").set_opacity(alpha)
+		return
 	## Fade a vehicle by setting alpha on its materials. Skips headlights/
 	## taillights (shared emissive materials). The "Model" child is a GLB
 	## instance whose meshes carry per-instance transparent material copies.
