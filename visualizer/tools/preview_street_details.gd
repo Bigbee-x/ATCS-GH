@@ -21,7 +21,11 @@ func _capture() -> void:
 	var road: Node3D = _scene.get_node("Intersection")
 	road.update_lights({"phase": 1})
 	var pole: Node3D = road.get_node("TL_J0_north" if corridor else "TrafficLight_north")
-	var ped: Node3D = _scene.get_node("PedestrianManager").get("_ambient_peds")[0]["node"]
+	# Pedestrians come only from SUMO; place one on the north footway to frame.
+	var walkers: Node3D = _scene.get_node("PedestrianManager")
+	walkers.update_crossing_pedestrians([{"id": "preview", "x": 1492.8 if corridor else 1492.85,
+		"y": 1540.0 if corridor else 1650.0, "edge": "ACH_J1toJ0" if corridor else "ACH_N2J", "angle": 180.0}])
+	var ped: Node3D = walkers.get("_crossing_peds")["preview"]["node"]
 	var target := Vector3.ZERO
 	match args[0]:
 		"signals":

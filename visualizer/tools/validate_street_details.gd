@@ -22,7 +22,7 @@ func _validate() -> void:
 		_check_signals(roads, corridor)
 		_check_sensors(scene, roads, corridor)
 		_check_signs(scene, corridor)
-		_check_walkers(scene.get_node("PedestrianManager"), corridor)
+		_check_walkers(scene.get_node("PedestrianManager"))
 		_check_crossings(scene.get_node("PedestrianManager"))
 		print("STREET DETAILS VALIDATED: ", "corridor" if corridor else "single junction")
 		scene.queue_free()
@@ -183,47 +183,17 @@ func _check_signs(scene: Node3D, corridor: bool) -> void:
 	for material in signs.get("_print_materials"):
 		check(is_zero_approx(material.emission_energy_multiplier), "Billboard glows in daylight")
 
-func _check_walkers(manager: Node3D, corridor: bool) -> void:
-	manager.set_process(false)
-	var original: Array = manager.get("_ambient_peds")
-	check(original.size() == (64 if corridor else 42), "Ambient pedestrians missing")
-	var a: Dictionary = original[0]
-	var b: Dictionary = original[1]
-	a["path_idx"] = 0
-	b["path_idx"] = 0
-	a["progress"] = 0.4
-	b["progress"] = 0.42
-	a["forward"] = true
-	b["forward"] = false
-	for ped in [a, b]:
-		ped["speed"] = 0.55
-		ped["velocity"] = 0.55
-		ped["pause"] = 0.0
-		ped["next_pause"] = 100.0
-		manager.call("_update_ambient_position", ped, 1.0, true)
-	manager.set("_ambient_peds", [a, b])
-	var closest: float = INF
-	for frame in range(300):
-		manager.call("_move_ambient", a, 1.0 / 60.0)
-		manager.call("_move_ambient", b, 1.0 / 60.0)
-		closest = minf(closest, a["node"].position.distance_to(b["node"].position))
-		for ped in [a, b]:
-			check(ped["progress"] >= 0.0 and ped["progress"] <= 1.0, "Walker leaves sidewalk path")
-	check(closest > 0.31, "Opposing pedestrians overlap while passing")
-	check(a["progress"] > b["progress"], "Opposing pedestrians could not pass")
-	a["progress"] = 0.9999
-	a["forward"] = true
-	a["pause"] = 0.0
-	manager.call("_update_ambient_position", a, 1.0, true)
-	var yaw_before: float = a["node"].rotation.y
-	manager.call("_move_ambient", a, 1.0 / 60.0)
-	check(not a["forward"] and a["pause"] > 0.0, "Walker does not pause to turn at the path end")
-	check(absf(angle_difference(yaw_before, a["node"].rotation.y)) < 0.3, "Walker snaps through a 180-degree turn")
-	manager.set("_ambient_peds", original)
+func _check_walkers(manager: Node3D) -> void:
+	# Pedestrians come only from SUMO packets: nothing walks before the first one,
+	# and the pedestrian toggle hides the ones that are there.
+	check(manager.get_child_count() == 0, "Decorative walkers must not replace SUMO pedestrians")
+	manager.update_crossing_pedestrians([{"id": "toggle-check", "x": 1500.0, "y": 1500.0, "angle": 0.0, "edge": ":J0_c0"}])
+	var node: Node3D = manager.get("_crossing_peds")["toggle-check"]["node"]
 	manager.set_pedestrians_enabled(false)
-	for ped in original:
-		check(not ped["node"].visible, "Pedestrian toggle left a walker visible")
+	check(not node.visible, "Pedestrian toggle left a walker visible")
 	manager.set_pedestrians_enabled(true)
+	manager.call("_release_crossing_mesh", node)
+	manager.get("_crossing_peds").erase("toggle-check")
 
 func _check_crossings(manager: Node3D) -> void:
 	# Exercise legacy packets too: new headings must not snap on packet arrival.

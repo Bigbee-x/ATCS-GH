@@ -7,84 +7,18 @@ const FleetActor = preload("res://scripts/VehicleActor.gd")
 ## Each SUMO ID has a correctly typed pooled vehicle, with snapshot playback.
 ## Cars and trotros use shared curved coachwork and animated wheels; ambulances
 ## retain the bundled GLB and flashing light bar. Forward is local -Z.
-const VEHICLE_Y := 0.35
 const MODEL_SCALE := 0.40
 const MODEL_Y_OFFSET := -0.30
 const MODEL_YAW_OFFSET := PI
 const AMBULANCE_MODEL: PackedScene = preload("res://assets/vehicles/ambulance.glb")
 
-# ── SUMO → Godot coordinate transform ────────────────────────────────────────
-## Junction J0 center in SUMO coordinates (from .net.xml)
-const SUMO_ORIGIN_X: float = 1500.0
-const SUMO_ORIGIN_Y: float = 1500.0
-## Per-axis SUMO junction boundary distances from center (from intersection.net.xml)
-## X axis (E/W): junction edges at x=1489.6 and x=1510.4
-const SUMO_JUNC_HALF_X: float = 10.4
-## Z axis (N/S — SUMO Y): junction edges at y=1492.8 and y=1507.2
-const SUMO_JUNC_HALF_Z: float = 7.2
-## Per-axis SUMO road lengths from junction edge to network endpoint
-const SUMO_ROAD_LEN_X: float = 1489.6   ## E/W roads (3000 - 1510.4)
-const SUMO_ROAD_LEN_Z: float = 1492.8   ## N/S roads (3000 - 1507.2)
-## Godot junction half-width (JUNCTION_SIZE / 2 from Intersection.gd)
-const GODOT_JUNC_HALF: float = 3.5
-## Godot road length from junction edge (ROAD_LENGTH from Intersection.gd)
-const GODOT_ROAD_LEN: float = 90.0
-
 # ── Corridor mode ────────────────────────────────────────────────────────────
-## When true, use piecewise mapping for corridor (3-junction layout).
-## Expands junction areas and stretches road widths to match visual geometry.
+## True in the corridor scene; positions map through its exported network.
 var corridor_mode: bool = false
-
-## SUMO net-offset: corridor.net.xml applies netOffset to all coords
-## TraCI returns offset coords: J0=(1500,1500), J1=(1500,1800), J2=(1500,2100)
-const CORRIDOR_OFFSET_X: float = 1500.0
-const CORRIDOR_OFFSET_Y: float = 1500.0
-
-## ── Corridor SUMO geometry (from corridor.net.xml junction shapes) ──────────
-## Raw junction Y positions (offset-subtracted)
-const C_J0_Y: float = 0.0
-const C_J1_Y: float = 300.0
-const C_J2_Y: float = 600.0
-## Junction Y half-extents (from .net.xml shape bounding boxes)
-const C_J0_HALF_Y: float = 10.4   # J0: y ∈ [-10.4, 10.4]
-const C_J1_HALF_Y: float = 10.4   # J1: y ∈ [289.6, 310.4]
-const C_J2_HALF_Y: float = 7.2    # J2: y ∈ [592.8, 607.2] (fewer E/W lanes)
-## Junction X half-extent (same for all 3)
-const C_JUNC_HALF_X: float = 10.4 # All junctions: x ∈ [-10.4, 10.4]
-
-## SUMO road lengths between junction edges
-const C_ROAD_J0J1: float = 279.2  # 289.6 - 10.4
-const C_ROAD_J1J2: float = 282.4  # 592.8 - 310.4
-const C_SOUTH_ROAD: float = 1489.6 # S boundary to J0 south edge
-const C_NORTH_ROAD: float = 1492.8 # J2 north edge to N boundary
-const C_CROSS_ROAD: float = 1489.6 # Junction edge to E/W boundary
-
-## ── Corridor Godot geometry (must match CorridorBuilder.gd) ────────────────
-const C_GD_J0_Z: float = 0.0
-const C_GD_J1_Z: float = 30.0
-const C_GD_J2_Z: float = 60.0
-const C_GD_JUNC_HALF: float = 3.0   # JUNCTION_SIZE / 2
-const C_GD_ROAD_J0J1: float = 24.0  # 27.0 - 3.0
-const C_GD_ROAD_J1J2: float = 24.0  # 57.0 - 33.0
-const C_GD_BOUNDARY: float = 55.0   # Boundary road length in Godot
-const C_GD_CROSS_ARM: float = 55.0  # Cross-street arm length in Godot
 
 # ── Animation ────────────────────────────────────────────────────────────────
 const LERP_SPEED: float = 5.0     ## Position/rotation interpolation speed
 const FADE_SPEED: float = 4.0     ## Fade-in/fade-out speed
-
-# ── Boundary fade-out zones ──────────────────────────────────────────────────
-## Vehicles approaching the edge of the visible Godot road gradually fade out
-## instead of piling up.  Hides the extreme compression (49:1) on boundary
-## roads and creates a natural "driving away" effect.
-## Single-junction bounds: ±(GODOT_JUNC_HALF + GODOT_ROAD_LEN)
-const SJ_BOUND: float = 93.5          # 3.5 + 90
-const SJ_FADE_DIST: float = 15.0      # Start fading 15 units before edge
-## Corridor bounds
-const CR_Z_MIN: float = -58.0         # J0_Z - junc_half - boundary_road
-const CR_Z_MAX: float = 118.0         # J2_Z + junc_half + boundary_road
-const CR_X_BOUND: float = 58.0        # junc_half + cross_arm
-const CR_FADE_DIST: float = 12.0      # Start fading 12 units before edge
 
 # ── Pool limits ──────────────────────────────────────────────────────────────
 var MAX_VEHICLES: int = 2000
@@ -468,7 +402,7 @@ func _sumo_angle_to_godot(angle_deg: float) -> float:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CORRIDOR PIECEWISE MAPPING
+# SPAWN AND RELEASE
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> void:
@@ -544,12 +478,6 @@ func _acquire_car(vid: String, vtype: String = "car") -> Node3D:
 
 func _make_car_mesh(index: int) -> Node3D:
 	return _build_fleet_node("PoolCar_%d" % index, "car", index)
-
-func _build_car_node(node_name: String) -> Node3D:
-	return _build_fleet_node(node_name, "car", node_name.hash())
-
-func _build_trotro_node(node_name: String) -> Node3D:
-	return _build_fleet_node(node_name, "trotro", node_name.hash())
 
 func _build_fleet_node(node_name: String, kind: String, seed_value: int) -> Node3D:
 	var root := Node3D.new()
@@ -692,16 +620,3 @@ func _get_boundary_fade(pos: Vector3) -> float:
 	# 1.5 km approaches (CorridorGeometry.VIEW): vehicles fade in as they enter
 	# it and out as they leave. The single junction still shows everything.
 	return Layout.Metric.view_fade(pos, corridor_mode)
-
-
-func _edge_fade(val: float, low: float, high: float, fade_dist: float) -> float:
-	## Returns 1.0 when val is inside [low+fade, high-fade],
-	## fades linearly to 0.0 at the boundaries [low, high],
-	## and returns 0.0 outside [low, high].
-	if val <= low or val >= high:
-		return 0.0
-	# Distance from the nearest edge
-	var dist_from_edge: float = minf(val - low, high - val)
-	if dist_from_edge >= fade_dist:
-		return 1.0
-	return clampf(dist_from_edge / fade_dist, 0.0, 1.0)

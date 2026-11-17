@@ -24,7 +24,7 @@ file omits height and SUMO falls back to a passenger-car default. Front-bumper
 positions are converted to mesh centres. Neither scene squeezes
 queues or hides tails to fit compressed links; the separate render cap is
 2,000 vehicles. Sidewalk and crossing pedestrians follow SUMO positions;
-independent decorative sidewalk walkers are disabled in both scenes.
+the old decorative sidewalk walkers have been removed from both scenes.
 
 Commercial frontages, taller buildings, signals, sensor coverage illustrations,
 streetlights and billboards now follow the larger layout. The corridor trotro stops
@@ -118,8 +118,8 @@ certification.
 - Pedestrians use smooth anatomical meshes, cloth shading, varied skin tones,
   clothing, hair, hats and bags. Distance-driven foot placement, bending knees,
   counter-swinging arms, breathing and head turns replace rigid box characters.
-  Ambient walkers accelerate, pause, ease into turns and keep passing lanes and
-  following distances. Crossing pedestrians still follow SUMO snapshots.
+  Every pedestrian follows SUMO snapshots; the decorative ambient walkers
+  (with their own pacing and passing lanes) were removed on 17 Nov 2026.
 - Traffic signals have tapered galvanized masts, curved arms, braces, bolted
   bases, rounded housings, sun hoods and individual LED lenses. Three-aspect
   roadside repeaters include amber and follow the overhead phase. CCTV cameras,

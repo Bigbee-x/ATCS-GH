@@ -32,7 +32,7 @@ func run() -> void:
 	var coach: Node3D = fleet._active.q0.node.get_node("Coach")
 	check(is_equal_approx(coach._body.mesh.get_aabb().size.z*coach.scale.z,4.5),"Car length must be 4.5 m")
 	var pm: Node = scene.get_node("PedestrianManager")
-	check(pm._ambient_peds.is_empty(),"Decorative walkers should not replace live sensor/simulation pedestrians")
+	check(pm.get_child_count() == 0,"Decorative walkers should not replace live sensor/simulation pedestrians")
 	pm.update_crossing_pedestrians([{"id":"sidewalk","x":1492.85,"y":1650.0,"edge":"ACH_N2J","angle":180.0}],1.0)
 	check(pm._crossing_peds.has("sidewalk"),"Real sidewalk walker missing")
 	check(pm._crossing_peds.sidewalk.node.position.distance_to(Vector3(7.15,0.15,150)) < 0.01,"Sidewalk walker mapping changed")

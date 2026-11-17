@@ -373,9 +373,9 @@ untouched. Full notes: the last section of `docs/streetscape.md`.
   distance; the corridor ground no longer casts shadows and shoulders are laid
   in 120 m lengths. (4) Call `set_metric_dimensions()` on a `VehicleActor`
   after assigning its transform, or the scale is lost and the car is toy-sized.
-  (5) `validate_street_details.gd` still expects ambient sidewalk walkers that
-  the metric migration disabled (`_spawn_ambient` loops over `range(0)`); that
-  failure predates this pass.
+  (5) The decorative ambient walkers the metric migration disabled were removed
+  on 17 Nov 2026 with the old compressed-mapping constants; PedestrianManager
+  draws only SUMO pedestrians and `validate_street_details.gd` checks that.
 - `tools/preview_views.gd` renders named camera views of either scene in one
   launch: `-- corridor /abs/out 13 0 "name=px,py,pz>lx,ly,lz@fov" ...`.
 

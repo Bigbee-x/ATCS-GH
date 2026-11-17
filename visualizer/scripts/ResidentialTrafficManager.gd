@@ -4,7 +4,7 @@ const FleetActor = preload("res://scripts/VehicleActor.gd")
 ##
 ## Purely client-side — these cars never touch SUMO, never report metrics,
 ## never queue at the main junction. They loop the residential network for
-## visual life, same pattern as PedestrianManager's `_ambient_peds`.
+## visual life.
 ##
 ## Street layout (single-junction SE quadrant, mirrored into world via
 ## QUAD_XS / QUAD_ZS = -1, matching EnvironmentBuilder.gd):

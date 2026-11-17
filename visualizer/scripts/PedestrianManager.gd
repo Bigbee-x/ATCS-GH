@@ -1,84 +1,18 @@
 extends Node3D
 var playback_clock: RefCounted
-## Pedestrian system with ambient sidewalk walkers + SUMO-driven crossing.
+## Pedestrians as SUMO reports them, on footways and crossings.
 ##
-## Two modes of operation:
-## 1. Ambient: Self-animated pedestrians walking back and forth on sidewalks
-## 2. Crossing: SUMO simulation-driven pedestrians crossing at junction
-##    (positions received from server via vehicle_update packets)
-##
-## SUMO coordinate mapping:
-##   Piecewise mapping matches the vehicle renderer. SUMO owns crossing routes.
-##   Ambient walkers stay inside the sidewalk strips; origin is at the feet.
+## Positions arrive in vehicle_update packets and play back on the vehicles'
+## snapshot clock. There are no decorative walkers: both metric scenes draw only
+## SUMO's pedestrians, so what walks is what the simulation and controller see.
 
 const Layout = preload("res://scripts/TrafficLayout.gd")
 const Actor = preload("res://scripts/PedestrianActor.gd")
-const NUM_AMBIENT := 42
-const MIN_SPEED := 0.30
-const MAX_SPEED := 0.62
-const SIDEWALK_Y := 0.15
 var _rng := RandomNumberGenerator.new()
 
-# ── SUMO coordinate transform ──────────────────────────────────────────────────
-const SUMO_CENTER       := 1500.0  # SUMO junction center (single-junction mode)
-## Piecewise mapping constants (must match VehicleManager.gd)
-const SUMO_JUNC_HALF_X  := 10.4   # Junction half-extent in SUMO X
-const SUMO_JUNC_HALF_Z  := 7.2    # Junction half-extent in SUMO Y (Z in Godot)
-const SUMO_ROAD_LEN_X   := 1489.6 # E/W road length in SUMO
-const SUMO_ROAD_LEN_Z   := 1492.8 # N/S road length in SUMO
-const GODOT_JUNC_HALF   := 3.5    # JUNCTION_SIZE / 2 in Godot
-const GODOT_ROAD_LEN    := 90.0   # Road arm length in Godot
-
-# ── Road geometry (must match Intersection.gd for single junction) ────────────
-const ROAD_LENGTH       := 90.0
-const NS_ROAD_WIDTH     := 6.4
-const E_ROAD_WIDTH      := 6.4
-const W_ROAD_WIDTH      := 6.4
-const JUNCTION_SIZE     := 7.0
-const SIDEWALK_WIDTH    := 1.5
-
-# ── Corridor mode ────────────────────────────────────────────────────────────
 var corridor_mode: bool = false
-# Corridor geometry constants (must match CorridorBuilder.gd)
-const C_NS_ROAD_WIDTH   := 6.0
-const C_JUNCTION_SIZE   := 6.0
-const C_JUNCTION_HALF   := 3.0
-const C_SIDEWALK_WIDTH  := 0.7
-const C_CROSS_ARM       := 55.0
-const C_BOUNDARY_ARM    := 55.0
-const C_J0_Z            := 0.0
-const C_J1_Z            := 30.0
-const C_J2_Z            := 60.0
 
-# ── Corridor SUMO piecewise mapping (from corridor.net.xml) ─────────────────
-# Raw junction Y positions (offset-subtracted)
-const C_SUMO_J0_Y: float = 0.0
-const C_SUMO_J1_Y: float = 300.0
-const C_SUMO_J2_Y: float = 600.0
-# Junction half-extents
-const C_SUMO_J0_HALF_Y: float = 10.4
-const C_SUMO_J1_HALF_Y: float = 10.4
-const C_SUMO_J2_HALF_Y: float = 7.2
-const C_SUMO_JUNC_HALF_X: float = 10.4
-# SUMO road lengths between junction edges
-const C_SUMO_ROAD_J0J1: float = 279.2
-const C_SUMO_ROAD_J1J2: float = 282.4
-const C_SUMO_SOUTH_ROAD: float = 1489.6
-const C_SUMO_NORTH_ROAD: float = 1492.8
-const C_SUMO_CROSS_ROAD: float = 1489.6
-# Godot corridor targets
-const C_GD_JUNC_HALF: float = 3.0
-const C_GD_ROAD_J0J1: float = 24.0
-const C_GD_ROAD_J1J2: float = 24.0
-const C_GD_BOUNDARY: float = 55.0
-
-# ── Sidewalk path definitions ─────────────────────────────────────────────────
-var _sidewalk_paths: Array = []
-
-# ── Ambient pedestrians ───────────────────────────────────────────────────────
-var _ambient_peds: Array = []
-
-# ── SUMO-driven crossing pedestrians ──────────────────────────────────────────
+# ── SUMO pedestrians (footways and crossings) ─────────────────────────────────
 # pid (String) → {node: Node3D, target_pos: Vector3, snaps: Array, phase: float}
 var _crossing_peds: Dictionary = {}
 # Pool of reusable pedestrian meshes
@@ -103,18 +37,12 @@ func set_corridor_mode(enabled: bool) -> void:
 	corridor_mode = enabled
 	if enabled:
 		print("[PedestrianManager] Corridor mode enabled")
-		# Re-define paths for corridor layout, then respawn
-		_define_sidewalk_paths()
 		respawn()
 
 
 func set_pedestrians_enabled(enabled: bool) -> void:
-	## Toggle all pedestrians on/off (ambient + SUMO-driven).
+	## Toggle the SUMO pedestrians on/off.
 	_pedestrians_enabled = enabled
-	# Show/hide ambient pedestrians
-	for ped in _ambient_peds:
-		ped["node"].visible = enabled
-	# Show/hide or release crossing pedestrians
 	if not enabled:
 		for pid in _crossing_peds:
 			_crossing_peds[pid]["node"].visible = false
@@ -130,8 +58,6 @@ func is_pedestrians_enabled() -> bool:
 
 func _ready() -> void:
 	_rng.seed = 5309
-	_define_sidewalk_paths()
-	_spawn_ambient()
 
 
 func _process(delta: float) -> void:
@@ -143,9 +69,6 @@ func _process(delta: float) -> void:
 	else:
 		_snap_clock.advance(delta)
 	_retire_crossing_pedestrians()
-
-	for ped in _ambient_peds:
-		_move_ambient(ped, delta)
 
 	# Move crossing pedestrians by snapshot interpolation (falling back to the
 	# legacy lerp when packets carry no sim_time), animating their stride only
@@ -200,97 +123,6 @@ static func _sample_ped_snaps(snaps: Array, rt: float) -> Vector3:
 			var f: float = (rt - a["t"]) / maxf(b["t"] - a["t"], 0.001)
 			return (a["pos"] as Vector3).lerp(b["pos"], f)
 	return last["pos"]
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PATH DEFINITIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-func _define_sidewalk_paths() -> void:
-	_sidewalk_paths = Layout.Metric.sidewalks(corridor_mode)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# AMBIENT PEDESTRIAN SPAWNING & MOVEMENT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-func _spawn_ambient() -> void:
-	for i in range(0):  # Both metric scenes render authoritative SUMO pedestrians.
-		var ped_node: Node3D = _make_pedestrian_mesh()
-		add_child(ped_node)
-		var ped: Dictionary = {
-			"node": ped_node, "path_idx": i % _sidewalk_paths.size(),
-			"progress": _rng.randf_range(0.025, 0.975),
-			"speed": _rng.randf_range(MIN_SPEED, MAX_SPEED) * (2.5 if corridor_mode else 1.0), "velocity": 0.0,
-			"forward": _rng.randf() > 0.5, "pause": 0.0,
-			"next_pause": _rng.randf_range(7.0, 28.0), "lateral": 0.0,
-			"interest": _rng.randf() * TAU,
-		}
-		# Avoid spawning overlapping bodies on the same strip.
-		for attempt in range(12):
-			var crowded: bool = false
-			var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
-			var path_length: float = path["start"].distance_to(path["end"])
-			for other in _ambient_peds:
-				if other["path_idx"] == ped["path_idx"] and absf(other["progress"] - ped["progress"]) * path_length < 0.9:
-					crowded = true
-			if not crowded:
-				break
-			ped["progress"] = _rng.randf_range(0.025, 0.975)
-		_update_ambient_position(ped, 1.0, true)
-		_ambient_peds.append(ped)
-
-func _move_ambient(ped: Dictionary, delta: float) -> void:
-	var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
-	var length: float = path["start"].distance_to(path["end"])
-	var forward: bool = ped["forward"]
-	var remaining: float = (1.0 - ped["progress"] if forward else ped["progress"]) * length
-	ped["next_pause"] -= delta
-	if ped["pause"] <= 0.0:
-		if remaining < 0.07:
-			ped["pause"] = _rng.randf_range(1.0, 1.8)
-			ped["forward"] = not forward
-			ped["velocity"] = 0.0
-		elif ped["next_pause"] <= 0.0:
-			ped["pause"] = _rng.randf_range(1.1, 3.8)
-			ped["next_pause"] = _rng.randf_range(13.0, 35.0)
-	var desired: float = ped["speed"] * clampf(remaining / 0.55, 0.12, 1.0)
-	if ped["pause"] > 0.0:
-		ped["pause"] = maxf(0.0, ped["pause"] - delta)
-		desired = 0.0
-	# Keep a following distance. Opposing walkers use separate passing lanes.
-	for other in _ambient_peds:
-		if other["node"] == ped["node"] or other["path_idx"] != ped["path_idx"]:
-			continue
-		var gap: float = (other["progress"] - ped["progress"]) * length * (1.0 if ped["forward"] else -1.0)
-		if gap > 0.0 and gap < 0.7 and other["forward"] == ped["forward"]:
-			desired = minf(desired, other["velocity"] * clampf((gap - 0.24) / 0.46, 0.0, 1.0))
-	ped["velocity"] = move_toward(ped["velocity"], desired, delta * 0.75)
-	var node: Node3D = ped["node"]
-	var previous: Vector3 = node.position
-	ped["progress"] = clampf(ped["progress"] + ped["velocity"] * delta / length * (1.0 if ped["forward"] else -1.0), 0.0, 1.0)
-	_update_ambient_position(ped, delta)
-	var distance: float = node.position.distance_to(previous)
-	node.animate(distance, distance / maxf(delta, 0.0001), delta)
-
-func _update_ambient_position(ped: Dictionary, delta: float, snap: bool = false) -> void:
-	var path: Dictionary = _sidewalk_paths[ped["path_idx"]]
-	var direction: Vector3 = (path["end"] - path["start"]).normalized()
-	var side := Vector3(direction.z, 0, -direction.x)
-	var pos: Vector3 = path["start"].lerp(path["end"], ped["progress"])
-	var lane_width: float = 0.17 if corridor_mode else 0.24
-	var lane: float = lane_width * (1.0 if ped["forward"] else -1.0)
-	# Slight individual drift, bounded well inside the sidewalk edge.
-	lane += sin(ped["progress"] * 16.0 + ped["interest"]) * (0.008 if corridor_mode else 0.025)
-	ped["lateral"] = lane if snap else move_toward(ped["lateral"], lane, delta * 0.25)
-	pos += side * ped["lateral"]
-	pos.y = SIDEWALK_Y
-	var node: Node3D = ped["node"]
-	node.position = pos
-	if not ped["forward"]:
-		direction = -direction
-	var yaw: float = atan2(direction.x, direction.z)
-	node.rotation.y = yaw if snap else lerp_angle(node.rotation.y, yaw, 1.0 - exp(-delta * 5.0))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -380,17 +212,11 @@ func _release_crossing_mesh(node: Node3D) -> void:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CORRIDOR PIECEWISE MAPPING
+# RESET
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func respawn() -> void:
-	## Clear and respawn all pedestrians (called on sim restart).
-	# Clear ambient
-	for ped in _ambient_peds:
-		ped["node"].queue_free()
-	_ambient_peds.clear()
-
-	# Clear crossing
+	## Clear all pedestrians (called on sim restart).
 	for pid in _crossing_peds:
 		_crossing_peds[pid]["node"].queue_free()
 	_crossing_peds.clear()
@@ -399,8 +225,6 @@ func respawn() -> void:
 	for node in _crossing_pool:
 		node.queue_free()
 	_crossing_pool.clear()
-
-	_spawn_ambient()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
