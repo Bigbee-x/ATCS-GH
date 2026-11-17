@@ -410,6 +410,15 @@ Details in the last section of `docs/streetscape.md`.
   fades vehicles at its edge. SUMO positions and all counts are untouched. The
   user asked for this because the long roads into nothing looked fake; a queue
   longer than a visible approach continues out of sight by design.
+  SUMO still inserts every car 0.9–1.5 km out, so a fresh run used to show empty
+  roads for ~1 min (first car in the window at 55 s, at a stop line at 77 s);
+  the user saw cars "still coming from afar". Each live run now plays its first
+  300 sim-s unpaced and unbroadcast under the same control
+  (`corridor_visualizer_server.py` `WARMUP_SECONDS`; `--warmup 0` turns it off),
+  so the first packet already has ~90 cars on the drawn roads. Do not shorten the
+  SUMO approaches or move insertion to the window edge instead: the agents read
+  whole 1.5 km lanes (`sumo_full_lane_bounded_v1`, lane mean speed especially),
+  and versioned bundles pin `network_sha256` of `simulation/corridor.net.xml`.
 - **Weather** is Clear / Overcast / Rain (indices 0 / 1 / 2). Harmattan was
   removed at the user's request; do not bring it back.
 

@@ -412,10 +412,52 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
     }
 
 
+# ── Warm-up ─────────────────────────────────────────────────────────────────
+
+# The scene draws only ~400 m of each 0.9–1.5 km approach (the visualizer's
+# CorridorGeometry.VIEW), and SUMO inserts every car at the far end. A fresh run
+# therefore opens on empty roads: nothing reaches the drawn window for ~55 s or a
+# stop line for ~77 s, and the 30 km/h cross streets take ~3 min to fill. Each
+# live run plays this stretch unpaced and unbroadcast under the same control, so
+# the picture opens on traffic already arriving from the road ends. The network,
+# the demand and the agents' full-lane inputs are untouched.
+WARMUP_SECONDS = 300
+
+
+async def _warm_up(env, states, agents, baseline_timers, seconds):
+    """Advance a fresh run by `seconds` sim-seconds under the active control, unseen."""
+    end = env._sim_step + seconds
+    while env._sim_step < end:
+        actions = {}
+        for jid in JUNCTION_IDS:
+            if active_control_mode == SimMode.AI and agents[jid] is not None:
+                actions[jid] = agents[jid].select_action(_runtime.policy_state(states[jid]))
+            elif active_control_mode == SimMode.BASELINE:
+                actions[jid] = baseline_timers[jid].get_action(env._sim_step)
+            elif active_control_mode == SimMode.DEMO:
+                actions[jid] = 0 if random.random() < 0.6 else random.randint(1, 4)
+            else:
+                actions[jid] = ACTION_HOLD
+        if active_control_mode == SimMode.AI:
+            actions = _runtime.select_actions(actions)
+        env.apply_actions(actions)
+        arrived = 0
+        for _ in range(DECISION_INTERVAL):
+            arrived += env.advance_one_second()
+            if traci.simulation.getMinExpectedNumber() == 0:
+                break
+        states, _, done, _ = env.finish_decision(actions, arrived)
+        if done:
+            break
+        await asyncio.sleep(0)  # keep the socket server answering while it runs
+    return states
+
+
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
 async def simulation_loop(mode: str, model_dir: Path, speed: float,
-                          route: str | None = None, transit_enabled: bool = True):
+                          route: str | None = None, transit_enabled: bool = True,
+                          warmup: int = WARMUP_SECONDS):
     """
     Main simulation loop: run corridor SUMO, make decisions, broadcast state.
 
@@ -486,6 +528,12 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
             _stream_metadata.update(run=run_count, seed=seed,
                                     run_id=f"{_stream_metadata.get('session_id', 'local')}:{run_count}")
             print(f"\n[SIM] Run #{run_count} started (seed={seed})")
+            if warmup > 0:
+                # Clients keep the last picture until the filled run is ready.
+                started = time.time()
+                states = await _warm_up(env, states, agents, baseline_timers, warmup)
+                print(f"[SIM] Warm-up: first {env._sim_step}s run unseen "
+                      f"in {time.time() - started:.1f}s")
 
             await broadcast({
                 "type": "sim_restart",
@@ -724,6 +772,7 @@ async def main(args):
     print(f"  Junctions  : {', '.join(JUNCTION_IDS)}")
     print(f"  Model dir  : {model_dir}")
     print(f"  Speed      : {args.speed}x")
+    print(f"  Warm-up    : {args.warmup}s per run, unseen")
     print(f"  WebSocket  : ws://localhost:{args.port}")
     print(f"  Sim length : {SIM_DURATION}s ({SIM_DURATION/3600:.1f} hours)")
     print("=" * 62)
@@ -737,7 +786,8 @@ async def main(args):
         _stream_metadata.update(session_id=endpoint["session_id"], telemetry_schema=TELEMETRY_SCHEMA,
                                 source="SUMO / TraCI", simulation_speed=args.speed)
         try:
-            await simulation_loop(mode, model_dir, args.speed, args.route, not args.no_transit)
+            await simulation_loop(mode, model_dir, args.speed, args.route, not args.no_transit,
+                                  max(args.warmup, 0))
         finally:
             unregister_endpoint(endpoint)
 
@@ -779,6 +829,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--no-transit", action="store_true", help="Disable visualizer trotro stops and riders for benchmark-equivalent demand")
+    parser.add_argument(
+        "--warmup", type=int, default=WARMUP_SECONDS,
+        help=f"Sim-seconds each run plays unseen before streaming, so traffic has "
+             f"reached the drawn roads (default: {WARMUP_SECONDS}; 0 = off)"
+    )
 
     args = parser.parse_args()
     try:

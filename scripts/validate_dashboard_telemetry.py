@@ -2,7 +2,9 @@
 """Verify dashboard measurement semantics and endpoint discovery.
 
 --live additionally compares both production packet streams against SUMO after
-each simulation second, including completed counters between decision packets.
+each simulation second, including completed counters between decision packets,
+for 360 simulated seconds from the start of the stream (the corridor stream
+starts after its warm-up).
 """
 from __future__ import annotations
 
@@ -82,6 +84,7 @@ async def validate_live(corridor: bool):
     module = importlib.import_module("corridor_visualizer_server" if corridor else "visualizer_server")
     api = module.traci
     seen_time = 0
+    start_time = 0
     arrived = 0
     checked = 0
     max_stopped = 0
@@ -93,11 +96,14 @@ async def validate_live(corridor: bool):
     module.connected_clients.add(sentinel)
 
     def capture(_clients, raw):
-        nonlocal seen_time, arrived, checked, max_stopped, last_state, fixture
+        nonlocal seen_time, start_time, arrived, checked, max_stopped, last_state, fixture
         data = json.loads(raw)
         if data["type"] == "sim_restart":
-            # Env.reset performs one warm-up SUMO step before live stepping.
-            seen_time = api.simulation.getTime()
+            # Env.reset performs one SUMO step before live stepping, and the
+            # corridor server plays its unseen warm-up before announcing the
+            # run, so its stream opens mid-run with trips already completed.
+            seen_time = start_time = api.simulation.getTime()
+            arrived = module._runtime.env.total_arrived if corridor else 0
             return
         if data["type"] not in ("vehicle_update", "state_update"):
             return
@@ -136,7 +142,7 @@ async def validate_live(corridor: bool):
         checked += 1
         if data["type"] == "state_update":
             last_state = data
-        if now >= 360 and arrived > 0 and last_state:
+        if now >= start_time + 360 and arrived > 0 and last_state:
             fixture = {"vehicle_update": data, "state_update": last_state}
             raise asyncio.CancelledError
 
