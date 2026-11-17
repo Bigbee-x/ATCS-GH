@@ -28,14 +28,16 @@ func _ready() -> void:
 	light.position = Vector3(0, 4.65, 1.55)
 	light.rotation.x = -PI * 0.5
 	light.light_color = Color(1.0, 0.89, 0.73)
-	light.spot_range = 12.0
-	light.spot_angle = 62.0
-	light.spot_attenuation = 0.8
-	light.spot_angle_attenuation = 0.7
+	# A wide, long throw: each lantern reaches across all four lanes and meets
+	# the next one's pool, so the carriageway is lit end to end at metre scale.
+	light.spot_range = 24.0
+	light.spot_angle = 76.0
+	light.spot_attenuation = 0.55
+	light.spot_angle_attenuation = 0.45
 	light.light_energy = 0
 	light.distance_fade_enabled = true
-	light.distance_fade_begin = 75
-	light.distance_fade_length = 35
+	light.distance_fade_begin = 250
+	light.distance_fade_length = 90
 	# Large numbers of shadow maps are unnecessary for downward road pools.
 	light.shadow_enabled = false
 	add_child(light)
@@ -61,9 +63,9 @@ func _process(delta: float) -> void:
 		var cloud: float = _weather._current_mods.cloud_cover if is_instance_valid(_weather) else 0.0
 		target = demand(_tod.time_of_day, rain, cloud)
 	_brightness = lerpf(_brightness, target, 1.0 - exp(-delta * 2.0))
-	light.light_energy = _brightness * 4.5
+	light.light_energy = _brightness * 9.0
 	light.visible = _brightness > 0.005
-	_lens.emission_energy_multiplier = _brightness * 5.0
+	_lens.emission_energy_multiplier = _brightness * 9.0
 
 static func _build_body() -> ArrayMesh:
 	var parts := Node3D.new()

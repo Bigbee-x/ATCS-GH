@@ -67,7 +67,7 @@ func _build_shell() -> void:
 	for i in range(4):
 		G.ellipsoid(_parts, Vector3((i - 1.5) * 0.011, 0.0585, 0.2225), Vector3(0.006, 0.003, 0.004), _led(Color("67ac91"), 0.9), "BatteryGauge")
 	G.ellipsoid(_parts, Vector3(0.037, 0.0575, 0.2215), Vector3(0.010, 0.004, 0.010), _accent, "PowerButton")
-	var label := G.label(self, "ATCS", Vector3(0, 0.0785, 0.060), 0.084, 0.021, Color("4a5358"), "AirframeMark")
+	var label := G.label(self, "TrafIQ", Vector3(0, 0.0785, 0.060), 0.084, 0.021, Color("4a5358"), "AirframeMark")
 	label.rotation.x = -PI * 0.5
 	label.shaded = false
 	var serial := G.label(self, "SURVEY 01", Vector3(0, 0.0782, 0.100), 0.066, 0.010, Color("5d686e"), "AirframeSerial")

@@ -30,8 +30,11 @@ func _run() -> void:
 		var frontage: Array = environment.get("frontage_uses")
 		var roads: Array[Rect2] = _arterial_roads(corridor)
 		var streets: Array[Rect2] = []
+		if corridor:
+			var town = preload("res://scripts/CityDistrictBuilder.gd")
+			for street in town.streets(): streets.append(town.street_plot(street))
 		for child in environment.get_children():
-			if child is CSGBox3D and (String(child.name).begins_with("ResidentialStreet") or String(child.name).begins_with("CommercialAccess")):
+			if child is CSGBox3D and (String(child.name).begins_with("ResidentialStreet") or String(child.name).begins_with("CommercialAccess") or String(child.name).begins_with("AirportAccess")):
 				streets.append(_box_footprint(child.global_transform, child.size))
 		var counts: Dictionary = {}
 		var tall_apartments: int = 0
@@ -113,13 +116,12 @@ func _rect_distance(a: Rect2, b: Rect2) -> float:
 func _arterial_roads(corridor: bool) -> Array[Rect2]:
 	var roads: Array[Rect2] = []
 	if not corridor:
-		roads.append(Rect2(-3.2, -93.5, 6.4, 187.0))
-		roads.append(Rect2(-93.5, -3.2, 187.0, 6.4))
+		roads.append(Rect2(-6.4,-1500.0,12.8,3000.0))
+		roads.append(Rect2(-1500.0,-6.4,3000.0,12.8))
 		return roads
-	roads.append(Rect2(-3.0, -58.0, 6.0, 176.0))
+	roads.append(Rect2(-6.4, -1500.0, 12.8, 3600.0))
 	for i in range(3):
-		var east_width: float = [5.0, 5.0, 3.0][i]
-		var west_width: float = [3.0, 5.0, 3.0][i]
-		roads.append(Rect2(-58.0, i * 30.0 - east_width * 0.5, 58.0, east_width))
-		roads.append(Rect2(0.0, i * 30.0 - west_width * 0.5, 58.0, west_width))
+		var widths := preload("res://scripts/CorridorGeometry.gd").widths(i)
+		roads.append(Rect2(-1500.0, i * 300.0 - widths.y * 0.5, 1500.0, widths.y))
+		roads.append(Rect2(0.0, i * 300.0 - widths.z * 0.5, 1500.0, widths.z))
 	return roads

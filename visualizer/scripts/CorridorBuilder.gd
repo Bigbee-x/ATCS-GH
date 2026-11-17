@@ -1,5 +1,6 @@
 extends Node3D
-const CrossingFurniture = preload("res://scripts/CrossingFurniture.gd")
+const Net = preload("res://scripts/CorridorGeometry.gd")
+const Transit = preload("res://scripts/TransitLayout.gd")
 const StreetLamp = preload("res://scripts/StreetLamp.gd")
 
 const Signals = preload("res://scripts/SignalHardware.gd")
@@ -14,13 +15,13 @@ const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
 ##
 ## Layout (Godot coordinates):
 ##   J0 center: Z = 0     (Achimota/Neoplan)
-##   J1 center: Z = 30    (Asylum Down / Ring Rd)
-##   J2 center: Z = 60    (Nima / Tesano)
+##   J1 center: Z = 300    (Asylum Down / Ring Rd)
+##   J2 center: Z = 600    (Nima / Tesano)
 ##   NS corridor runs along Z axis
 ##   Cross-streets run along X axis at each junction
 ##
 ## SUMO → Godot mapping:
-##   Piecewise linear (see VehicleManager._map_corridor_z/x)
+##   Metric translation and X reflection (see CorridorGeometry.gd)
 ##   SUMO Y → Godot Z,  SUMO X → Godot -X
 
 # ── Phase constants (must match corridor_env.py) ──────────────────────────────
@@ -38,10 +39,10 @@ const JUNCTION_SIZE     := 6.0    # Each junction square (Godot units)
 const JUNCTION_HALF     := 3.0
 const ROAD_THICKNESS    := 0.1
 const SIDEWALK_HEIGHT   := 0.15
-const SIDEWALK_WIDTH    := 0.7
+const SIDEWALK_WIDTH    := 1.5
 
 # NS corridor road (2 lanes each direction = 4 lanes total)
-const NS_ROAD_WIDTH     := 6.0
+const NS_ROAD_WIDTH     := 12.8
 
 # Cross-street profiles per junction
 # J0: E=Aggrey(2lane), W=Guggisberg(1lane)
@@ -50,22 +51,22 @@ const NS_ROAD_WIDTH     := 6.0
 
 # Junction centers (Godot Z)
 const J0_Z := 0.0
-const J1_Z := 30.0
-const J2_Z := 60.0
-const JUNCTION_CENTERS: Array = [0.0, 30.0, 60.0]
+const J1_Z := 300.0
+const J2_Z := 600.0
+const JUNCTION_CENTERS: Array = [0.0, 300.0, 600.0]
 
 # Road arm lengths
-const BOUNDARY_ARM      := 55.0   # Boundary road arms (lengthened for breathing room)
-const CROSS_ARM         := 55.0   # Cross-street arms (lengthened for breathing room)
+const BOUNDARY_ARM      := 1489.6   # Boundary road arms (lengthened for breathing room)
+const CROSS_ARM         := 880.0   # Cross-street arms (lengthened for breathing room)
 
 # Junction names
 const JUNCTION_IDS: Array = ["J0", "J1", "J2"]
 
 # Cross-street widths per junction: {jid: {east: w, west: w}}
 var _cross_widths: Dictionary = {
-	"J0": {"east": 5.0, "west": 3.0},
-	"J1": {"east": 5.0, "west": 5.0},
-	"J2": {"east": 3.0, "west": 3.0},
+	"J0": {"east": 12.8, "west": 6.4},
+	"J1": {"east": 12.8, "west": 12.8},
+	"J2": {"east": 6.4, "west": 6.4},
 }
 
 # ── Traffic light references ─────────────────────────────────────────────────
@@ -107,41 +108,45 @@ var _emergency_active: Dictionary = {"J0": false, "J1": false, "J2": false}
 func _ready() -> void:
 	_create_materials()
 	_build_ground()
-
-	# Build 3 junctions
+	var roads := preload("res://scripts/MetricRoadBuilder.gd").new()
+	roads.name = "MetricRoads"
+	add_child(roads)
+	roads.build()
+	_build_lane_overlays()
 	for i in range(3):
-		var jid: String = JUNCTION_IDS[i]
-		var center_z: float = JUNCTION_CENTERS[i]
-		_build_junction(jid, center_z)
-
-	# Build corridor road segments between junctions
-	_build_corridor_roads()
-
-	# Build boundary roads (south of J0, north of J2)
-	_build_boundary_roads()
-
-	# Build cross-street arms
-	for i in range(3):
-		var jid: String = JUNCTION_IDS[i]
-		var center_z: float = JUNCTION_CENTERS[i]
-		_build_cross_streets(jid, center_z)
-
-	# Build traffic lights at each junction
-	for i in range(3):
-		var jid: String = JUNCTION_IDS[i]
-		var center_z: float = JUNCTION_CENTERS[i]
-		_build_traffic_lights(jid, center_z)
-
-	# Street furniture: lamps along every road + utility poles down the corridor
+		_build_traffic_lights(JUNCTION_IDS[i], JUNCTION_CENTERS[i])
 	_build_street_lights()
+	var pools := preload("res://scripts/LampPools.gd").new()
+	pools.setup(_street_lights, get_parent())
+	add_child(pools)
 	_build_utility_poles()
 
-	# Build lane congestion overlays
-	_build_lane_overlays()
-
-	# Build junction name labels
-
-	# Build watermark
+func _build_lane_overlays() -> void:
+	# Existing live queue heatmap follows the same incoming lanes as the roads.
+	for edge in Net.data().edges:
+		if edge.kind != "road" or not edge.target.begins_with("J"):
+			continue
+		for lane in edge.lanes:
+			if lane.pedestrian:
+				continue
+			var end := Net.point(lane.shape[-1], 0.075)
+			var direction := (end-Net.point(lane.shape[-2], 0.075)).normalized()
+			var length: float = minf(30.0, lane.length)
+			var mat := StandardMaterial3D.new()
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = Color(0, 0.8, 0, 0)
+			var overlay := MeshInstance3D.new()
+			overlay.name = "Queue_"+lane.id
+			var box := BoxMesh.new()
+			box.size = Vector3(lane.width*0.85, 0.005, length)
+			overlay.mesh = box
+			overlay.material_override = mat
+			overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			overlay.position = end-direction*length*0.5
+			overlay.rotation.y = atan2(direction.x, direction.z)
+			add_child(overlay)
+			_lane_overlays[lane.id] = {"mesh":overlay, "mat":mat}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -225,7 +230,14 @@ func _create_materials() -> void:
 
 	_mat_marking = SurfaceMaterials.surface(0, Color("c8c1a9"))
 
-	_mat_grass = SurfaceMaterials.surface(3, Color("796d4b"))
+	# Green grass (the user's choice, 17 Nov), worn to laterite in patches under the
+	# town; see streetscape_surface kind 10.
+	_mat_grass = SurfaceMaterials.surface(10, Color("4f6a33"))
+	var town: Rect2 = preload("res://scripts/CityDistrictBuilder.gd").TOWN
+	_mat_grass.set_shader_parameter("town_rect", Vector4(town.position.x, town.position.y, town.end.x, town.end.y))
+	var paved: Array[Rect2] = preload("res://scripts/CityDistrictBuilder.gd").PAVED
+	_mat_grass.set_shader_parameter("paved_a", Vector4(paved[0].position.x, paved[0].position.y, paved[0].end.x, paved[0].end.y))
+	_mat_grass.set_shader_parameter("paved_b", Vector4(paved[1].position.x, paved[1].position.y, paved[1].end.x, paved[1].end.y))
 
 	_mat_pole = StandardMaterial3D.new()
 	_mat_pole.albedo_color = Color(0.25, 0.25, 0.28)
@@ -264,301 +276,20 @@ func _create_materials() -> void:
 
 func _build_ground() -> void:
 	var ground := CSGBox3D.new()
-	ground.size = Vector3(2000.0, 0.02, 2000.0)
+	ground.size = Vector3(4000.0, 0.1, 4400.0)
 	ground.position = Vector3(0, -0.06, J1_Z)  # Center on corridor midpoint
 	ground.material = _mat_grass
 	ground.name = "Ground"
+	ground.use_collision = true
+	# Nothing lies beneath the ground plane; as a shadow caster it only darkened
+	# thin earth plates laid a centimetre above it.
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ground)
 
 
-func _build_junction(jid: String, center_z: float) -> void:
-	## Build one junction square at the given Z position.
-	var junction := CSGBox3D.new()
-	junction.size = Vector3(JUNCTION_SIZE, ROAD_THICKNESS, JUNCTION_SIZE)
-	junction.position = Vector3(0, 0, center_z)
-	junction.material = _mat_road
-	junction.name = "Junction_%s" % jid
-	add_child(junction)
-
-	# Crosswalk markings at each junction edge
-	_build_crosswalks(jid, center_z)
-
-	# Stop lines
-	_build_stop_lines(jid, center_z)
-
-
-func _build_corridor_roads() -> void:
-	## Build the NS corridor road segments between junctions.
-	# J0→J1 segment
-	var seg1_z_start: float = J0_Z + JUNCTION_HALF
-	var seg1_z_end: float = J1_Z - JUNCTION_HALF
-	var seg1_length: float = seg1_z_end - seg1_z_start
-	var seg1_center: float = (seg1_z_start + seg1_z_end) / 2.0
-
-	var road1 := CSGBox3D.new()
-	road1.size = Vector3(NS_ROAD_WIDTH, ROAD_THICKNESS, seg1_length)
-	road1.position = Vector3(0, 0, seg1_center)
-	road1.material = _mat_road
-	road1.name = "CorridorRoad_J0_J1"
-	add_child(road1)
-
-	# Sidewalks along J0→J1
-	_build_corridor_sidewalks(seg1_center, seg1_length, NS_ROAD_WIDTH)
-
-	# J1→J2 segment
-	var seg2_z_start: float = J1_Z + JUNCTION_HALF
-	var seg2_z_end: float = J2_Z - JUNCTION_HALF
-	var seg2_length: float = seg2_z_end - seg2_z_start
-	var seg2_center: float = (seg2_z_start + seg2_z_end) / 2.0
-
-	var road2 := CSGBox3D.new()
-	road2.size = Vector3(NS_ROAD_WIDTH, ROAD_THICKNESS, seg2_length)
-	road2.position = Vector3(0, 0, seg2_center)
-	road2.material = _mat_road
-	road2.name = "CorridorRoad_J1_J2"
-	add_child(road2)
-
-	_build_corridor_sidewalks(seg2_center, seg2_length, NS_ROAD_WIDTH)
-
-	# Center line dashes on corridor roads
-	_build_center_dashes(Vector3(0, 0, seg1_center), Vector3(0, 0, 1), seg1_length)
-	_build_center_dashes(Vector3(0, 0, seg2_center), Vector3(0, 0, 1), seg2_length)
-
-
-func _build_corridor_sidewalks(center_z: float, length: float, road_width: float) -> void:
-	## Build sidewalks + an open concrete U-gutter along a corridor road segment.
-	var half_w: float = road_width / 2.0
-	for side in [-1.0, 1.0]:
-		var sw := CSGBox3D.new()
-		sw.size = Vector3(SIDEWALK_WIDTH, SIDEWALK_HEIGHT, length)
-		sw.position = Vector3(
-			side * (half_w + SIDEWALK_WIDTH / 2.0),
-			SIDEWALK_HEIGHT / 2.0,
-			center_z
-		)
-		sw.material = _mat_sidewalk
-		add_child(sw)
-		# Open gutter just outside the sidewalk (classic Accra roadside drain)
-		_build_gutter(Vector3(side * (half_w + SIDEWALK_WIDTH + 0.45), 0, center_z), length, true)
-
-
-func _build_gutter(center: Vector3, length: float, is_ns: bool) -> void:
-	## Open concrete U-gutter: a dark recessed channel flanked by two raised
-	## concrete rims. Oriented along Z (is_ns) or X.
-	var gw: float = 0.55     # channel width
-	var rw: float = 0.12     # rim width
-	var rh: float = 0.16     # rim height
-	var channel := CSGBox3D.new()
-	channel.size = Vector3(gw, 0.05, length) if is_ns else Vector3(length, 0.05, gw)
-	channel.position = center + Vector3(0, 0.025, 0)
-	channel.material = _mat_gutter_floor
-	channel.name = "Gutter"
-	add_child(channel)
-	for s in [-1.0, 1.0]:
-		var rim := CSGBox3D.new()
-		rim.size = Vector3(rw, rh, length) if is_ns else Vector3(length, rh, rw)
-		var off: float = s * (gw / 2.0 + rw / 2.0)
-		rim.position = center + (Vector3(off, rh / 2.0, 0) if is_ns else Vector3(0, rh / 2.0, off))
-		rim.material = _mat_gutter_concrete
-		rim.name = "GutterRim"
-		add_child(rim)
-
-
-func _build_boundary_roads() -> void:
-	## Build boundary roads: south of J0 and north of J2.
-	# South boundary
-	var s_center_z: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM / 2.0
-	var s_road := CSGBox3D.new()
-	s_road.size = Vector3(NS_ROAD_WIDTH, ROAD_THICKNESS, BOUNDARY_ARM)
-	s_road.position = Vector3(0, 0, s_center_z)
-	s_road.material = _mat_road
-	s_road.name = "BoundaryRoad_South"
-	add_child(s_road)
-	_build_corridor_sidewalks(s_center_z, BOUNDARY_ARM, NS_ROAD_WIDTH)
-	_build_center_dashes(Vector3(0, 0, s_center_z), Vector3(0, 0, -1), BOUNDARY_ARM)
-
-	# North boundary
-	var n_center_z: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM / 2.0
-	var n_road := CSGBox3D.new()
-	n_road.size = Vector3(NS_ROAD_WIDTH, ROAD_THICKNESS, BOUNDARY_ARM)
-	n_road.position = Vector3(0, 0, n_center_z)
-	n_road.material = _mat_road
-	n_road.name = "BoundaryRoad_North"
-	add_child(n_road)
-	_build_corridor_sidewalks(n_center_z, BOUNDARY_ARM, NS_ROAD_WIDTH)
-	_build_center_dashes(Vector3(0, 0, n_center_z), Vector3(0, 0, 1), BOUNDARY_ARM)
-
-
-func _build_cross_streets(jid: String, center_z: float) -> void:
-	## Build E/W cross-street arms at one junction.
-	var widths: Dictionary = _cross_widths[jid]
-
-	# East arm
-	var e_width: float = widths["east"]
-	var e_center_x: float = -(JUNCTION_HALF + CROSS_ARM / 2.0)
-	var e_road := CSGBox3D.new()
-	e_road.size = Vector3(CROSS_ARM, ROAD_THICKNESS, e_width)
-	e_road.position = Vector3(e_center_x, 0, center_z)
-	e_road.material = _mat_road
-	e_road.name = "CrossRoad_%s_East" % jid
-	add_child(e_road)
-	# East sidewalks
-	for side in [-1.0, 1.0]:
-		var sw := CSGBox3D.new()
-		sw.size = Vector3(CROSS_ARM, SIDEWALK_HEIGHT, SIDEWALK_WIDTH)
-		sw.position = Vector3(e_center_x, SIDEWALK_HEIGHT / 2.0,
-			center_z + side * (e_width / 2.0 + SIDEWALK_WIDTH / 2.0))
-		sw.material = _mat_sidewalk
-		add_child(sw)
-	# Center dashes
-	_build_center_dashes(Vector3(e_center_x, 0, center_z), Vector3(-1, 0, 0), CROSS_ARM)
-
-	# West arm
-	var w_width: float = widths["west"]
-	var w_center_x: float = JUNCTION_HALF + CROSS_ARM / 2.0
-	var w_road := CSGBox3D.new()
-	w_road.size = Vector3(CROSS_ARM, ROAD_THICKNESS, w_width)
-	w_road.position = Vector3(w_center_x, 0, center_z)
-	w_road.material = _mat_road
-	w_road.name = "CrossRoad_%s_West" % jid
-	add_child(w_road)
-	# West sidewalks
-	for side in [-1.0, 1.0]:
-		var sw := CSGBox3D.new()
-		sw.size = Vector3(CROSS_ARM, SIDEWALK_HEIGHT, SIDEWALK_WIDTH)
-		sw.position = Vector3(w_center_x, SIDEWALK_HEIGHT / 2.0,
-			center_z + side * (w_width / 2.0 + SIDEWALK_WIDTH / 2.0))
-		sw.material = _mat_sidewalk
-		add_child(sw)
-	_build_center_dashes(Vector3(w_center_x, 0, center_z), Vector3(1, 0, 0), CROSS_ARM)
-
-
-func _build_center_dashes(center: Vector3, direction: Vector3, length: float) -> void:
-	## Build dashed center line along a road.
-	var dash_length: float = 0.8
-	var gap_length: float = 0.6
-	var total_step: float = dash_length + gap_length
-	var num_dashes: int = int(length / total_step)
-	var half_length: float = length / 2.0
-
-	for i in range(num_dashes):
-		var offset: float = -half_length + i * total_step + dash_length / 2.0
-		var dash := CSGBox3D.new()
-
-		if abs(direction.z) > 0:
-			dash.size = Vector3(0.04, 0.12, dash_length)
-			dash.position = center + Vector3(0, 0, offset * sign(direction.z))
-		else:
-			dash.size = Vector3(dash_length, 0.12, 0.04)
-			dash.position = center + Vector3(offset * sign(direction.x), 0, 0)
-
-		dash.material = _mat_marking
-		add_child(dash)
-
-
-func _build_stop_lines(jid: String, _center_z: float) -> void:
-	CrossingFurniture.stop_lines(self, true, int(jid.substr(1)), _mat_marking)
-
-func _build_crosswalks(jid: String, _center_z: float) -> void:
-	CrossingFurniture.crossings(self, true, int(jid.substr(1)), _mat_marking, _mat_sidewalk)
-
-func _build_lane_overlays() -> void:
-	## Build semi-transparent overlay strips on each incoming lane of all 3 junctions.
-	## Color shifts green→yellow→red based on queue density from server data.
-	for i in range(3):
-		var jid: String = JUNCTION_IDS[i]
-		var center_z: float = JUNCTION_CENTERS[i]
-		_build_junction_lane_overlays(jid, center_z)
-
-
-func _build_junction_lane_overlays(jid: String, center_z: float) -> void:
-	## Build lane overlays for one junction's incoming lanes.
-	var half_j: float = JUNCTION_HALF
-	var ns_lane_w: float = NS_ROAD_WIDTH / 4.0  # Half-lane width for 2-lane NS road
-	var widths: Dictionary = _cross_widths[jid]
-	var e_lane_w: float = widths["east"] / 4.0   # Half-lane width for east cross-street
-	var w_width: float = widths["west"]
-
-	# Build lane configs: lane_id → {pos: Vector3, size: Vector3}
-	# N approach: incoming from north (positive Z direction)
-	# Overlay sits north of junction: Z from junction edge outward
-	var n_center_z: float = center_z + half_j + OVERLAY_LENGTH / 2.0
-	# S approach: incoming from south (negative Z direction)
-	var s_center_z: float = center_z - half_j - OVERLAY_LENGTH / 2.0
-	# E approach: incoming from east (now negative X after mirror)
-	var e_center_x: float = -(half_j + OVERLAY_LENGTH / 2.0)
-	# W approach: incoming from west (now positive X after mirror)
-	var w_center_x: float = half_j + OVERLAY_LENGTH / 2.0
-
-	var lane_configs: Dictionary = {}
-
-	match jid:
-		"J0":
-			# N: ACH_J1toJ0_1, ACH_J1toJ0_2 (2 lanes from J1)
-			lane_configs["ACH_J1toJ0_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J1toJ0_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# E: AGG_E2J0_1, AGG_E2J0_2 (2 lanes, Aggrey St)
-			lane_configs["AGG_E2J0_1"] = {"pos": Vector3(e_center_x, 0.12, center_z + e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
-			lane_configs["AGG_E2J0_2"] = {"pos": Vector3(e_center_x, 0.12, center_z - e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
-			# S: ACH_S2J0_1, ACH_S2J0_2 (2 lanes from boundary)
-			lane_configs["ACH_S2J0_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_S2J0_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# W: GUG_W2J0_1 (1 lane, Guggisberg)
-			lane_configs["GUG_W2J0_1"] = {"pos": Vector3(w_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, w_width * 0.8)}
-
-		"J1":
-			# N: ACH_J2toJ1_1, ACH_J2toJ1_2 (2 lanes from J2)
-			lane_configs["ACH_J2toJ1_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J2toJ1_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# E: ASD_E2J1_1, ASD_E2J1_2 (2 lanes, Asylum Down)
-			lane_configs["ASD_E2J1_1"] = {"pos": Vector3(e_center_x, 0.12, center_z + e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
-			lane_configs["ASD_E2J1_2"] = {"pos": Vector3(e_center_x, 0.12, center_z - e_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, e_lane_w * 1.8)}
-			# S: ACH_J0toJ1_1, ACH_J0toJ1_2 (2 lanes from J0)
-			lane_configs["ACH_J0toJ1_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J0toJ1_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# W: RNG_W2J1_1, RNG_W2J1_2 (2 lanes, Ring Rd)
-			var w_lane_w: float = w_width / 4.0
-			lane_configs["RNG_W2J1_1"] = {"pos": Vector3(w_center_x, 0.12, center_z - w_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, w_lane_w * 1.8)}
-			lane_configs["RNG_W2J1_2"] = {"pos": Vector3(w_center_x, 0.12, center_z + w_lane_w), "size": Vector3(OVERLAY_LENGTH, 0.02, w_lane_w * 1.8)}
-
-		"J2":
-			# N: ACH_N2J2_1, ACH_N2J2_2 (2 lanes from boundary)
-			lane_configs["ACH_N2J2_1"] = {"pos": Vector3(ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_N2J2_2"] = {"pos": Vector3(-ns_lane_w, 0.12, n_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# E: NMA_E2J2_1 (1 lane, Nima)
-			lane_configs["NMA_E2J2_1"] = {"pos": Vector3(e_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, widths["east"] * 0.8)}
-			# S: ACH_J1toJ2_1, ACH_J1toJ2_2 (2 lanes from J1)
-			lane_configs["ACH_J1toJ2_1"] = {"pos": Vector3(-ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			lane_configs["ACH_J1toJ2_2"] = {"pos": Vector3(ns_lane_w, 0.12, s_center_z), "size": Vector3(ns_lane_w * 1.8, 0.02, OVERLAY_LENGTH)}
-			# W: TSN_W2J2_1 (1 lane, Tesano)
-			lane_configs["TSN_W2J2_1"] = {"pos": Vector3(w_center_x, 0.12, center_z), "size": Vector3(OVERLAY_LENGTH, 0.02, w_width * 0.8)}
-
-	# Create overlay meshes
-	for lane_id in lane_configs:
-		var cfg: Dictionary = lane_configs[lane_id]
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.0, 0.8, 0.0, 0.0)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.no_depth_test = true
-
-		var overlay := CSGBox3D.new()
-		overlay.size = cfg["size"]
-		overlay.position = cfg["pos"]
-		overlay.material = mat
-		overlay.name = "LaneOverlay_%s" % lane_id
-		add_child(overlay)
-
-		_lane_overlays[lane_id] = {"mesh": overlay, "mat": mat}
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TRAFFIC LIGHTS
-# ═════════════════════════════════════════════════════════════════════════════
-
 func _build_traffic_lights(jid: String, center_z: float) -> void:
 	# Poles stand beyond the sidewalk and open drain, leaving the walking strip clear.
-	var along: float = JUNCTION_HALF + 2.5
+	var along: float = 12.5
 	var widths: Dictionary = _cross_widths[jid]
 	var ns_offset: float = NS_ROAD_WIDTH * 0.5 + SIDEWALK_WIDTH + 1.1
 	var e_offset: float = widths["east"] * 0.5 + SIDEWALK_WIDTH + 1.1
@@ -578,7 +309,7 @@ func _build_traffic_lights(jid: String, center_z: float) -> void:
 		pole.rotation.y = cfg["yaw"]
 		add_child(pole)
 		Signals.structure(pole, -1.0, cfg["length"])
-		var head := Signals.overhead(pole, -(cfg["length"] - 0.45), Signals.HEIGHT)
+		var head := Signals.overhead(pole, -(cfg["length"] - (NS_ROAD_WIDTH*0.25 if approach in ["north","south"] else widths[approach]*0.25)), Signals.HEIGHT)
 		head["pole"] = Signals.repeater(pole, 3.35)
 		_lights[jid][approach] = head
 	# Far-side through head + left arrow for each approach, on the pole at its
@@ -673,36 +404,23 @@ func _set_arrow(jid: String, approach: String, is_on: bool) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _build_street_lights() -> void:
-	## Sodium lamps along both curbs of the NS corridor (skipping the junction
-	## boxes) and both curbs of every cross-street arm. Off by day; toggled on at
-	## night by set_street_lights_night().
-	var spacing: float = 14.0
+	# One series along each SUMO sidewalk; poles sit in the outer verge.
+	for path in Net.sidewalks():
+		var start: Vector3 = path.start
+		var end: Vector3 = path.end
+		var tangent := (end-start).normalized()
+		var outward := Vector3(-tangent.z, 0, tangent.x)
+		var length: float = start.distance_to(end)
+		for i in range(int((length-32)/32.0)):
+			var at := start+tangent*(24+i*32.0)+outward*1.1
+			if not _in_station_plot(at):
+				_add_street_lamp(at,-outward)
 
-	# NS corridor: both curbs, full length, skipping junction boxes.
-	var ns_side: float = NS_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH - 0.12
-	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 4.0
-	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 4.0
-	for side in [-1.0, 1.0]:
-		var z: float = z_start
-		while z <= z_end:
-			if not _near_junction_z(z, JUNCTION_HALF + 1.5):
-				_add_street_lamp(Vector3(side * ns_side, 0, z), Vector3(-side, 0, 0))
-			z += spacing
-
-	# Cross-street arms at each junction: both curbs along each E/W arm.
-	for i in range(3):
-		var center_z: float = JUNCTION_CENTERS[i]
-		var widths: Dictionary = _cross_widths[JUNCTION_IDS[i]]
-		# East arm reaches -X (mirrored); west arm reaches +X.
-		for arm in [{"sign": -1.0, "w": widths["east"]}, {"sign": 1.0, "w": widths["west"]}]:
-			var cross_side: float = arm["w"] / 2.0 + SIDEWALK_WIDTH - 0.12
-			for side in [-1.0, 1.0]:
-				var d: float = JUNCTION_HALF + 4.0
-				while d <= JUNCTION_HALF + CROSS_ARM - 4.0:
-					_add_street_lamp(Vector3(arm["sign"] * d, 0, center_z + side * cross_side),
-						Vector3(0, 0, -side))
-					d += spacing
-
+func _in_station_plot(at: Vector3) -> bool:
+	for spec in Transit.stations(true):
+		if Transit.plot(spec).grow(1.0).has_point(Vector2(at.x, at.z)):
+			return true
+	return false
 
 func _add_street_lamp(base: Vector3, toward: Vector3) -> void:
 	var lamp := StreetLamp.new()
@@ -717,20 +435,21 @@ func set_street_lights_night(enabled: bool) -> void:
 
 func _build_utility_poles() -> void:
 	## Overhead lines down ONE curb of the NS corridor (PowerLines.gd), a pole every
-	## 20 m; each run ends with a stay at the junction boxes, where the line breaks.
-	var spacing: float = 20.0
-	var z_start: float = J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 6.0
-	var z_end: float = J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 6.0
+	## 40 m; each run ends with a stay at the junction boxes, where the line breaks.
+	var spacing: float = 40.0
+	# Poles follow the drawn window of the road, not the full simulated approach.
+	var z_start: float = maxf(J0_Z - JUNCTION_HALF - BOUNDARY_ARM + 6.0, Net.VIEW.position.y + 12.0)
+	var z_end: float = minf(J2_Z + JUNCTION_HALF + BOUNDARY_ARM - 6.0, Net.VIEW.end.y - 12.0)
 	var side_x: float = -(NS_ROAD_WIDTH / 2.0 + 1.9)   # one curb only (−X side)
 	var runs: Array = []
 	var current: Array[Vector3] = []
 	var z: float = z_start
 	while z <= z_end:
-		if _near_junction_z(z, JUNCTION_HALF + 1.5):
+		if _near_junction_z(z, 20.0):
 			if not current.is_empty():
 				runs.append(current)
 			current = []
-		else:
+		elif not _in_station_plot(Vector3(side_x, 0, z)):
 			current.append(Vector3(side_x, 0, z))
 		z += spacing
 	if not current.is_empty():

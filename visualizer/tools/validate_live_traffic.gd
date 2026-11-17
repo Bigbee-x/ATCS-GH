@@ -16,11 +16,13 @@ func _check(condition: bool, message: String) -> void:
 
 func _run() -> void:
 	var manager: Node = root.get_node("ServerManager")
+	manager.log_file_path = "/private/tmp/trafiq-live-validation-%d.log" % OS.get_process_id()
 	# Occupy a port with an unrelated listener: startup must leave it intact.
 	var occupied := TCPServer.new()
 	var test_port: int = manager._available_port(8878)
 	_check(occupied.listen(test_port, "127.0.0.1") == OK, "Could not reserve test port")
-	for corridor in [false, true]:
+	var modes := [false, true] if "--legacy" in OS.get_cmdline_user_args() else [true]
+	for corridor in modes:
 		latest.clear()
 		initial_positions.clear()
 		moved.clear()
@@ -71,12 +73,27 @@ func _run() -> void:
 		print("LIVE TRAFFIC ", "corridor" if corridor else "single", ": port=", manager.active_port,
 			" vehicles=", max_vehicles, " moving=", moved.size(), " phases=", phases.keys())
 		var args := OS.get_cmdline_user_args()
-		if not args.is_empty() and DisplayServer.get_name() != "headless":
+		if not args.is_empty() and not args[0].begins_with("--") and DisplayServer.get_name() != "headless":
 			root.size = Vector2i(1440, 900)
 			scene.get_node("TimeOfDayManager").set_time(14.0)
 			await process_frame
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png(args[0].path_join("live-traffic-%s.png" % ("corridor" if corridor else "single")))
+			if corridor and "--hud" in args:
+				var hud: Control = scene.get_node("UI/UIRoot")
+				var camera: Camera3D = scene.get_node("IsometricCamera")
+				camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+				camera.position = Vector3(-100,100,135)
+				camera.look_at(Vector3(0,0,310))
+				scene.get_node("TimeOfDayManager").set_time(17.5)
+				for page in ["", "Traffic", "Scene", "Controls"]:
+					if not hud._page.is_empty(): hud.toggle_page(hud._page)
+					if not page.is_empty(): hud.toggle_page(page)
+					for frame in range(16): await process_frame
+					await RenderingServer.frame_post_draw
+					root.get_texture().get_image().save_png(args[0].path_join("hud-%s.png" % ("overview" if page.is_empty() else page.to_lower())))
+				var sample := FileAccess.open(args[0].path_join("live-packet.json"), FileAccess.WRITE)
+				sample.store_string(JSON.stringify(latest))
 		scene.queue_free()
 		await process_frame
 		manager.stop_server()

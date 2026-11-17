@@ -80,9 +80,9 @@ func _ground_label(text: String, at: Vector3, width: float, height: float, color
 	sign.shaded = false
 
 func _build_airfield() -> void:
-	_box(Vector3(48, -0.02, 71), Vector3(96, 0.08, 142), M.surface(3, Color("a7a17e")))
+	_box(Vector3(48, -0.02, 71), Vector3(96, 0.08, 142), M.surface(7, Color("7c856c")))
 	# Graded shoulders and a long, slender runway replace the short slab.
-	_box(Vector3(14, 0.018, 64), Vector3(13.5, 0.055, 124), M.surface(3, Color("908d6b")))
+	_box(Vector3(14, 0.018, 64), Vector3(13.5, 0.055, 124), M.surface(10, Color("8f9179")))
 	_box(Vector3(14, 0.065, 64), Vector3(8, 0.10, 116), _asphalt)
 	for x in [10.15, 17.85]:
 		_line(Vector3(x, 0.124, 7), Vector3(x, 0.124, 121), 0.10, _white)

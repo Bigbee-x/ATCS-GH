@@ -47,6 +47,10 @@ var _is_dusk: bool = false
 # ── Node references (set by parent script) ──────────────────────────────────
 var sun: DirectionalLight3D
 var world_env: WorldEnvironment
+# Shadowless moonlight and city skyglow: at night the roads, roofs and ground
+# stay readable from the air instead of dropping to black between the lamps.
+var moon: DirectionalLight3D
+const MOON_ENERGY: float = 0.42
 var _sky_material: Material
 var _environment: Environment
 
@@ -68,29 +72,29 @@ const KEYFRAMES: Array = [
 	 Color(0.15, 0.15, 0.12), Color(0.50, 0.40, 0.30),
 	 0.002],
 	# Bright morning — clear daylight already in by 9:30
-	[9.5,  1.30, Color(1.0, 0.96, 0.9),   50.0,
-	 0.6,  Color(0.35, 0.35, 0.40),
-	 Color(0.35, 0.55, 0.85), Color(0.65, 0.75, 0.88),
+	[9.5,  1.30, Color(1.0, 0.95, 0.86),   50.0,
+	 0.72,  Color(0.50, 0.45, 0.40),
+	 Color(0.33, 0.54, 0.84), Color(0.76, 0.80, 0.84),
 	 Color(0.18, 0.22, 0.15), Color(0.55, 0.62, 0.55),
 	 0.0],
 	# Peak hot daylight — START of the flat plateau (11:00)
-	[11.0, 1.55, Color(1.0, 1.0, 0.98),   70.0,
-	 0.7,  Color(0.40, 0.40, 0.45),
-	 Color(0.30, 0.50, 0.90), Color(0.60, 0.72, 0.92),
+	[11.0, 1.55, Color(1.0, 0.98, 0.93),   70.0,
+	 0.82,  Color(0.52, 0.47, 0.42),
+	 Color(0.29, 0.50, 0.88), Color(0.74, 0.80, 0.86),
 	 Color(0.20, 0.25, 0.16), Color(0.55, 0.62, 0.55),
 	 0.0],
 	# Peak hot daylight — END of the flat plateau (3:50 PM)
 	# Values intentionally identical to the 11:00 keyframe except for the sun
 	# pitch (which legitimately drops as the sun moves across the sky). The
 	# interpolator produces a flat peak between these two times.
-	[15.833, 1.55, Color(1.0, 1.0, 0.98),   65.0,
-	 0.7,  Color(0.40, 0.40, 0.45),
-	 Color(0.30, 0.50, 0.90), Color(0.60, 0.72, 0.92),
+	[15.833, 1.55, Color(1.0, 0.98, 0.93),   65.0,
+	 0.82,  Color(0.52, 0.47, 0.42),
+	 Color(0.29, 0.50, 0.88), Color(0.74, 0.80, 0.86),
 	 Color(0.20, 0.25, 0.16), Color(0.55, 0.62, 0.55),
 	 0.0],
 	# Golden hour begins — slight dimming starts at 4:00 PM
 	[16.0, 1.30, Color(1.0, 0.92, 0.80),   55.0,
-	 0.55, Color(0.42, 0.38, 0.35),
+	 0.66, Color(0.50, 0.43, 0.37),
 	 Color(0.38, 0.58, 0.88), Color(0.75, 0.70, 0.65),
 	 Color(0.20, 0.22, 0.14), Color(0.55, 0.55, 0.45),
 	 0.0],
@@ -102,15 +106,15 @@ const KEYFRAMES: Array = [
 	 0.002],
 	# Night
 	[20.0, 0.0, Color(0.2, 0.2, 0.4),    10.0,
-	 0.15, Color(0.12, 0.12, 0.18),
-	 Color(0.05, 0.05, 0.15), Color(0.10, 0.10, 0.18),
-	 Color(0.05, 0.05, 0.05), Color(0.08, 0.08, 0.10),
+	 0.62, Color(0.32, 0.36, 0.52),
+	 Color(0.05, 0.06, 0.16), Color(0.22, 0.18, 0.20),
+	 Color(0.05, 0.05, 0.05), Color(0.10, 0.09, 0.10),
 	 0.004],
 	# Midnight
 	[2.0,  0.0, Color(0.15, 0.15, 0.3),  -10.0,
-	 0.10, Color(0.08, 0.08, 0.12),
-	 Color(0.03, 0.03, 0.10), Color(0.06, 0.06, 0.12),
-	 Color(0.03, 0.03, 0.03), Color(0.05, 0.05, 0.07),
+	 0.52, Color(0.28, 0.32, 0.50),
+	 Color(0.03, 0.04, 0.12), Color(0.17, 0.14, 0.17),
+	 Color(0.03, 0.03, 0.03), Color(0.08, 0.07, 0.08),
 	 0.005],
 ]
 
@@ -243,6 +247,19 @@ func _apply_time(hour: float) -> void:
 		_sun_base_transform = sun.transform
 	sun.rotation_degrees.x = -sun_pitch
 
+	# ── Apply moonlight ────────────────────────────────────────────────
+	if moon == null:
+		moon = DirectionalLight3D.new()
+		moon.name = "MoonLight"
+		moon.light_color = Color(0.62, 0.72, 1.0)
+		moon.shadow_enabled = false
+		moon.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
+		moon.rotation_degrees = Vector3(-58.0, 140.0, 0.0)
+		sun.get_parent().add_child.call_deferred(moon)
+	var night_amount: float = maxf(smoothstep(17.4, 19.2, hour), 1.0 - smoothstep(5.4, 6.6, hour))
+	moon.light_energy = MOON_ENERGY * night_amount
+	moon.visible = night_amount > 0.01
+
 	# ── Apply ambient ──────────────────────────────────────────────────
 	if _environment:
 		_environment.ambient_light_energy = lerpf(kf_a[4], kf_b[4], t) * 0.85
@@ -258,8 +275,8 @@ func _apply_time(hour: float) -> void:
 	# ── Apply fog ──────────────────────────────────────────────────────
 	if _environment:
 		var fog_density: float = lerpf(kf_a[10], kf_b[10], t)
-		fog_density = maxf(fog_density, 0.0012)
-		_environment.fog_enabled = fog_density > 0.0005
+		fog_density = maxf(fog_density, 0.0012) * 0.12  # Metre-scale city visibility.
+		_environment.fog_enabled = fog_density > 0.00005
 		if _environment.fog_enabled:
 			_environment.fog_density = fog_density
 			_environment.fog_light_color = kf_a[7].lerp(kf_b[7], t)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Corridor WebSocket Visualizer Server
+TrafIQ | Corridor WebSocket Visualizer Server
 ════════════════════════════════════════════════
 Runs the 3-junction corridor SUMO simulation with multi-agent DQN
 and broadcasts real-time state to a Godot 4 3D visualizer over WebSocket.
@@ -59,6 +59,17 @@ except ImportError as e:
     print(f"[ERROR] Cannot import TraCI: {e}")
     sys.exit(1)
 
+
+from trotro_service import TrotroService
+from crossing_safety import CrossingSafety
+from corridor_runtime import CorridorRuntime
+from corridor_bundle import settings as policy_settings
+from live_dashboard import register_endpoint, unregister_endpoint, TELEMETRY_SCHEMA
+
+_transit_service = None
+_runtime = None
+_stream_metadata = {}
+_crossing_safety = CrossingSafety(traci, PROJECT_ROOT / "simulation" / "corridor.net.xml")
 
 # ── Scenario / baseline resolution (for the UI's "vs fixed timer" badge) ─────
 
@@ -236,7 +247,7 @@ async def broadcast(packet: dict):
     """Send a JSON packet to all connected WebSocket clients."""
     if not connected_clients:
         return
-    message = json.dumps(packet)
+    message = json.dumps({**_stream_metadata, "control_mode": active_control_mode, **packet})
     websockets.broadcast(connected_clients, message)
 
 
@@ -265,6 +276,8 @@ def _collect_vehicle_data() -> list[dict]:
                     "speed": round(traci.vehicle.getSpeed(vid), 2),
                     "angle": round(traci.vehicle.getAngle(vid), 1),
                     "type":  traci.vehicle.getTypeID(vid),
+                    "lane": traci.vehicle.getLaneID(vid),
+                    "lane_position": traci.vehicle.getLanePosition(vid),
                     "edge":  edge,
                 })
         except traci.exceptions.TraCIException:
@@ -276,7 +289,7 @@ def _collect_vehicle_data() -> list[dict]:
             if vid in seen:
                 continue
             road = traci.vehicle.getRoadID(vid)
-            if any(road.startswith(f":{jid}") for jid in JUNCTION_IDS):
+            if any(road.startswith(f":{jid}") for jid in JUNCTION_IDS) or (_transit_service is not None and vid in _transit_service.assignments):
                 seen.add(vid)
                 x, y = traci.vehicle.getPosition(vid)
                 vehicles.append({
@@ -286,11 +299,19 @@ def _collect_vehicle_data() -> list[dict]:
                     "speed": round(traci.vehicle.getSpeed(vid), 2),
                     "angle": round(traci.vehicle.getAngle(vid), 1),
                     "type":  traci.vehicle.getTypeID(vid),
+                    "lane": traci.vehicle.getLaneID(vid),
+                    "lane_position": traci.vehicle.getLanePosition(vid),
                     "edge":  road,
                 })
     except traci.exceptions.TraCIException:
         pass
 
+    if _transit_service is not None:
+        for vehicle in vehicles:
+            vehicle.update(_transit_service.vehicle_state(vehicle["id"]))
+
+    for vehicle in vehicles:
+        vehicle.update(_crossing_safety.vehicle_geometry(vehicle))
     return vehicles
 
 
@@ -301,6 +322,8 @@ def _collect_pedestrian_data() -> list[dict]:
     pedestrians: list[dict] = []
     try:
         for pid in traci.person.getIDList():
+            if pid.startswith("station:"):
+                continue
             x, y = traci.person.getPosition(pid)
             # Include pedestrians near any of the 3 junctions
             # J0 is at (0,0), J1 at (0,300), J2 at (0,600) in SUMO coords
@@ -319,6 +342,8 @@ def _collect_pedestrian_data() -> list[dict]:
                 })
     except traci.exceptions.TraCIException:
         pass
+    for pedestrian in pedestrians:
+        pedestrian.update(_crossing_safety.pedestrian_geometry(pedestrian))
     return pedestrians
 
 
@@ -342,7 +367,7 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
     for i, edge in enumerate(cfg.incoming_edges):
         name = approach_names[i]
         queues[name]     = edge_metrics[edge]["queue"]
-        wait_times[name] = round(edge_metrics[edge]["wait"], 1)
+        wait_times[name] = round(traci.edge.getWaitingTime(edge) / max(traci.edge.getLastStepVehicleNumber(edge), 1), 1)
 
     # Per-lane sensor data
     lane_data = {}
@@ -366,8 +391,7 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
         "west":  sig[sig_len - 1] in "Gg" if sig_len >= 1 else False,
     }
 
-    avg_wait = (float(np.mean(env.episode_waits[jid]))
-                if env.episode_waits[jid] else 0.0)
+    avg_wait = _runtime.current_wait.get(jid, {}).get("mean_seconds", 0.0) if _runtime else 0.0
 
     return {
         "junction_id": jid,
@@ -381,14 +405,17 @@ def _build_junction_packet(env: CorridorEnv, jid: str, action: int,
         "ai_decision": ACTION_NAMES[action] if action < len(ACTION_NAMES) else "UNKNOWN",
         "reward": round(reward, 1),
         "lane_data": lane_data,
+        **(_runtime.junction_traffic(jid) if _runtime else {}),
         "crossing_green": crossing_green,
+        **_crossing_safety.snapshot(jid),
+        "control": _runtime.snapshot(jid) if _runtime and active_control_mode == SimMode.AI else {"kind": active_control_mode},
     }
 
 
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
 async def simulation_loop(mode: str, model_dir: Path, speed: float,
-                          route: str | None = None):
+                          route: str | None = None, transit_enabled: bool = True):
     """
     Main simulation loop: run corridor SUMO, make decisions, broadcast state.
 
@@ -402,32 +429,30 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
     # ── Load agents ──────────────────────────────────────────────────────
     agents: dict[str, DQNAgent | None] = {jid: None for jid in JUNCTION_IDS}
 
-    if mode == SimMode.AI:
-        all_loaded = True
-        for jid in JUNCTION_IDS:
-            agent = DQNAgent(state_size=STATE_SIZE, action_size=ACTION_SIZE)
-            model_path = model_dir / f"best_{jid}.pth"
-            if model_path.exists():
-                agent.load(str(model_path))
-                agent.set_eval_mode()
-                print(f"[SIM] {jid}: Loaded model {model_path.name}")
-            else:
-                print(f"[WARN] {jid}: Model not found: {model_path}")
-                all_loaded = False
+    all_loaded = True
+    try:
+        policy_config = policy_settings(model_dir)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        all_loaded = False
+        policy_config = {'occupancy_feature':'legacy', 'graded_exit_capacity':False}
+        print(f"[WARN] Policy contract rejected: {error}")
+    for jid in JUNCTION_IDS:
+        model_path = model_dir / f"best_{jid}.pth"
+        try:
+            if not model_path.is_file():
+                raise FileNotFoundError(model_path)
+            agent = DQNAgent(state_size=STATE_SIZE, action_size=ACTION_SIZE, device="cpu")
+            agent.load(str(model_path))
+            agent.set_eval_mode()
             agents[jid] = agent
-
-        if not all_loaded:
-            print("[WARN] Some models missing — falling back to DEMO mode")
-            mode = SimMode.DEMO
-
-    elif mode == SimMode.DEMO:
-        print("[SIM] Demo mode -- using random actions")
-
-    elif mode == SimMode.MANUAL:
-        print("[SIM] Manual mode -- waiting for Godot UI commands")
-
-    elif mode == SimMode.BASELINE:
-        print("[SIM] Baseline mode -- fixed-timer cycling (60s NS / 30s EW)")
+            print(f"[SIM] {jid}: Loaded model {model_path.name}")
+        except (OSError, RuntimeError, KeyError, ValueError) as error:
+            all_loaded = False
+            print(f"[WARN] {jid}: AI unavailable: {error}")
+    if mode == SimMode.AI and not all_loaded:
+        print("[WARN] AI unavailable — using the fixed-timer baseline")
+        mode = SimMode.BASELINE
+    print(f"[SIM] Starting {mode.upper()} control")
 
     # Baseline timers (always created — used when switching to baseline at runtime)
     # Green-wave offset ~22s for 300m spacing at 50 km/h
@@ -442,15 +467,24 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
     active_control_mode = mode
 
     # ── Initialise SUMO environment ──────────────────────────────────────
-    env = CorridorEnv(gui=False, verbose=False, route_file=route)
-    scenario_label, baseline_wait = resolve_scenario(route)
+    env = CorridorEnv(gui=False, verbose=False, route_file=route,
+                      occupancy_feature=policy_config['occupancy_feature'])
+    scenario_label, _historical_baseline_wait = resolve_scenario(route)
+    baseline_wait = 0.0
     run_count = 0
 
     try:
         while True:
             seed = 42 + run_count * 137
             states = env.reset(seed=seed)
+            global _transit_service, _crossing_safety, _runtime
+            _runtime = CorridorRuntime(env, transit_enabled=transit_enabled,
+                                       graded_exit_capacity=policy_config['graded_exit_capacity'])
+            _transit_service = _runtime.transit
+            _crossing_safety = _runtime.clearance
             run_count += 1
+            _stream_metadata.update(run=run_count, seed=seed,
+                                    run_id=f"{_stream_metadata.get('session_id', 'local')}:{run_count}")
             print(f"\n[SIM] Run #{run_count} started (seed={seed})")
 
             await broadcast({
@@ -475,6 +509,11 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                 if pending_mode_switch is not None:
                     new_mode = pending_mode_switch
                     pending_mode_switch = None
+                    if new_mode == SimMode.AI and not all_loaded:
+                        print("[WARN] Cannot enter AI mode: compatible trained models are missing")
+                        await broadcast({"type":"mode_changed", "control_mode":active_control_mode,
+                                         "message":"AI unavailable: compatible trained models are missing"})
+                        new_mode = active_control_mode
                     if new_mode != active_control_mode:
                         active_control_mode = new_mode
                         print(f"[SIM] Control mode switched to: "
@@ -487,6 +526,7 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
 
                 # ── Determine actions ──────────────────────────────────────
                 actions = {}
+                manual_junctions = set()
 
                 for jid in JUNCTION_IDS:
                     if (pending_override is not None
@@ -500,11 +540,12 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                                 action = act_idx
                                 break
                         actions[jid] = action
+                        manual_junctions.add(jid)
                         print(f"[SIM] {jid} override: {override['approach']} "
                               f"-> {ACTION_NAMES[action]}")
                     elif active_control_mode == SimMode.AI and agents[jid] is not None:
                         # Protected-left action space — no sanitizing needed.
-                        actions[jid] = agents[jid].select_action(states[jid])
+                        actions[jid] = agents[jid].select_action(_runtime.policy_state(states[jid]))
                     elif active_control_mode == SimMode.BASELINE:
                         actions[jid] = baseline_timers[jid].get_action(
                             env._sim_step)
@@ -515,14 +556,9 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                     else:
                         actions[jid] = ACTION_HOLD
 
-                # ── Apply actions (same as env.step start) ─────────────────
-                for jid in JUNCTION_IDS:
-                    action = actions[jid]
-                    js = env._jstate[jid]
-                    if action != ACTION_HOLD and env._can_switch(jid):
-                        target = ACTION_TO_PHASE.get(action)
-                        if target is not None and target != js.phase:
-                            env._initiate_switch(jid, target)
+                if active_control_mode == SimMode.AI:
+                    actions = _runtime.select_actions(actions, locked=manual_junctions)
+                env.apply_actions(actions)
 
                 # ── Step SUMO one second at a time, broadcasting ───────────
                 block_arrived = 0
@@ -531,27 +567,27 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                 for sub in range(DECISION_INTERVAL):
                     sub_start = time.time()
 
-                    # Handle yellow countdowns
-                    for jid in JUNCTION_IDS:
-                        js = env._jstate[jid]
-                        if js.in_yellow:
-                            js.yellow_countdown -= 1
-                            if js.yellow_countdown <= 0:
-                                env._complete_switch(jid)
-
-                    traci.simulationStep()
-                    env._sim_step += 1
-
-                    for jid in JUNCTION_IDS:
-                        env._jstate[jid].phase_timer += 1
-
-                    block_arrived += traci.simulation.getArrivedNumber()
+                    block_arrived += env.advance_one_second()
 
                     # Broadcast vehicle + pedestrian positions every sim-second
                     vehicle_data = _collect_vehicle_data()
                     ped_data = _collect_pedestrian_data()
                     await broadcast({
                         "type": "vehicle_update",
+                        "junctions": {jid: {
+                            "junction_id": jid,
+                            "phase": env._jstate[jid].phase,
+                            "phase_name": PHASE_NAMES.get(env._jstate[jid].phase, "UNKNOWN"),
+                            "phase_timer": env._jstate[jid].phase_timer,
+                            "in_yellow": env._jstate[jid].in_yellow,
+                            **_runtime.junction_traffic(jid),
+                            **_crossing_safety.snapshot(jid),
+                            "control": _runtime.snapshot(jid) if active_control_mode == SimMode.AI else {"kind": active_control_mode},
+                        } for jid in JUNCTION_IDS},
+                        "transit": _transit_service.snapshot(),
+                        "traffic_metrics": _runtime.traffic_metrics(env.total_arrived + block_arrived),
+                        "vehicles_completed": env.total_arrived + block_arrived,
+                        "scenario": scenario_label,
                         "vehicles": vehicle_data,
                         "pedestrians": ped_data,
                         "sim_time": env._sim_step,
@@ -567,49 +603,9 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                     sub_sleep = max(0.005, (1.0 / speed) - sub_elapsed)
                     await asyncio.sleep(sub_sleep)
 
-                # ── End-of-decision metrics ────────────────────────────────
-                env.total_arrived += block_arrived
-
-                for jid in JUNCTION_IDS:
-                    js = env._jstate[jid]
-                    cfg = JUNCTIONS[jid]
-                    action = actions[jid]
-
-                    edge_metrics = env._collect_edge_metrics(jid)
-                    queues = [edge_metrics[e]["queue"] for e in cfg.incoming_edges]
-                    waits  = [edge_metrics[e]["wait"]  for e in cfg.incoming_edges]
-                    total_q = float(sum(queues))
-
-                    ped_counts = env._get_ped_counts(jid)
-                    total_ped = int(sum(ped_counts))
-
-                    min_g = (MIN_GREEN_LEFT if js.phase in (NS_LEFT, EW_LEFT)
-                             else MIN_GREEN_THROUGH)
-
-                    r_local = env._compute_local_reward(
-                        total_queue=total_q,
-                        prev_total_queue=js.prev_total_queue,
-                        n_arrived=block_arrived // len(JUNCTION_IDS),
-                        switched_too_soon=(action != ACTION_HOLD
-                                           and js.phase_timer < min_g),
-                        queue_distribution=queues,
-                        wait_distribution=waits,
-                        n_ped_waiting=total_ped,
-                    )
-                    r_corridor = env._compute_corridor_reward(jid)
-                    reward = r_local + r_corridor
-
-                    js.prev_total_queue = total_q
-
-                    avg_wait = float(np.mean(waits)) if waits else 0.0
-                    env.episode_rewards[jid].append(reward)
-                    env.episode_waits[jid].append(avg_wait)
-
-                    last_actions[jid] = action
-                    last_rewards[jid] = reward
-
-                done = (env._sim_step >= SIM_DURATION or sub_step_done)
-                next_states = {jid: env._build_state(jid) for jid in JUNCTION_IDS}
+                next_states, last_rewards, done, _ = env.finish_decision(actions, block_arrived)
+                last_actions = actions
+                done = done or sub_step_done
 
                 # ── Build and broadcast full state packet ──────────────────
                 junction_states = {}
@@ -618,11 +614,13 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
                         env, jid, last_actions[jid], last_rewards[jid]
                     )
 
-                corridor_avg_wait = env.corridor_avg_wait()
+                corridor_avg_wait = _runtime.traffic_metrics()["current_mean_wait_seconds"]
                 corridor_total_reward = env.corridor_total_reward()
 
                 packet = {
                     "type": "state_update",
+                    "transit": _transit_service.snapshot(),
+                    "traffic_metrics": _runtime.traffic_metrics(),
                     "mode": "corridor",
                     "control_mode": active_control_mode,
 
@@ -647,7 +645,7 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
 
                     # Scenario + its fixed-timer baseline (UI "vs timer" badge)
                     "scenario": scenario_label,
-                    "baseline_wait": baseline_wait,
+                    "baseline_wait": 0.0 if transit_enabled else baseline_wait,
 
                     # Per-vehicle positions (all junctions)
                     "vehicles": _collect_vehicle_data(),
@@ -673,14 +671,17 @@ async def simulation_loop(mode: str, model_dir: Path, speed: float,
             # ── Simulation complete ──────────────────────────────────────
             print(f"[SIM] Run #{run_count} complete -- "
                   f"{env.total_arrived} vehicles, "
-                  f"corridor avg wait {env.corridor_avg_wait():.1f}s")
+                  f"mean stopped vehicles {_runtime.traffic_metrics()['mean_stopped_vehicles']:.1f}")
 
             await broadcast({
                 "type": "sim_complete",
                 "mode": "corridor",
+                "sim_time": env._sim_step,
+                "traffic_metrics": _runtime.traffic_metrics(),
+                "vehicles_completed": env.total_arrived,
                 "total_arrived": env.total_arrived,
-                "corridor_avg_wait": round(env.corridor_avg_wait(), 1),
-                "avg_wait": round(env.corridor_avg_wait(), 1),
+                "corridor_avg_wait": round(_runtime.traffic_metrics()["current_mean_wait_seconds"], 1),
+                "avg_wait": round(_runtime.traffic_metrics()["current_mean_wait_seconds"], 1),
                 "total_reward": round(env.corridor_total_reward(), 1),
             })
 
@@ -714,11 +715,11 @@ async def main(args):
 
     print()
     print("=" * 62)
-    print("  ATCS-GH  |  Corridor 3D Visualizer Server")
+    print("  TrafIQ  |  Corridor 3D Visualizer Server")
     print("=" * 62)
     print(f"  Mode       : {mode.upper()}")
-    print(f"  Scenario   : {scenario_label} (fixed-timer baseline "
-          f"{baseline_wait:.1f}s)" if baseline_wait > 0 else
+    print(f"  Scenario   : {scenario_label} (historical wait score "
+          f"{baseline_wait:.1f}; not a live comparison)" if baseline_wait > 0 else
           f"  Scenario   : {scenario_label} (no baseline recorded)")
     print(f"  Junctions  : {', '.join(JUNCTION_IDS)}")
     print(f"  Model dir  : {model_dir}")
@@ -732,12 +733,18 @@ async def main(args):
     print()
 
     async with websockets.serve(ws_handler, "localhost", args.port):
-        await simulation_loop(mode, model_dir, args.speed, args.route)
+        endpoint = register_endpoint(args.port, "corridor")
+        _stream_metadata.update(session_id=endpoint["session_id"], telemetry_schema=TELEMETRY_SCHEMA,
+                                source="SUMO / TraCI", simulation_speed=args.speed)
+        try:
+            await simulation_loop(mode, model_dir, args.speed, args.route, not args.no_transit)
+        finally:
+            unregister_endpoint(endpoint)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH Corridor WebSocket Visualizer Server -- "
+        description="TrafIQ Corridor WebSocket Visualizer Server -- "
                     "bridges SUMO corridor + multi-agent DQN to Godot 4 client"
     )
     parser.add_argument(
@@ -755,7 +762,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--baseline", action="store_true",
-        help="Fixed-timer baseline mode (60s NS / 30s EW cycle)"
+        help="Fixed-timer baseline with protected turns and 22-second junction offsets"
     )
     parser.add_argument(
         "--speed", type=float, default=1.0,
@@ -770,6 +777,8 @@ if __name__ == "__main__":
         help="Scenario route file (default: the morning route; e.g. "
              "simulation/corridor_routes_evening.rou.xml)"
     )
+
+    parser.add_argument("--no-transit", action="store_true", help="Disable visualizer trotro stops and riders for benchmark-equivalent demand")
 
     args = parser.parse_args()
     try:

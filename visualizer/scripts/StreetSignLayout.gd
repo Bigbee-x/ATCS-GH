@@ -3,12 +3,12 @@ extends RefCounted
 static func billboards(corridor: bool) -> Array[Dictionary]:
 	if corridor:
 		return [
-			{"position": Vector3(10, 0, -22), "yaw": -PI / 4.0, "design": 0},
-			{"position": Vector3(-10, 0, 44), "yaw": PI / 4.0, "design": 1},
-			{"position": Vector3(10, 0, 88), "yaw": -PI / 4.0, "design": 2}]
+			{"position": Vector3(16, 0, -90), "yaw": -PI / 4.0, "design": 0},
+			{"position": Vector3(-16, 0, 420), "yaw": PI / 4.0, "design": 1},
+			{"position": Vector3(16, 0, 720), "yaw": -PI / 4.0, "design": 2}]
 	return [
-		{"position": Vector3(10, 0, 36), "yaw": -PI / 4.0, "design": 0},
-		{"position": Vector3(-10, 0, -40), "yaw": PI * 3.0 / 4.0, "design": 1}]
+		{"position": Vector3(16, 0, 110), "yaw": -PI / 4.0, "design": 0},
+		{"position": Vector3(-16, 0, -110), "yaw": PI * 3.0 / 4.0, "design": 1}]
 
 static func plot(spec: Dictionary) -> Rect2:
 	var at: Vector3 = spec["position"]

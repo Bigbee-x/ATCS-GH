@@ -28,13 +28,13 @@ func _run() -> void:
 				var local := front - Layout.center(corridor, j)
 				var heading: float = deg_to_rad(v.angle)
 				var forward := Vector3(-sin(heading), 0, cos(heading))
-				if local.dot(forward) >= 0 or local.length() > 12 or v.speed > 0.1: continue
+				if local.dot(forward) >= 0 or local.length() > 30 or v.speed > 0.1: continue
 				var arm := (0 if local.z > 0 else 2) if absf(forward.z) > 0.5 else (1 if local.x < 0 else 3)
 				var distance: float = absf(local.z) if arm in [0, 2] else absf(local.x)
 				check(distance >= Layout.stop_distance(corridor, j, arm) - 0.02, "Stopped front overlaps crossing or stop line")
 				stop_checks += 1
 				if not lanes.has(v.lane): lanes[v.lane] = []
-				lanes[v.lane].append({"center": positions[v.id], "half": Layout.half_length(v.type), "order": v.lane_position})
+				lanes[v.lane].append({"center": positions[v.id], "half": Layout.half_length(v.type,corridor), "order": v.lane_position})
 			for lane in lanes.values():
 				lane.sort_custom(func(a, b): return a.order > b.order)
 				for i in range(1, lane.size()):
@@ -47,7 +47,7 @@ func _run() -> void:
 				var a: Vector3 = spec.start
 				var b: Vector3 = spec.end
 				var closest := a.lerp(b, clampf((point-a).dot(b-a)/(b-a).length_squared(),0,1))
-				check(Vector2(point.x-closest.x,point.z-closest.z).length() < Layout.CROSSING_WIDTH * 0.5, "Pedestrian leaves zebra markings")
+				check(Vector2(point.x-closest.x,point.z-closest.z).length() < float(spec.width) * 0.5 + 0.05, "Pedestrian leaves zebra markings")
 				crossing_checks += 1
 		check(overlaps == 0, "Queued cars overlap after display spacing")
 		var scene: Node3D = load("res://scenes/CorridorMain.tscn" if corridor else "res://scenes/Main.tscn").instantiate()

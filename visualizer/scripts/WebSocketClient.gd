@@ -1,6 +1,6 @@
 extends Node
 class_name WebSocketClient
-## WebSocket client for the ATCS-GH visualizer server.
+## WebSocket client for the TrafIQ visualizer server.
 ##
 ## Connects to the Python WebSocket server, receives JSON state packets,
 ## and emits signals that other nodes (Intersection, VehicleManager, UI)
@@ -207,7 +207,7 @@ func _mark_traffic_connected() -> void:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-func send_override(approach: String) -> void:
+func send_override(approach: String, junction: String = "J0") -> void:
 	## Send a manual override command to the Python server.
 	## approach: One of "north", "south", "east", "west"
 	if not _is_connected:
@@ -217,6 +217,7 @@ func send_override(approach: String) -> void:
 	var msg: String = JSON.stringify({
 		"action": "force_green",
 		"approach": approach,
+		"junction": junction,
 	})
 	_socket.send_text(msg)
 	print("[WS] Sent override: force green for %s" % approach)
@@ -224,7 +225,7 @@ func send_override(approach: String) -> void:
 
 func send_mode_switch(target_mode: String) -> void:
 	## Switch traffic control mode on the server.
-	## target_mode: "ai" for ATCS (DQN adaptive), "baseline" for fixed timer
+	## target_mode: "ai" for TrafIQ (DQN adaptive), "baseline" for fixed timer
 	if not _is_connected:
 		push_warning("[WS] Cannot switch mode — not connected")
 		return

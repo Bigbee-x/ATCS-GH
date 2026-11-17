@@ -110,7 +110,7 @@ static func junction_cabinet(root: Node3D, junction: String) -> void:
 	for i in range(6):
 		G.box(root, Vector3(0, 0.28 + i * 0.036, 0.345), Vector3(0.72, 0.012, 0.010), dark, "DoorLouvre")
 	G.box(root, Vector3(-0.24, 1.32, 0.344), Vector3(0.30, 0.075, 0.004), dark, "AssetPlate")
-	G.label(root, "ATCS-GH " + junction, Vector3(-0.24, 1.32, 0.347), 0.27, 0.05, Color("d9ddcd")).visibility_range_end = 14.0
+	G.label(root, "TrafIQ " + junction, Vector3(-0.24, 1.32, 0.347), 0.27, 0.05, Color("d9ddcd")).visibility_range_end = 14.0
 	var badge := G.rounded_box(root, Vector3(-0.30, 1.13, 0.345), Vector3(0.09, 0.09, 0.006), 0.007, G.solid(Color("cfb952")), "ElectricalWarning")
 	G.label(badge, "!", Vector3(0, 0, 0.006), 0.04, 0.065, Color("242924")).visibility_range_end = 12.0
 	# Battery backup bolted to the battery side, its door flush with the main door.

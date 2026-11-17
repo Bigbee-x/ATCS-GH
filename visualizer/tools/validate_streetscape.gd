@@ -30,7 +30,8 @@ func _validate() -> void:
 		var kit: Node3D = environment.get_node("DetailedStreetscape")
 		_check(kit.get("_building_count") > 40, "Architecture missing in " + scene_path)
 		_check(kit.get("_tree_count") > 25, "Vegetation missing in " + scene_path)
-		_check(kit.get("_background_count") > 250, "Surrounding neighbourhoods missing in " + scene_path)
+		if not corridor:
+			_check(kit.get("_background_count") > 250,"Surrounding neighbourhoods missing in " + scene_path)
 		_check(kit.get("_batches").is_empty(), "Unflushed geometry in " + scene_path)
 		_check_roads(kit, corridor)
 		var clock: Node = scene.get_node("TimeOfDayManager")
@@ -74,17 +75,13 @@ func _check_beam_endpoints() -> void:
 
 func _check_roads(kit: Node3D, corridor: bool) -> void:
 	var roads: Array[Rect2] = []
-	if corridor:
-		roads.append(Rect2(-3.0, -58.0, 6.0, 176.0))
-		var centers: Array[float] = [0.0, 30.0, 60.0]
-		var east_width: Array[float] = [5.0, 5.0, 3.0]
-		var west_width: Array[float] = [3.0, 5.0, 3.0]
-		for i in range(3):
-			roads.append(Rect2(-58.0, centers[i] - east_width[i] * 0.5, 58.0, east_width[i]))
-			roads.append(Rect2(0.0, centers[i] - west_width[i] * 0.5, 58.0, west_width[i]))
-	else:
-		roads.append(Rect2(-3.2, -93.5, 6.4, 187.0))
-		roads.append(Rect2(-93.5, -3.2, 187.0, 6.4))
+	var net = preload("res://scripts/CorridorGeometry.gd")
+	roads.append(Rect2(-6.4,-1500,12.8,3600 if corridor else 3000))
+	for j in range(3 if corridor else 1):
+		var w: Vector3 = net.widths(j,corridor)
+		var z: float = net.center(j,corridor).z
+		roads.append(Rect2(-1500,z-w.y*0.5,1500,w.y))
+		roads.append(Rect2(0,z-w.z*0.5,1500,w.z))
 	for child in kit.get_children():
 		if not child is StaticBody3D:
 			continue

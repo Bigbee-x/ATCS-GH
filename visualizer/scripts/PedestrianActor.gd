@@ -4,7 +4,7 @@ extends Node3D
 const FABRIC = preload("res://shaders/pedestrian_fabric.gdshader")
 static var _fabric_cache: Dictionary = {}
 const G = preload("res://scripts/PropGeometry.gd")
-const SHIRTS = [Color("a76b45"), Color("466c70"), Color("a79a73"), Color("795469"), Color("ded3b9"), Color("3e576c"), Color("547452")]
+const SHIRTS = [Color("c8552f"), Color("2f7f86"), Color("e2b93b"), Color("8a3f7a"), Color("efe6cf"), Color("2c5fa3"), Color("3f8a52"), Color("d9742a"), Color("c23b3b")]
 const SKINS = [Color("583827"), Color("754c34"), Color("8b6042"), Color("432d23"), Color("a37753")]
 const TROUSERS = [Color("303a43"), Color("534c40"), Color("252d30"), Color("6c6554")]
 var phase: float = 0.0

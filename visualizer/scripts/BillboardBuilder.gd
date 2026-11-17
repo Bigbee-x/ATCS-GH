@@ -16,10 +16,10 @@ var _direction_count: int = 0
 func _ready() -> void:
 	for spec in Layout.billboards(corridor_mode):
 		_billboard(spec)
-	var centers: Array = [0.0, 30.0, 60.0] if corridor_mode else [0.0]
+	var centers: Array = [0.0, 300.0, 600.0] if corridor_mode else [0.0]
 	var streets: Array = ["AGGREY ST", "ASYLUM DOWN", "NIMA ROAD"] if corridor_mode else ["AGGREY ST"]
 	for i in range(centers.size()):
-		var offset: float = 5.4 if corridor_mode else 6.3
+		var offset: float = 10.2
 		_wayfinding(Vector3(offset, 0, centers[i] + 10.0), 0.0, streets[i], "NSAWAM RD")
 		_wayfinding(Vector3(-offset, 0, centers[i] - 10.0), PI, "ACHIMOTA", "ACCRA")
 	var clock: Node = get_parent().get_node_or_null("TimeOfDayManager")

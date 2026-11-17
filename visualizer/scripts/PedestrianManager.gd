@@ -207,67 +207,7 @@ static func _sample_ped_snaps(snaps: Array, rt: float) -> Vector3:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _define_sidewalk_paths() -> void:
-	if corridor_mode:
-		_define_corridor_sidewalk_paths()
-		return
-
-	var half_junc: float = JUNCTION_SIZE / 2.0
-	var ns_sw_offset: float = NS_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH / 2.0
-	var e_sw_offset: float = E_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH / 2.0
-	var w_sw_offset: float = W_ROAD_WIDTH / 2.0 + SIDEWALK_WIDTH / 2.0
-
-	var road_start: float = half_junc + 1.0
-	var road_end: float = half_junc + ROAD_LENGTH - 1.0
-
-	_sidewalk_paths = [
-		{"start": Vector3(ns_sw_offset, 0, road_start), "end": Vector3(ns_sw_offset, 0, road_end)},
-		{"start": Vector3(-ns_sw_offset, 0, road_start), "end": Vector3(-ns_sw_offset, 0, road_end)},
-		{"start": Vector3(ns_sw_offset, 0, -road_start), "end": Vector3(ns_sw_offset, 0, -road_end)},
-		{"start": Vector3(-ns_sw_offset, 0, -road_start), "end": Vector3(-ns_sw_offset, 0, -road_end)},
-		{"start": Vector3(-road_start, 0, e_sw_offset), "end": Vector3(-road_end, 0, e_sw_offset)},
-		{"start": Vector3(-road_start, 0, -e_sw_offset), "end": Vector3(-road_end, 0, -e_sw_offset)},
-		{"start": Vector3(road_start, 0, -w_sw_offset), "end": Vector3(road_end, 0, -w_sw_offset)},
-		{"start": Vector3(road_start, 0, w_sw_offset), "end": Vector3(road_end, 0, w_sw_offset)},
-	]
-
-
-func _define_corridor_sidewalk_paths() -> void:
-	## Define sidewalk paths for the 3-junction corridor layout.
-	_sidewalk_paths = []
-	var sw_offset: float = C_NS_ROAD_WIDTH / 2.0 + C_SIDEWALK_WIDTH / 2.0
-
-	# Corridor sidewalks along NS road (both sides, between junctions) — X negated for right-hand mirror
-	# South boundary to J0
-	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(-sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - C_BOUNDARY_ARM + 1.0), "end": Vector3(sw_offset, 0, C_J0_Z - C_JUNCTION_HALF - 0.5)})
-	# J0 to J1
-	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J0_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J1_Z - C_JUNCTION_HALF - 0.5)})
-	# J1 to J2
-	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J1_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z - C_JUNCTION_HALF - 0.5)})
-	# J2 to north boundary
-	_sidewalk_paths.append({"start": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(-sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
-	_sidewalk_paths.append({"start": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + 0.5), "end": Vector3(sw_offset, 0, C_J2_Z + C_JUNCTION_HALF + C_BOUNDARY_ARM - 1.0)})
-
-	# Cross-street sidewalks at each junction (offset = road_half + sidewalk_half)
-	# Cross-street widths per junction: {east, west}
-	var cross_widths: Array = [
-		{"east": 5.0, "west": 3.0},  # J0: Aggrey(2lane), Guggisberg(1lane)
-		{"east": 5.0, "west": 5.0},  # J1: Asylum Down(2lane), Ring Rd(2lane)
-		{"east": 3.0, "west": 3.0},  # J2: Nima(1lane), Tesano(1lane)
-	]
-	var junc_centers: Array = [C_J0_Z, C_J1_Z, C_J2_Z]
-	for i_j in range(3):
-		var center_z: float = junc_centers[i_j]
-		var e_sw: float = cross_widths[i_j]["east"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
-		var w_sw: float = cross_widths[i_j]["west"] / 2.0 + C_SIDEWALK_WIDTH / 2.0
-		# East arms (mirrored to negative X)
-		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z + e_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z + e_sw)})
-		_sidewalk_paths.append({"start": Vector3(-(C_JUNCTION_HALF + 0.5), 0, center_z - e_sw), "end": Vector3(-(C_JUNCTION_HALF + C_CROSS_ARM - 1.0), 0, center_z - e_sw)})
-		# West arms (mirrored to positive X)
-		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z - w_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z - w_sw)})
-		_sidewalk_paths.append({"start": Vector3(C_JUNCTION_HALF + 0.5, 0, center_z + w_sw), "end": Vector3(C_JUNCTION_HALF + C_CROSS_ARM - 1.0, 0, center_z + w_sw)})
+	_sidewalk_paths = Layout.Metric.sidewalks(corridor_mode)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -275,13 +215,13 @@ func _define_corridor_sidewalk_paths() -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _spawn_ambient() -> void:
-	for i in range(64 if corridor_mode else NUM_AMBIENT):
+	for i in range(0):  # Both metric scenes render authoritative SUMO pedestrians.
 		var ped_node: Node3D = _make_pedestrian_mesh()
 		add_child(ped_node)
 		var ped: Dictionary = {
 			"node": ped_node, "path_idx": i % _sidewalk_paths.size(),
 			"progress": _rng.randf_range(0.025, 0.975),
-			"speed": _rng.randf_range(MIN_SPEED, MAX_SPEED), "velocity": 0.0,
+			"speed": _rng.randf_range(MIN_SPEED, MAX_SPEED) * (2.5 if corridor_mode else 1.0), "velocity": 0.0,
 			"forward": _rng.randf() > 0.5, "pause": 0.0,
 			"next_pause": _rng.randf_range(7.0, 28.0), "lateral": 0.0,
 			"interest": _rng.randf() * TAU,
@@ -362,9 +302,7 @@ func update_crossing_pedestrians(ped_list: Array, sim_time: float = -1.0) -> voi
 	## ped_list: Array of {id, x, y, speed, angle, edge}
 	## sim_time: the packet's authoritative timestamp (−1 = unstamped → legacy lerp).
 	##
-	## Only renders pedestrians on crossing edges (:Jx_c*) or walking areas (:Jx_w*).
-	## Pedestrians on regular road edges are skipped — the ambient system handles
-	## sidewalk visuals, and SUMO sidewalk coords don't map to Godot sidewalk offsets.
+	## Both scenes render actual SUMO pedestrians on sidewalks and crossings.
 	if not _pedestrians_enabled:
 		return
 
@@ -380,19 +318,6 @@ func update_crossing_pedestrians(ped_list: Array, sim_time: float = -1.0) -> voi
 		if pid.is_empty():
 			continue
 
-		# Only render pedestrians on junction crossing or walking area edges.
-		# Pedestrians on regular road edges (ACH_N2J, etc.) would appear on the
-		# vehicle lanes because SUMO sidewalk coords don't map to Godot sidewalk
-		# positions — the piecewise mapping doesn't preserve lateral offsets.
-		var edge: String = str(ped_data.get("edge", ""))
-		var on_crossing: bool = edge.begins_with(":J0_c") or edge.begins_with(":J1_c") or edge.begins_with(":J2_c")
-		var on_walking_area: bool = edge.begins_with(":J0_w") or edge.begins_with(":J1_w") or edge.begins_with(":J2_w")
-		if not on_crossing and not on_walking_area:
-			# Skip — pedestrian is on a regular road edge (sidewalk in SUMO)
-			# If they were previously visible, release them
-			if _crossing_peds.has(pid):
-				_push_ped_snap(_crossing_peds[pid]["snaps"], sim_time, Layout.pedestrian(ped_data, corridor_mode))
-			continue
 
 		seen[pid] = true
 		if _crossing_peds.has(pid):
@@ -485,6 +410,8 @@ func respawn() -> void:
 func _make_pedestrian_mesh() -> Node3D:
 	var actor := Actor.new()
 	actor.configure(_rng.randi())
+	actor.scale *= 2.0
+	actor.character_scale *= 2.0
 	actor.name = "Pedestrian"
 	actor.visible = _pedestrians_enabled
 	return actor

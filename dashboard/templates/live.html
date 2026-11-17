@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#192522">
+  <title>Live traffic · TrafIQ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='live.css') }}">
+</head>
+<body>
+  <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 15l4-5 4 2 5-7"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="icon-code" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 .3 7M20 3v5h-5"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="icon-car" viewBox="0 0 24 24"><path d="m5 8 2-4h10l2 4 2 3v7H3v-7l2-3Zm0 0h14M3 13h18M6 18v3m12-3v3M6 11h2m8 0h2"/></symbol>
+    <symbol id="icon-stop" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12M4 18h8"/><circle cx="19" cy="18" r="3"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6M20 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </svg>
+
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="TrafIQ live traffic home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>Traf<span class="brand-country">IQ</span><small>TRAFFIC INTELLIGENCE</small></span>
+    </a>
+    <div class="nav-label">WORKSPACE</div>
+    <nav class="navigation" aria-label="Main navigation">
+      <a class="nav-item active" href="/" aria-current="page"><svg class="icon"><use href="#icon-grid"/></svg><span>Live operations</span><span class="nav-active-dot"></span></a>
+      <a class="nav-item" href="/analytics"><svg class="icon"><use href="#icon-chart"/></svg><span>Training &amp; reports</span></a>
+    </nav>
+    <div class="sidebar-note">
+      <div class="sidebar-network" aria-hidden="true"><i></i><span></span><i></i><span></span><i></i></div>
+      <p>A clearer view.<br>A better flow.</p>
+      <span>Observe the road.<br>Understand every decision.</span>
+    </div>
+    <div class="sidebar-footer"><span class="ghana-mark" aria-hidden="true"><i></i><i></i><i></i></span><div>ACCRA, GHANA<small>Adaptive traffic control</small></div></div>
+  </aside>
+
+  <main class="workspace">
+    <header class="page-header">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-line"></span>LIVE SIMULATION TELEMETRY</div>
+        <h1 id="networkTitle">Traffic overview<span class="title-period">.</span></h1>
+        <p class="page-description" id="networkSubtitle">Your road network, signals and AI decisions in one place.</p>
+      </div>
+      <div class="header-tools">
+        <div class="connection-block" aria-live="polite">
+          <span id="connectionStatus" class="connection-status waiting"><span class="status-dot"></span>Awaiting traffic</span>
+          <span id="connectionDetail" class="connection-detail">Connecting to the simulator</span>
+        </div>
+        <button class="icon-button" id="reconnectButton" type="button" aria-label="Reconnect to live traffic" title="Reconnect to live traffic"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+      </div>
+    </header>
+
+    <div class="run-strip">
+      <div class="run-context"><span class="run-label">SIMULATION CLOCK</span><strong id="simulationTime" class="mono">—</strong><span class="strip-divider"></span><span id="scenarioName">Waiting for scenario</span><span id="controlMode" class="subtle-tag">—</span></div>
+      <div class="run-actions"><button id="rawButton" type="button" class="text-button"><svg class="icon"><use href="#icon-code"/></svg>Inspect data</button><button id="exportButton" type="button" class="text-button"><svg class="icon"><use href="#icon-download"/></svg>Export session</button></div>
+    </div>
+
+    <section class="metrics" aria-label="Current traffic metrics">
+      <article class="metric-card"><div class="metric-top"><h2>Active vehicles</h2><svg class="icon"><use href="#icon-car"/></svg></div><div class="metric-value" id="kpiActive">—</div><p id="kpiActiveDetail">Waiting for network data</p></article>
+      <article class="metric-card"><div class="metric-top"><h2>Stopped vehicles</h2><svg class="icon"><use href="#icon-stop"/></svg></div><div class="metric-value" id="kpiQueue">—</div><p id="kpiQueueDetail">Waiting for queue observations</p></article>
+      <article class="metric-card"><div class="metric-top"><h2>Current mean wait</h2><svg class="icon"><use href="#icon-clock"/></svg></div><div class="metric-value" id="kpiWait">—</div><p id="kpiWaitDetail">Waiting for measured waiting times</p></article>
+      <article class="metric-card"><div class="metric-top"><h2>Completed trips</h2><svg class="icon"><use href="#icon-check"/></svg></div><div class="metric-value" id="kpiCompleted">—</div><p id="kpiCompletedDetail">Waiting for arrival count</p></article>
+    </section>
+
+    <div class="operations-grid">
+      <section class="panel network-panel" aria-labelledby="networkHeading">
+        <div class="panel-heading"><div><span class="section-kicker">THE BIG PICTURE</span><h2 id="networkHeading">Network pulse</h2></div><span class="small-tag" id="mapNetworkName">Signal network</span></div>
+        <div class="map-legend"><span><i class="legend-dot green"></i>Green</span><span><i class="legend-dot amber"></i>Transition</span><span><i class="legend-dot red"></i>Red</span><span><i class="legend-dot gray"></i>No observation</span></div>
+        <div id="corridorMap" class="corridor-map" aria-label="Live signal network schematic">
+          <div class="network-empty"><div class="empty-network-line"><i></i><span></span><i></i><span></span><i></i></div><span>The network appears when traffic data arrives.</span></div>
+        </div>
+        <div class="network-bottom"><div><span class="run-label">OBSERVED THROUGHPUT</span><div class="flow-value"><strong id="flowRate">—</strong><span>trips / min</span></div><p id="flowRateDetail">Requires a full minute of simulation data</p></div><div class="map-note">Schematic view<small>Select a junction to inspect it <span aria-hidden="true">↗</span></small></div></div>
+        <div class="decision-panel"><div class="decision-heading"><span class="decision-mark" aria-hidden="true">AI</span><div><span class="section-kicker">SELECTED JUNCTION</span><h3>Behind the decision</h3></div><span class="decision-age" id="detectorAge">—</span></div><p class="decision-reason" id="decisionReason">Waiting for a controller observation.</p><div class="decision-meta" id="decisionMeta"><span class="muted">Live demand and decision details will appear here.</span></div></div>
+      </section>
+
+      <section class="panel junction-panel" aria-labelledby="junctionTitle">
+        <div class="panel-heading"><div><span class="section-kicker">JUNCTION DETAIL</span><h2 id="junctionTitle">Select a junction</h2><p class="panel-description" id="junctionSubtitle">Signals and approaches from the same live observation.</p></div></div>
+        <div id="junctionTabs" class="junction-tabs" role="group" aria-label="Choose junction"></div>
+        <div class="phase-strip"><span class="run-label">CURRENT PHASE</span><strong id="junctionPhase">—</strong><span class="phase-timer mono" id="junctionTimer">—</span></div>
+        <div class="signals-caption"><span>Signal heads</span><span>Main · Turn · Walk</span></div>
+        <div id="signalGrid" class="signal-grid"><div class="empty-state compact">Waiting for observed signal states.</div></div>
+        <div class="approaches-heading"><h3>Approach demand</h3><div><span>Stopped</span><span>Mean wait</span></div></div>
+        <div id="approachRows" class="approach-rows"><div class="empty-state compact">Approach measurements appear with live traffic.</div></div>
+        <p class="panel-footnote">Queue bars compare the observed approaches; they do not indicate road capacity.</p>
+      </section>
+    </div>
+
+    <div class="trends-heading"><div><span class="section-kicker">THE RECENT PICTURE</span><h2>Live trends</h2></div><div class="trend-window"><span>Simulation window</span><div class="window-buttons" role="group" aria-label="Chart simulation window"><button type="button" data-window="300" aria-pressed="true">5 min</button><button type="button" data-window="900" aria-pressed="false">15 min</button></div></div></div>
+    <section class="trends-grid" aria-label="Live traffic trends">
+      <article class="panel chart-panel"><div class="panel-heading"><div><span class="section-kicker">DEMAND OVER TIME</span><h2>Stopped vehicles</h2></div><span class="chart-unit">VEHICLES</span></div><div id="queueLegend" class="chart-legend"></div><div class="chart-frame"><svg id="queueChart" role="img" aria-label="Observed stopped vehicles over simulation time" viewBox="0 0 560 190" preserveAspectRatio="none"></svg><div class="chart-empty" id="queueChartEmpty"><span class="empty-chart-glyph" aria-hidden="true">↗</span><p>Waiting for measured traffic</p><small>Each point comes from a simulation update.</small></div></div><div class="chart-footer"><span>Simulation time</span><span>Live observations only</span></div></article>
+      <article class="panel chart-panel"><div class="panel-heading"><div><span class="section-kicker">DRIVER EXPERIENCE</span><h2>Current mean wait</h2></div><span class="chart-unit">SECONDS</span></div><div id="waitLegend" class="chart-legend"></div><div class="chart-frame"><svg id="waitChart" role="img" aria-label="Observed current mean wait over simulation time" viewBox="0 0 560 190" preserveAspectRatio="none"></svg><div class="chart-empty" id="waitChartEmpty"><span class="empty-chart-glyph" aria-hidden="true">↗</span><p>Waiting for measured waiting times</p><small>No sample or historical values are substituted.</small></div></div><div class="chart-footer"><span>Simulation time</span><span>Current vehicles on incoming roads</span></div></article>
+    </section>
+
+    <section class="panel activity-panel" aria-labelledby="activityHeading"><div class="panel-heading"><div><span class="section-kicker">AS IT HAPPENS</span><h2 id="activityHeading">Network activity</h2></div><span class="small-tag">Signals &amp; connection events</span></div><ol id="eventList" class="event-list"><li class="empty-state">Events will appear as the simulator reports them.</li></ol></section>
+
+    <footer class="data-footer"><div class="source-identity"><span class="source-dot"></span><strong>Direct from the simulator</strong><span id="sourceEndpoint">Awaiting endpoint</span></div><div class="source-health"><span id="sourceAge">No snapshot yet</span><span class="footer-divider">/</span><span id="sourcePackets">— updates</span></div><p>Simulated traffic, measured live. Missing observations are shown as —.</p></footer>
+  </main>
+
+  <dialog id="rawDialog" class="raw-dialog"><div class="raw-dialog-header"><div><span class="section-kicker">SOURCE OBSERVATION</span><h2>Latest traffic packet</h2></div><button id="rawClose" class="icon-button" type="button" aria-label="Close data inspector"><svg class="icon"><use href="#icon-close"/></svg></button></div><p class="raw-dialog-note">The latest received snapshot, before dashboard calculations.</p><pre id="rawData">No simulation packet received yet.</pre></dialog>
+  <script id="liveConfig" type="application/json">{{ {"wsUrl": simulation_ws_url}|tojson }}</script>
+  <script type="module" src="{{ url_for('static', filename='live.js') }}"></script>
+</body>
+</html>

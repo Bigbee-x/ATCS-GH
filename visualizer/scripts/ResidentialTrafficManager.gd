@@ -92,6 +92,8 @@ func _ready() -> void:
 	_rng.seed = 7341   # deterministic palette / starting positions
 	if corridor_mode:
 		_configure_corridor()
+	else:
+		for key in NODES: NODES[key] += Vector2(4,4)
 	_spawn_all()
 
 
@@ -119,6 +121,8 @@ func _configure_corridor() -> void:
 		"ix4": ["ix2", "s2", "ix3", "e2"],
 	}
 
+	for key in NODES:
+		NODES[key] += Vector2(20, -63)
 
 func _process(delta: float) -> void:
 	for car in _cars:

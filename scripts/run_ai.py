@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | AI Controller -- Inference Runner (Achimota/Neoplan Junction)
+TrafIQ | AI Controller -- Inference Runner (Achimota/Neoplan Junction)
 =======================================================================
 Runs the trained DQN agent on the 2-hour morning rush scenario,
 producing a report for comparison with the fixed-timer baseline.
@@ -232,7 +232,7 @@ def run_ai(model_path: str | Path = DEFAULT_MODEL,
     agent.set_eval_mode()
 
     print("\n" + "=" * 62)
-    print("  ATCS-GH -- AI Inference Run (Achimota/Neoplan Junction)")
+    print("  TrafIQ -- AI Inference Run (Achimota/Neoplan Junction)")
     print("=" * 62)
     print(f"  Model   : {model_path}")
     print(f"  Mode    : {'GUI (visual)' if gui else 'Headless (fast)'}")
@@ -369,7 +369,7 @@ def print_report(sim_time: int, stats: dict, model_path: Path) -> None:
     direction  = "BETTER" if delta_pct < 0 else "WORSE"
 
     print("\n" + "=" * 62)
-    print("  ATCS-GH  |  AI REPORT  |  Achimota/Neoplan Junction")
+    print("  TrafIQ  |  AI REPORT  |  Achimota/Neoplan Junction")
     print("=" * 62)
     print(f"  Generated  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Model      : {model_path.name}")
@@ -403,7 +403,7 @@ def print_report(sim_time: int, stats: dict, model_path: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH: Run the trained AI traffic controller"
+        description="TrafIQ: Run the trained AI traffic controller"
     )
     parser.add_argument(
         "--model", type=str, default=str(DEFAULT_MODEL),

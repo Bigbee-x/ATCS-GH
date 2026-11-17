@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Cross-Scenario Evaluation (Achimota/Neoplan Junction)
+TrafIQ | Cross-Scenario Evaluation (Achimota/Neoplan Junction)
 ================================================================
 Tests the trained DQN agent AND fixed-timer baseline across multiple
 demand scenarios to measure generalisation.
@@ -319,7 +319,7 @@ def run_baseline_episode(seed: int, route_file: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ATCS-GH: Cross-scenario evaluation (AI vs Baseline)"
+        description="TrafIQ: Cross-scenario evaluation (AI vs Baseline)"
     )
     parser.add_argument("--seeds", type=int, default=3,
                         help="Seeds per scenario (default: 3)")
@@ -357,7 +357,7 @@ def main():
 
     n_runs = len(scenarios) * args.seeds * (int(run_ai_flag) + int(run_bl_flag))
     print("\n" + "=" * 72)
-    print("  ATCS-GH -- Cross-Scenario Evaluation (Achimota/Neoplan Junction)")
+    print("  TrafIQ -- Cross-Scenario Evaluation (Achimota/Neoplan Junction)")
     print("=" * 72)
     print(f"  Model     : {Path(args.model).name if run_ai_flag else 'N/A'}")
     print(f"  Seeds     : {args.seeds} -> {seeds}")

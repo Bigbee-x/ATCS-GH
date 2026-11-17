@@ -10,8 +10,8 @@ extends CharacterBody3D
 ## mesh (torso / head / legs matching the ambient pedestrian style), and two
 ## Camera3Ds (FP + TP) in _ready(). No Main.tscn edits needed.
 ##
-## World scale: 1 Godot unit ≈ 4.5m (cars are 1 unit long). Player capsule is
-## 0.5 tall, 0.16 radius — matches the ambient pedestrian visual scale.
+## World scale: one unit per metre. Human-height capsule and eye position
+## match the metric roadway and SUMO pedestrian presentation.
 ##
 ## Godot rotation convention used here:
 ##   rotation.y = 0    → node's -Z basis points down world -Z (cam looks north)
@@ -22,8 +22,8 @@ extends CharacterBody3D
 # ── Physics tuning (scaled for this world) ─────────────────────────────────
 const WALK_SPEED      : float = 1.6
 const SPRINT_SPEED    : float = 4.0
-const JUMP_VELOCITY   : float = 2.2
-const GRAVITY         : float = 8.0
+const JUMP_VELOCITY   : float = 4.2
+const GRAVITY         : float = 9.8
 const ACCEL           : float = 18.0
 const FRICTION        : float = 20.0
 const MOUSE_SENSITIVITY : float = 0.0025
@@ -31,9 +31,9 @@ const PITCH_MIN : float = -1.35
 const PITCH_MAX : float = 1.20
 
 # ── Body geometry ──────────────────────────────────────────────────────────
-const CAPSULE_RADIUS : float = 0.16
-const CAPSULE_HEIGHT : float = 0.50   # total capsule height (incl. hemisphere caps)
-const EYE_HEIGHT     : float = 0.45
+const CAPSULE_RADIUS : float = 0.30
+const CAPSULE_HEIGHT : float = 1.75   # total capsule height (incl. hemisphere caps)
+const EYE_HEIGHT     : float = 1.62
 
 # ── Avatar palette ─────────────────────────────────────────────────────────
 const SHIRT_COLORS: Array = [
@@ -235,6 +235,7 @@ func _build_avatar() -> void:
 	head.name = "Head"
 	_avatar_root.add_child(head)
 
+	_avatar_root.scale = Vector3.ONE*3.4
 	_avatar_root.visible = false
 
 
@@ -254,7 +255,7 @@ func _build_cameras() -> void:
 	_fp_camera = Camera3D.new()
 	_fp_camera.name = "FPCamera"
 	_fp_camera.near = 0.02
-	_fp_camera.far  = 400.0
+	_fp_camera.far  = 4500.0
 	_fp_camera.fov  = 75.0
 	_fp_camera.current = false
 	_pitch_pivot.add_child(_fp_camera)
@@ -263,9 +264,9 @@ func _build_cameras() -> void:
 	# Child of pitch pivot so it orbits with look pitch.
 	_tp_camera = Camera3D.new()
 	_tp_camera.name = "TPCamera"
-	_tp_camera.position = Vector3(0, 0.15, 1.2)   # behind and a touch up
+	_tp_camera.position = Vector3(0,0.45,3.4)   # behind and a touch up
 	_tp_camera.near = 0.02
-	_tp_camera.far  = 400.0
+	_tp_camera.far  = 4500.0
 	_tp_camera.fov  = 70.0
 	_tp_camera.current = false
 	_pitch_pivot.add_child(_tp_camera)

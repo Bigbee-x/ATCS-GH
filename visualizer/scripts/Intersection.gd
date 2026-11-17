@@ -1,5 +1,6 @@
 extends Node3D
-const CrossingFurniture = preload("res://scripts/CrossingFurniture.gd")
+const Net = preload("res://scripts/CorridorGeometry.gd")
+const Transit = preload("res://scripts/TransitLayout.gd")
 const StreetLamp = preload("res://scripts/StreetLamp.gd")
 
 const Signals = preload("res://scripts/SignalHardware.gd")
@@ -40,12 +41,12 @@ const NS_ALL     := 6
 const EW_ALL     := 7
 
 # ── Road geometry constants (Achimota/Neoplan Junction calibration) ──────────
-const ROAD_LENGTH     := 90.0   # Length of each road arm (Godot units)
-const NS_ROAD_WIDTH   := 6.4    # Achimota Forest Rd: 2 lanes per direction
-const E_ROAD_WIDTH    := 6.4    # Aggrey Street: 2 lanes per direction
-const W_ROAD_WIDTH    := 6.4    # Guggisberg Street: 2 lanes per direction
+const ROAD_LENGTH     := 1500.0   # Length of each road arm (Godot units)
+const NS_ROAD_WIDTH   := 12.8    # Achimota Forest Rd: 2 lanes per direction
+const E_ROAD_WIDTH    := 12.8    # Aggrey Street: 2 lanes per direction
+const W_ROAD_WIDTH    := 12.8    # Guggisberg Street: 2 lanes per direction
 const ROAD_THICKNESS  := 0.1    # Road surface height
-const JUNCTION_SIZE   := 7.0    # Central junction (slight widening at intersection)
+const JUNCTION_SIZE   := 16.8    # Central junction (slight widening at intersection)
 const SIDEWALK_HEIGHT := 0.15   # Raised sidewalk height
 const SIDEWALK_WIDTH  := 1.5    # Sidewalk width alongside road
 
@@ -87,18 +88,16 @@ var _emergency_overlay: MeshInstance3D  # Semi-transparent red overlay
 func _ready() -> void:
 	_create_materials()
 	_build_ground()
-	_build_junction()
-	_build_road_arm("north", Vector3(0, 0, 1), NS_ROAD_WIDTH)
-	_build_road_arm("south", Vector3(0, 0, -1), NS_ROAD_WIDTH)
-	_build_road_arm("east",  Vector3(-1, 0, 0), E_ROAD_WIDTH)   # Mirrored X for right-hand visual
-	_build_road_arm("west",  Vector3(1, 0, 0), W_ROAD_WIDTH)    # Mirrored X for right-hand visual
+	var roads := preload("res://scripts/MetricRoadBuilder.gd").new()
+	roads.name = "MetricRoads"
+	roads.corridor_mode = false
+	add_child(roads)
+	roads.build()
 	_build_traffic_lights()
 	#_build_lane_overlays()  # Disabled — visual clutter on dark roads
 	_build_street_lights()
 	_build_utility_poles()
 	_build_emergency_overlay()
-	_build_stop_lines()
-	_build_crosswalks()
 
 
 func _process(delta: float) -> void:
@@ -232,103 +231,13 @@ func _build_ground() -> void:
 	## Build the ground plane (grass area surrounding the intersection).
 	var ground := CSGBox3D.new()
 	# Extend beyond the camera clip distance so the horizon has no exposed edge.
-	ground.size = Vector3(2000.0, 0.02, 2000.0)
+	ground.size = Vector3(4000.0, 0.02, 4000.0)
 	ground.position = Vector3(0, -0.06, 0)
 	ground.material = _mat_grass
 	ground.name = "Ground"
 	ground.use_collision = true   # Walkable floor for ground-mode player
 	add_child(ground)
 
-
-func _build_junction() -> void:
-	## Build the central junction square.
-	var junction := CSGBox3D.new()
-	junction.size = Vector3(JUNCTION_SIZE, ROAD_THICKNESS, JUNCTION_SIZE)
-	junction.position = Vector3(0, 0, 0)
-	junction.material = _mat_road
-	junction.name = "Junction"
-	junction.use_collision = true
-	add_child(junction)
-
-
-func _build_road_arm(approach: String, direction: Vector3, road_width: float) -> void:
-	## Build one road arm extending from the junction.
-	## approach: "north", "south", "east", "west"
-	## direction: Unit vector pointing away from junction center
-	## road_width: Total road width (both directions combined)
-	var half_junc: float = JUNCTION_SIZE / 2.0
-	var center: Vector3 = direction * (half_junc + ROAD_LENGTH / 2.0)
-
-	# Road surface
-	var road := CSGBox3D.new()
-	if abs(direction.x) > 0:
-		road.size = Vector3(ROAD_LENGTH, ROAD_THICKNESS, road_width)
-	else:
-		road.size = Vector3(road_width, ROAD_THICKNESS, ROAD_LENGTH)
-	road.position = center
-	road.material = _mat_road
-	road.name = "Road_%s" % approach
-	road.use_collision = true
-	add_child(road)
-
-	# Center line (dashed marking)
-	_build_center_line(center, direction, ROAD_LENGTH, road_width)
-
-	# Sidewalks on both sides of the road
-	_build_sidewalks(center, direction, ROAD_LENGTH, road_width)
-
-
-func _build_center_line(center: Vector3, direction: Vector3, length: float, _road_width: float) -> void:
-	## Build dashed center line along a road arm.
-	var dash_length: float = 2.0
-	var gap_length: float = 1.5
-	var total_step: float = dash_length + gap_length
-	var num_dashes: int = int(length / total_step)
-	var half_length: float = length / 2.0
-	for i in range(num_dashes):
-		var offset: float = -half_length + i * total_step + dash_length / 2.0
-		var pos: Vector3
-		var dash := CSGBox3D.new()
-
-		if abs(direction.z) > 0:
-			# N/S road — dashes along Z axis
-			dash.size = Vector3(0.08, 0.12, dash_length)
-			pos = center + Vector3(0, 0, offset * sign(direction.z))
-		else:
-			# E/W road — dashes along X axis
-			dash.size = Vector3(dash_length, 0.12, 0.08)
-			pos = center + Vector3(offset * sign(direction.x), 0, 0)
-
-		dash.position = pos
-		dash.material = _mat_marking
-		add_child(dash)
-
-
-func _build_sidewalks(center: Vector3, direction: Vector3, length: float, road_width: float) -> void:
-	## Build raised sidewalks on both sides of a road arm.
-	var half_width: float = road_width / 2.0
-
-	for side in [-1.0, 1.0]:
-		var sw := CSGBox3D.new()
-		var sw_pos: Vector3
-
-		if abs(direction.z) > 0:
-			# N/S road — sidewalks along X offset
-			sw.size = Vector3(SIDEWALK_WIDTH, SIDEWALK_HEIGHT, length)
-			sw_pos = center + Vector3(side * (half_width + SIDEWALK_WIDTH / 2.0), SIDEWALK_HEIGHT / 2.0, 0)
-		else:
-			# E/W road — sidewalks along Z offset
-			sw.size = Vector3(length, SIDEWALK_HEIGHT, SIDEWALK_WIDTH)
-			sw_pos = center + Vector3(0, SIDEWALK_HEIGHT / 2.0, side * (half_width + SIDEWALK_WIDTH / 2.0))
-
-		sw.position = sw_pos
-		sw.material = _mat_sidewalk
-		sw.use_collision = true   # Raised curbs the player can step up onto
-		add_child(sw)
-
-
-func _build_stop_lines() -> void:
-	CrossingFurniture.stop_lines(self, false, 0, _mat_marking)
 
 func _build_traffic_lights() -> void:
 	## Build overhead mast-arm traffic lights for each approach.
@@ -342,7 +251,7 @@ func _build_traffic_lights() -> void:
 	# Along-road offset: how far from junction center, along the road arm.
 	# Pushed 2 units past the junction edge so the pole is clearly on its
 	# own road — NOT at the corner where it could look like the other road.
-	var along: float = JUNCTION_SIZE / 2.0 + 2.0   # 5.5 — well past junction edge
+	var along: float = 12.5   # 5.5 — well past junction edge
 
 	# Overhead structure constants
 	const POLE_HEIGHT: float = 5.5
@@ -380,7 +289,7 @@ func _build_traffic_lights() -> void:
 
 		Signals.structure(pole_root, -1.0, ARM_LEN)
 
-		var head_over: Dictionary = _build_overhead_head(pole_root, -(ARM_LEN - 0.45), POLE_HEIGHT)
+		var head_over: Dictionary = _build_overhead_head(pole_root, -(ARM_LEN - NS_ROAD_WIDTH*0.25), POLE_HEIGHT)
 		var head_pole: Dictionary = _build_pole_head(pole_root, 3.5)
 
 		_lights[approach] = {
@@ -531,21 +440,25 @@ func _build_emergency_overlay() -> void:
 # CROSSWALK MARKINGS
 # ═════════════════════════════════════════════════════════════════════════════
 
-func _build_crosswalks() -> void:
-	CrossingFurniture.crossings(self, false, 0, _mat_marking, _mat_sidewalk)
-
 func _build_street_lights() -> void:
-	for arm in [{"dir": Vector3(0, 0, 1), "width": NS_ROAD_WIDTH}, {"dir": Vector3(0, 0, -1), "width": NS_ROAD_WIDTH}, {"dir": Vector3(-1, 0, 0), "width": E_ROAD_WIDTH}, {"dir": Vector3(1, 0, 0), "width": W_ROAD_WIDTH}]:
-		for side in [-1.0, 1.0]:
-			var lateral := Vector3(side, 0, 0) if absf(arm.dir.z) > 0 else Vector3(0, 0, side)
-			var dist: float = JUNCTION_SIZE / 2.0 + 11.0
-			while dist < ROAD_LENGTH - 5.0:
-				var lamp := StreetLamp.new()
-				lamp.position = arm.dir * dist + lateral * (arm.width / 2.0 + SIDEWALK_WIDTH - 0.12)
-				lamp.rotation.y = atan2(-lateral.x, -lateral.z)
-				add_child(lamp)
-				_street_lights.append(lamp)
-				dist += 15.0
+	for path in Net.sidewalks(false):
+		var start: Vector3 = path.start
+		var end: Vector3 = path.end
+		var tangent := (end-start).normalized()
+		var outward := Vector3(-tangent.z,0,tangent.x)
+		for i in range(int((start.distance_to(end)-32)/32.0)):
+			var at := start+tangent*(24+i*32.0)+outward*1.1
+			if _in_station_plot(at): continue
+			var lamp := StreetLamp.new()
+			lamp.position = at
+			lamp.rotation.y = atan2(-outward.x,-outward.z)
+			add_child(lamp)
+			_street_lights.append(lamp)
+
+func _in_station_plot(at: Vector3) -> bool:
+	for spec in Transit.stations(false):
+		if Transit.plot(spec).grow(1.0).has_point(Vector2(at.x,at.z)): return true
+	return false
 
 func set_street_lights_night(enabled: bool) -> void:
 	for lamp in _street_lights:
@@ -569,6 +482,7 @@ func _build_utility_poles() -> void:
 		var bases: Array[Vector3] = []
 		var dist: float = half_junc + 8.0
 		while dist < ROAD_LENGTH - 3.0:
-			bases.append(direction * dist + lateral)
-			dist += 22.0
+			var at := direction*dist+lateral
+			if not _in_station_plot(at): bases.append(at)
+			dist += 40.0
 		PowerLines.run(self, bases, lateral.normalized(), lateral.normalized())

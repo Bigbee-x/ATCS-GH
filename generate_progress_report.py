@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the ATCS-GH Project Progress Report as a .docx file."""
+"""Generate the TrafIQ Project Progress Report as a .docx file."""
 
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -73,14 +73,14 @@ for _ in range(6):
 
 title = doc.add_paragraph()
 title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-run = title.add_run("ATCS-GH")
+run = title.add_run("TrafIQ")
 run.font.size = Pt(36)
 run.bold = True
 run.font.color.rgb = RGBColor(0x1A, 0x56, 0x76)
 
 subtitle = doc.add_paragraph()
 subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-run = subtitle.add_run("Adaptive Traffic Control System — Ghana")
+run = subtitle.add_run("Traffic Intelligence & Coordination")
 run.font.size = Pt(18)
 run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
@@ -141,7 +141,7 @@ doc.add_page_break()
 doc.add_heading("1. Project Overview & Vision", level=1)
 
 doc.add_paragraph(
-    "ATCS-GH (Adaptive Traffic Control System — Ghana) is a research and engineering "
+    "TrafIQ (Traffic Intelligence & Coordination) is a research and engineering "
     "project that uses Deep Reinforcement Learning (DRL) to intelligently control traffic "
     "signals at a real Accra junction. The system replaces traditional fixed-timer traffic "
     "lights with an AI agent that observes real-time traffic conditions and dynamically "
@@ -231,7 +231,7 @@ doc.add_page_break()
 doc.add_heading("3. System Architecture", level=1)
 
 doc.add_paragraph(
-    "ATCS-GH is a multi-component system with three main layers connected via "
+    "TrafIQ is a multi-component system with three main layers connected via "
     "real-time communication:"
 )
 
@@ -715,7 +715,7 @@ doc.add_paragraph()
 # ── Footer ────────────────────────────────────────────────────────────────
 footer = doc.add_paragraph()
 footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-run = footer.add_run("— ATCS-GH Project Progress Report —")
+run = footer.add_run("— TrafIQ Project Progress Report —")
 run.font.size = Pt(10)
 run.font.italic = True
 run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
@@ -731,7 +731,7 @@ run.font.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
 # ══════════════════════════════════════════════════════════════════════════
 output_path = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "ATCS-GH_Project_Progress_Report.docx"
+    "TrafIQ_Project_Progress_Report.docx"
 )
 doc.save(output_path)
 print(f"Report saved to: {output_path}")

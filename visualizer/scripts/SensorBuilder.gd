@@ -19,16 +19,15 @@ const RADOME := Vector3(-0.055, 0.0, 0.0805)       # head-local, centre of the r
 const ROAD_TOP := 0.05                             # asphalt top (0.1 m slabs centred on y = 0)
 # Coverage shown by the K sightline view, one entry per TSH-1 sensor: its window
 # on the head (head-local), true horizontal x vertical field of view in degrees,
-# and a range shortened to fit the scene. The single junction's arms are 90 m;
-# the corridor packs ~280 m links into 30 m, so there the radar stops short of
-# the next junction, as the real one does. The wide camera is drawn only over
-# the junction area it serves: its 108° fan would otherwise paint the cross streets.
+# and illustrative reach. Both scenes use metres, with the radar capped
+# at the TSH-1 design's 200 m sensing range. These overlays are visualization,
+# not measured detection probability or a calibrated physical camera model.
 # "tag" places each name label that far along its footprint, so labels don't stack.
 const COVERAGE := [
-	{"name": "Wide camera", "at": Vector3(0.030, 0.020, 0.0825), "h": 108.0, "v": 75.0, "color": Color(0.28, 0.85, 1.0), "alpha": 0.14, "range": 12.0, "corridor": 9.0, "tag": 0.35},
-	{"name": "Tele camera", "at": Vector3(0.072, 0.020, 0.0825), "h": 35.0, "v": 20.0, "color": Color(0.93, 0.94, 0.96), "alpha": 0.16, "range": 36.0, "corridor": 22.0, "tag": 0.75},
-	{"name": "Thermal", "at": Vector3(0.030, -0.024, 0.0815), "h": 57.0, "v": 44.0, "color": Color(0.96, 0.65, 0.14), "alpha": 0.24, "range": 14.0, "corridor": 11.0, "tag": 0.85},
-	{"name": "Radar", "at": Vector3(-0.055, 0.0, 0.0805), "h": 40.0, "v": 14.0, "color": Color(0.43, 0.66, 1.0), "alpha": 0.14, "range": 48.0, "corridor": 26.0, "tag": 0.85},
+	{"name": "Wide camera", "at": Vector3(0.030, 0.020, 0.0825), "h": 108.0, "v": 75.0, "color": Color(0.28, 0.85, 1.0), "alpha": 0.14, "range": 12.0, "corridor": 60.0, "tag": 0.35},
+	{"name": "Tele camera", "at": Vector3(0.072, 0.020, 0.0825), "h": 35.0, "v": 20.0, "color": Color(0.93, 0.94, 0.96), "alpha": 0.16, "range": 36.0, "corridor": 200.0, "tag": 0.75},
+	{"name": "Thermal", "at": Vector3(0.030, -0.024, 0.0815), "h": 57.0, "v": 44.0, "color": Color(0.96, 0.65, 0.14), "alpha": 0.24, "range": 14.0, "corridor": 70.0, "tag": 0.85},
+	{"name": "Radar", "at": Vector3(-0.055, 0.0, 0.0805), "h": 40.0, "v": 14.0, "color": Color(0.43, 0.66, 1.0), "alpha": 0.14, "range": 48.0, "corridor": 200.0, "tag": 0.85},
 ]
 var _sightline_pivots: Array[Node3D] = []
 var _cones_visible: bool = false
@@ -97,7 +96,7 @@ func _attach(pole: Node3D) -> void:
 	for i in range(cable_points.size() - 1):
 		G.segment(pole, cable_points[i], cable_points[i + 1], 0.008, m["dark"], "CableConduit")
 	_pull_box(pole)
-	# Corridor poles are named TL_<junction>_<approach>; its roads are compressed.
+	# Corridor poles are named TL_<junction>_<approach>; coverage uses metres.
 	_sightline(pole, head, String(pole.name).begins_with("TL_"))
 
 func _materials() -> Dictionary:
@@ -258,7 +257,7 @@ func _sightline(pole: Node3D, head: Node3D, corridor: bool) -> void:
 	var to_pivot: Transform3D = pivot.transform.affine_inverse()
 	for layer in range(COVERAGE.size()):
 		var sensor: Dictionary = COVERAGE[layer]
-		var reach: float = sensor["corridor"] if corridor else sensor["range"]
+		var reach: float = sensor["corridor"]
 		var aperture: Vector3 = head.transform * sensor["at"]
 		var ground: Array[Vector3] = _footprint(aperture, sensor["h"], sensor["v"], reach, ROAD_TOP + 0.01 + 0.008 * layer)
 		if ground.is_empty():

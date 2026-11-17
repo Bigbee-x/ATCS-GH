@@ -1,5 +1,5 @@
 extends Control
-## HUD overlay for the ATCS-GH 3D Visualizer.
+## HUD overlay for the TrafIQ 3D Visualizer.
 ##
 ## Displays real-time simulation metrics, connection status, manual override
 ## controls, and emergency alerts. All UI elements are built programmatically
@@ -23,7 +23,7 @@ extends Control
 # ── Signals ──────────────────────────────────────────────────────────────────
 ## Emitted when the user clicks a manual override button
 signal override_requested(approach: String)
-## Emitted when the user toggles between ATCS and Fixed Timer modes
+## Emitted when the user toggles between TrafIQ and Fixed Timer modes
 signal mode_switch_requested(mode: String)
 ## Emitted when the user toggles pedestrians on/off
 signal pedestrian_toggled(enabled: bool)
@@ -31,7 +31,7 @@ signal pedestrian_toggled(enabled: bool)
 signal time_of_day_changed(hour: float)
 ## Emitted when the user changes the TOD mode (0=Manual, 1=Auto, 2=SimLinked)
 signal tod_mode_changed(mode_idx: int)
-## Emitted when the user picks a weather mode (0=Clear, 1=Overcast, 2=Harmattan, 3=Rain)
+## Emitted when the user picks a weather mode (0=Clear, 1=Overcast, 2=Rain)
 signal weather_changed(weather_idx: int)
 
 # ── Corridor mode ──────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ var _right_panel_single: PanelContainer     # Reference to single-junction right
 
 # Bottom bar
 var _lbl_mode: Label
-var _btn_mode_toggle: Button                # ATCS ↔ Fixed Timer toggle
+var _btn_mode_toggle: Button                # TrafIQ ↔ Fixed Timer toggle
 var _current_control_mode: String = "ai"    # Tracks active control mode
 var _btn_force_north: Button
 var _btn_force_south: Button
@@ -87,9 +87,9 @@ const TOD_MODE_NAMES: Array = ["Manual", "Auto", "Sim"]
 
 # Weather controls (sits inside the TOD panel)
 var _btn_weather: Button
-var _weather_idx: int = 0                    # 0=Clear, 1=Overcast, 2=Harmattan, 3=Rain
-const WEATHER_NAMES: Array = ["Clear", "Overcast", "Harmattan", "Rain"]
-const WEATHER_ICONS: Array = ["☀", "☁", "🌤", "🌧"]
+var _weather_idx: int = 0                    # 0=Clear, 1=Overcast, 2=Rain
+const WEATHER_NAMES: Array = ["Clear", "Overcast", "Rain"]
+const WEATHER_ICONS: Array = ["☀", "☁", "🌧"]
 
 # Emergency banner
 var _emergency_banner: PanelContainer
@@ -148,13 +148,14 @@ func set_corridor_mode(enabled: bool) -> void:
 	if enabled:
 		_chart_queue = _corridor_chart_queue
 		_chart_wait = _corridor_chart_wait
-		_lbl_title.text = "ATCS-GH  |  N6 Nsawam Corridor  |  Valiborn Technologies"
+		_lbl_title.text = "TrafIQ  |  N6 Nsawam Corridor  |  Valiborn Technologies"
 		_lbl_mode.text = "CORRIDOR AI"
+		_lbl_title.tooltip_text = "1 / 2 / 3: junctions · 0: overview · 4: airport · 5–8: town sections · H: fly drone"
 		_lbl_mode.add_theme_color_override("font_color", ACCENT_GREEN)
 	else:
 		_chart_queue = _single_chart_queue
 		_chart_wait = _single_chart_wait
-		_lbl_title.text = "ATCS-GH  |  Powered by Valiborn Technologies"
+		_lbl_title.text = "TrafIQ  |  Powered by Valiborn Technologies"
 
 
 func _process(delta: float) -> void:
@@ -183,7 +184,7 @@ func _build_top_bar() -> void:
 	panel.add_child(hbox)
 
 	# Title
-	_lbl_title = _make_label("ATCS-GH  |  Powered by Valiborn Technologies", 14)
+	_lbl_title = _make_label("TrafIQ  |  Powered by Valiborn Technologies", 14)
 	_lbl_title.add_theme_color_override("font_color", ACCENT_GREEN)
 	hbox.add_child(_lbl_title)
 
@@ -578,7 +579,7 @@ func _build_bottom_bar() -> void:
 	_lbl_mode.add_theme_color_override("font_color", ACCENT_GREEN)
 	hbox.add_child(_lbl_mode)
 
-	# ── ATCS / Fixed Timer toggle button ──────────────────────────────
+	# ── TrafIQ / Fixed Timer toggle button ──────────────────────────────
 	_btn_mode_toggle = Button.new()
 	_btn_mode_toggle.text = "⚡ Switch to Fixed Timer"
 	_btn_mode_toggle.custom_minimum_size = Vector2(190, 34)
@@ -788,7 +789,7 @@ func _on_tod_slider_changed(value: float) -> void:
 
 
 func _on_weather_pressed() -> void:
-	## Cycle through weather modes: Clear → Overcast → Harmattan → Rain → Clear.
+	## Cycle through weather modes: Clear → Overcast → Rain → Clear.
 	_weather_idx = (_weather_idx + 1) % WEATHER_NAMES.size()
 	_btn_weather.text = "%s  %s" % [WEATHER_ICONS[_weather_idx], WEATHER_NAMES[_weather_idx]]
 	weather_changed.emit(_weather_idx)
@@ -886,7 +887,7 @@ func _style_panel(panel: PanelContainer) -> void:
 
 
 func _on_mode_toggle_pressed() -> void:
-	## Handle the ATCS / Fixed Timer toggle button press.
+	## Handle the TrafIQ / Fixed Timer toggle button press.
 	if _current_control_mode == "ai":
 		mode_switch_requested.emit("baseline")
 	else:
@@ -921,7 +922,7 @@ func update_control_mode(new_mode: String) -> void:
 	if new_mode == "baseline":
 		_lbl_mode.text = "FIXED TIMER"
 		_lbl_mode.add_theme_color_override("font_color", ACCENT_ORANGE)
-		_btn_mode_toggle.text = "⚡ Switch to ATCS"
+		_btn_mode_toggle.text = "⚡ Switch to TrafIQ"
 		# Restyle button to green (switch TO ai)
 		var style := StyleBoxFlat.new()
 		style.bg_color = Color(0.1, 0.5, 0.2, 0.95)

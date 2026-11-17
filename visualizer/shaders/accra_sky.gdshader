@@ -12,6 +12,8 @@ uniform float dust = 0.0;
 uniform vec3 sun_direction = vec3(0.3, 0.8, 0.4);
 uniform vec4 sun_color : source_color = vec4(1.0);
 uniform float daylight = 1.0;
+// 1 draws a low hazy ridge on the northern (+Z) horizon; 0 leaves the sky open.
+uniform float ridge = 0.0;
 
 float cloud_field(vec2 p) {
 	return texture(cloud_noise, p).r * 0.57
@@ -42,6 +44,16 @@ void sky() {
 		base = mix(base, lit_cloud, bank * (1.0 - dust * 0.60) * smoothstep(0.0, 0.055, elevation));
 		float disc = smoothstep(0.99994, 0.99998, sun_dot);
 		base += sun_color.rgb * disc * daylight * (1.0 - bank) * (1.0 - dust * 0.9) * 2.0;
+	}
+	if (ridge > 0.0 && EYEDIR.y > -0.01) {
+		float azimuth = atan(EYEDIR.x, EYEDIR.z);
+		float window = 1.0 - smoothstep(0.45, 1.35, abs(azimuth - 0.3));
+		float profile = texture(cloud_noise, vec2(azimuth * 0.11, 0.37)).r * 0.6
+			+ texture(cloud_noise, vec2(azimuth * 0.43, 0.71)).r * 0.4;
+		float crest = (0.010 + profile * 0.040) * window * ridge;
+		float hill = (1.0 - smoothstep(crest - 0.003, crest, EYEDIR.y)) * step(0.001, crest);
+		vec3 hill_color = mix(sky_horizon_color.rgb, vec3(0.20, 0.27, 0.30) * (0.2 + daylight * 0.8), 0.40 * (1.0 - dust * 0.6));
+		base = mix(base, hill_color, hill);
 	}
 	COLOR = base;
 }

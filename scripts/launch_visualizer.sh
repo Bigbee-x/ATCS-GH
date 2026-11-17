@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════
-# ATCS-GH 3D Visualizer Launcher
+# TrafIQ 3D Visualizer Launcher
 # ═══════════════════════════════════════════════════════════════
 # Starts the Python WebSocket server (SUMO + DQN agent), then
 # instructs the user to open the Godot 4 project.
@@ -11,7 +11,7 @@
 #   ./scripts/launch_visualizer.sh --manual     # Manual override from Godot UI
 #   ./scripts/launch_visualizer.sh --speed 5    # 5x simulation speed
 #
-# All arguments are forwarded to visualizer_server.py.
+# All arguments are forwarded to corridor_visualizer_server.py.
 # ═══════════════════════════════════════════════════════════════
 
 set -e
@@ -21,27 +21,29 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
-echo "  ATCS-GH 3D Visualizer Launcher"
+echo "  TrafIQ 3D Visualizer Launcher"
 echo "═══════════════════════════════════════════════════════════"
 
 # ── Pre-flight checks ────────────────────────────────────────
 
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo "[ERROR] python3 not found. Please install Python 3.10+."
+# Prefer the same project environment as the Godot launcher.
+TRAFIQ_PYTHON="$PROJECT_ROOT/.venv/bin/python3"
+if [ ! -x "$TRAFIQ_PYTHON" ]; then
+    TRAFIQ_PYTHON="$(command -v python3 || true)"
+fi
+if [ -z "$TRAFIQ_PYTHON" ]; then
+    echo "[ERROR] Python not found. Set up the project .venv first."
+    exit 1
+fi
+if ! "$TRAFIQ_PYTHON" -c "import websockets, traci, torch" &> /dev/null; then
+    echo "[ERROR] Missing dependencies. Install requirements.txt in the project .venv."
     exit 1
 fi
 
-# Check websockets module
-if ! python3 -c "import websockets" &> /dev/null; then
-    echo "[WARN] 'websockets' module not found. Installing..."
-    pip3 install websockets
-fi
-
 # Check SUMO network exists
-if [ ! -f "$PROJECT_ROOT/simulation/intersection.net.xml" ]; then
+if [ ! -f "$PROJECT_ROOT/simulation/corridor.net.xml" ]; then
     echo "[ERROR] SUMO network not built."
-    echo "  Run:  python3 scripts/build_network.py"
+    echo "  Restore the calibrated simulation/corridor.net.xml and route files."
     exit 1
 fi
 
@@ -49,7 +51,7 @@ fi
 
 echo ""
 echo "[1/2] Starting WebSocket server..."
-python3 "$SCRIPT_DIR/visualizer_server.py" "$@" &
+"$TRAFIQ_PYTHON" "$SCRIPT_DIR/corridor_visualizer_server.py" "$@" &
 SERVER_PID=$!
 echo "      Server PID: $SERVER_PID"
 echo "      WebSocket : ws://localhost:8765"
@@ -68,9 +70,11 @@ fi
 echo ""
 echo "[2/2] Open the Godot 4 project:"
 echo ""
-echo "      1. Open Godot 4.2+"
+echo "      1. Open Godot 4.6+"
 echo "      2. Import project: $PROJECT_ROOT/visualizer/project.godot"
-echo "      3. Press F5 (Play) to start the visualizer"
+echo "      3. Open CorridorMain.tscn; set WebSocketClient.auto_start_server=false"
+echo "      4. Match its server URL to this server, then press F6"
+echo "      For automatic startup instead, stop this script and use F5 → Launch corridor."
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  Server is running. Press Ctrl+C to stop everything."

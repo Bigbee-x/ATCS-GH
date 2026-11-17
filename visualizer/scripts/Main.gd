@@ -1,6 +1,6 @@
 extends Node3D
 var signal_playback: Node
-## Main controller for the ATCS-GH 3D Visualizer (Achimota/Neoplan Junction).
+## Main controller for the TrafIQ 3D Visualizer (Achimota/Neoplan Junction).
 ##
 ## Responsibilities:
 ##   1. Wire WebSocket client signals to Intersection, VehicleManager, and UI
@@ -44,9 +44,9 @@ var _camera_default_size: float = 32.0
 var _zoom_level: float = 1.0
 
 const ZOOM_MIN: float = 0.3
-const ZOOM_MAX: float = 3.0
+const ZOOM_MAX: float = 12.0
 const ZOOM_STEP: float = 0.1
-const PAN_SPEED: float = 0.2
+const PAN_SPEED: float = 25.0
 
 var _is_panning: bool = false
 var _is_rotating: bool = false
@@ -80,13 +80,14 @@ func _ready() -> void:
 	add_child(signal_playback)
 	pedestrian_manager.playback_clock = vehicle_manager._clock
 	call_deferred("_ensure_live_traffic")
-	print("[Main] ATCS-GH 3D Visualizer starting...")
+	print("[Main] TrafIQ 3D Visualizer starting...")
 
 	# Store default camera transform for reset
 	# Perspective gives the rebuilt streetscape depth; P restores plan view.
 	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.fov = 58.0
-	camera.position = Vector3(12, 29, 31)
+	camera.position = Vector3(24,58,62)
+	camera.far = 4500.0
 	camera.look_at(Vector3.ZERO)
 	_camera_default_position = camera.position
 	_camera_default_rotation = camera.rotation
@@ -303,19 +304,18 @@ func _on_ui_tod_mode_changed(mode_idx: int) -> void:
 
 
 func _on_ui_weather_changed(weather_idx: int) -> void:
-	## User picked a new weather mode (0=Clear, 1=Overcast, 2=Harmattan, 3=Rain).
+	## User picked a new weather mode (0=Clear, 1=Overcast, 2=Rain).
 	weather_manager.set_weather(weather_idx)
 
 	# Drive vehicle headlights from the weather. Night mode still wins over
 	# this — VehicleManager composes the two in _lights_on_for().
 	#   Clear     → no weather demand
 	#   Overcast  → ~40 % of cars flip their lights on
-	#   Harmattan → dusty but bright; no lights
 	#   Rain      → every car runs lights
 	var lights_mode: int = 0   # WeatherLights.OFF
 	match weather_idx:
 		1: lights_mode = 1     # WeatherLights.PARTIAL
-		3: lights_mode = 2     # WeatherLights.ALL
+		2: lights_mode = 2     # WeatherLights.ALL
 	if vehicle_manager.has_method("set_weather_lights_mode"):
 		vehicle_manager.set_weather_lights_mode(lights_mode)
 
@@ -598,10 +598,10 @@ func _setup_player() -> void:
 	_player.set_script(script)
 	_player.name = "PlayerController"
 	add_child(_player)
-	# Spawn on a sidewalk of the south arm, 8 units south of the junction,
+	# Spawn on the south-arm sidewalk, 20 metres from the junction,
 	# facing north (yaw=π → camera looks down +Z). Sidewalk top is at
 	# y=0.15; spawn a tick higher so the capsule settles onto it.
-	_player.spawn_at(Vector3(3.95, 0.4, -8.0), PI)
+	_player.spawn_at(Vector3(7.15,0.4,-20.0), PI)
 
 	# Build the HUD hint — a small label anchored bottom-center of the UI canvas.
 	_ground_hint_label = Label.new()

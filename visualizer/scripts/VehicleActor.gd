@@ -17,6 +17,12 @@ var _route_label: Label3D
 var _brakes: Array[MeshInstance3D] = []
 var _lamps: Array[MeshInstance3D] = []
 var _beam: SpotLight3D
+var _front_glow: MeshInstance3D
+var _rear_glow: MeshInstance3D
+var _light_state: int = -1
+static var _glow_material: ShaderMaterial
+static var _glow_meshes: Dictionary = {}
+static var _lens_materials: Dictionary = {}
 var _fade_meshes: Array[GeometryInstance3D] = []
 
 func configure(vehicle_kind: String, seed_value: int) -> void:
@@ -65,6 +71,10 @@ func configure(vehicle_kind: String, seed_value: int) -> void:
 		plate.visibility_range_end = 14
 	_build_lights(bus)
 	_collect_meshes(self)
+
+func set_metric_dimensions(size: Vector3) -> void:
+	var bounds := _body.mesh.get_aabb()
+	scale = Vector3(size.x / bounds.size.x, size.y / bounds.end.y, size.z / bounds.size.z)
 
 func _build_body(parts: Node3D, bus: bool) -> void:
 	var paint := G.solid(PAINTS[variant], 0.48, 0.34)
@@ -157,33 +167,80 @@ func _build_door() -> void:
 	G.box(self,Vector3(0.36,0.17,0.04),Vector3(0.13,0.025,0.31),G.solid(Color("353d39")),"BoardingStep")
 
 func _build_lights(bus: bool) -> void:
+	## Lenses that are always there (clear and red plastic by day), lit from
+	## shared materials at dusk; additive halos and a pool of light on the road
+	## that read from any distance; and a real beam for the cars near the camera.
+	_ensure_light_resources()
+	var head := Vector3(0.24 if bus else 0.174, 0.34 if bus else 0.252, -0.763 if bus else -0.594)
+	var tail := Vector3(0.25 if bus else 0.181, 0.34 if bus else 0.25, 0.767 if bus else 0.592)
 	for side in [-1.0,1.0]:
-		var glow := G.solid(Color("fff0cf"),0.1,0.2).duplicate() as StandardMaterial3D
-		glow.emission_enabled = true
-		glow.emission = Color("fff0cf")
-		glow.emission_energy_multiplier = 2.0
-		var lamp := G.rounded_box(self,Vector3(side*(0.24 if bus else 0.174),0.34 if bus else 0.252,-0.763 if bus else -0.594),Vector3(0.085,0.045,0.008),0.012,glow,"Headlight")
-		lamp.visible = false
+		var lamp := G.rounded_box(self,Vector3(side*head.x,head.y,head.z),Vector3(0.095,0.055,0.008),0.012,_lens_materials["head_off"],"Headlight")
 		_lamps.append(lamp)
-		var red := G.solid(Color("e52c19")).duplicate() as StandardMaterial3D
-		red.emission_enabled = true
-		red.emission = Color("e52c19")
-		red.emission_energy_multiplier = 1.5
-		var brake := G.rounded_box(self,Vector3(side*(0.25 if bus else 0.181),0.34 if bus else 0.25,0.767 if bus else 0.592),Vector3(0.04 if bus else 0.10,0.12 if bus else 0.04,0.008),0.008,red,"BrakeLight")
-		brake.visible = false
+		var brake := G.rounded_box(self,Vector3(side*tail.x,tail.y,tail.z),Vector3(0.045 if bus else 0.10,0.12 if bus else 0.045,0.008),0.008,_lens_materials["tail_off"],"BrakeLight")
 		_brakes.append(brake)
+	var key := "bus" if bus else "car"
+	if not _glow_meshes.has(key):
+		_glow_meshes[key] = [_glow_mesh(head, -1.0, Color(1.0, 0.93, 0.78), 0.11, 0.58, 3.0 if bus else 3.5, 0.26),
+			_glow_mesh(tail, 1.0, Color(1.0, 0.10, 0.05), 0.085, 0.46, 0.75, 0.30)]
+	_front_glow = G.instance(self, _glow_meshes[key][0], Vector3.ZERO, _glow_material, "HeadlightGlow")
+	_rear_glow = G.instance(self, _glow_meshes[key][1], Vector3.ZERO, _glow_material, "TailLightGlow")
+	for glow: MeshInstance3D in [_front_glow, _rear_glow]:
+		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		glow.visible = false
 	_beam = SpotLight3D.new()
 	_beam.position = Vector3(0,0.31,-0.78 if bus else -0.62)
-	_beam.rotation.x = -0.15
+	_beam.rotation.x = -0.11
 	_beam.light_color = Color("ffe7bc")
-	_beam.light_energy = 1.5
-	_beam.spot_range = 7
-	_beam.spot_angle = 32
+	_beam.light_energy = 5.0
+	_beam.spot_range = 22
+	_beam.spot_angle = 30
+	_beam.spot_attenuation = 0.7
 	_beam.distance_fade_enabled = true
-	_beam.distance_fade_begin = 18
-	_beam.distance_fade_length = 12
+	_beam.distance_fade_begin = 60
+	_beam.distance_fade_length = 40
 	_beam.visible = false
 	add_child(_beam)
+
+static func _ensure_light_resources() -> void:
+	if _glow_material != null:
+		return
+	_glow_material = ShaderMaterial.new()
+	_glow_material.shader = preload("res://shaders/vehicle_glow.gdshader")
+	for spec in [["head_off", Color("d9dcd6"), Color.BLACK, 0.0], ["head_on", Color("fff4dc"), Color("fff0cf"), 9.0],
+			["tail_off", Color("6a1410"), Color.BLACK, 0.0], ["tail_on", Color("c81e12"), Color("ff2a14"), 2.6],
+			["tail_brake", Color("ff3a20"), Color("ff2a14"), 9.0]]:
+		var lens := StandardMaterial3D.new()
+		lens.albedo_color = spec[1]
+		lens.roughness = 0.2
+		lens.metallic = 0.1
+		if spec[3] > 0.0:
+			lens.emission_enabled = true
+			lens.emission = spec[2]
+			lens.emission_energy_multiplier = spec[3]
+		_lens_materials[spec[0]] = lens
+
+static func _glow_mesh(lamp: Vector3, facing: float, color: Color, halo: float, pool_half: float, pool_length: float, pool_strength: float) -> ArrayMesh:
+	## Two upright halo quads at the lamps and one quad on the road beyond them.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var z: float = lamp.z + facing * 0.012
+	for side in [-1.0, 1.0]:
+		var c := Vector3(side * lamp.x, lamp.y, z)
+		var corners := [c + Vector3(-halo, -halo, 0), c + Vector3(halo, -halo, 0), c + Vector3(halo, halo, 0), c + Vector3(-halo, halo, 0)]
+		var uvs := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+		for i in [0, 1, 2, 0, 2, 3]:
+			st.set_color(Color(color.r, color.g, color.b, 1.5))
+			st.set_uv(uvs[i])
+			st.add_vertex(corners[i])
+	var near: float = lamp.z + facing * 0.04
+	var far: float = lamp.z + facing * pool_length
+	var ground := [Vector3(-pool_half, 0.012, near), Vector3(pool_half, 0.012, near), Vector3(pool_half * 1.5, 0.012, far), Vector3(-pool_half * 1.5, 0.012, far)]
+	var ground_uv := [Vector2(0, 2), Vector2(1, 2), Vector2(1, 3), Vector2(0, 3)]
+	for i in [0, 1, 2, 0, 2, 3]:
+		st.set_color(Color(color.r, color.g, color.b, pool_strength))
+		st.set_uv(ground_uv[i])
+		st.add_vertex(ground[i])
+	return st.commit()
 
 func animate(distance: float, yaw_delta: float, delta: float, lights: bool, braking: bool, boarding: bool) -> void:
 	_spin = fposmod(_spin - distance / (0.112*scale.x), TAU)
@@ -194,10 +251,18 @@ func animate(distance: float, yaw_delta: float, delta: float, lights: bool, brak
 	_door_blend = move_toward(_door_blend,1.0 if boarding else 0.0,delta*1.5)
 	if _door:
 		_door.position = Vector3(0.02*_door_blend,0,0.34*_door_blend)
+	var state: int = (1 if lights else 0) + (2 if braking else 0)
+	if state == _light_state:
+		return
+	_light_state = state
 	for lamp in _lamps:
-		lamp.visible = lights
+		lamp.material_override = _lens_materials["head_on" if lights else "head_off"]
 	for brake in _brakes:
-		brake.visible = lights or braking
+		brake.material_override = _lens_materials["tail_brake" if braking else ("tail_on" if lights else "tail_off")]
+	_front_glow.visible = lights
+	_rear_glow.visible = lights or braking
+	# Brake lights flare at night; by day they only brighten the lens a little.
+	_rear_glow.set_instance_shader_parameter("boost", (2.6 if lights else 0.22) if braking else 1.0)
 	_beam.visible = lights
 
 func set_destination(text: String) -> void:

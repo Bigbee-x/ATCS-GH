@@ -26,7 +26,7 @@ func _build_station(spec: Dictionary) -> void:
 	var outer: float = spec["road_half"]+spec["sidewalk"]
 	var root := Node3D.new()
 	root.name = spec["id"]
-	root.position = Vector3(s*(outer+2.7),0,spec["z"])
+	root.position = Vector3(s*(outer+(6.0 if spec.get("parking",false) else 3.0)),0,spec["z"])
 	root.rotation.y = -s*PI/2
 	root.set_meta("reserved_plot",Layout.plot(spec))
 	add_child(root)
@@ -61,22 +61,31 @@ func _build_station(spec: Dictionary) -> void:
 	G.segment(root,Vector3(4.6,0.1,0.6),Vector3(4.6,1.9,0.6),0.04,steel)
 	# Mark the curbside loading zone, keeping through lanes and crosswalks free.
 	var bay_x: float = float(spec.get("bay_x", s*(spec["road_half"]-0.58)))
-	var bay_y: float = 0.16 if spec.get("parking", false) else 0.064
+	var bay_y: float = 0.065
 	if spec.get("parking", false):
-		G.box(self, Vector3(s*(spec["road_half"]+0.85),0.135,spec["z"]), Vector3(1.7,0.03,12), Surfaces.surface(1,Color("50564f")), "OffRoadBoardingBay")
-	for z in [spec["z"]-2.6,spec["z"]+2.6]:
-		G.box(self,Vector3(bay_x,bay_y,z),Vector3(1.12,0.012,0.055),G.solid(Color("d4b95b")),"BayEndMark")
-	for i in range(7):
-		G.box(self,Vector3(bay_x-s*0.56,bay_y,spec["z"]-2.4+i*0.8),Vector3(0.04,0.012,0.4),G.solid(Color("d4b95b")),"BayEdgeMark")
+		G.box(self, Vector3(s*(10.4),0.05,spec["z"]), Vector3(3.6,0.03,48), Surfaces.surface(1,Color("50564f")), "OffRoadBoardingBay")
+		# Level driveway aprons meet the carriageway through the footway.
+		for offset in [-18.0, 18.0]:
+			G.box(self, Vector3(s*9.3,0.05,spec.z+offset), Vector3(5.8,0.03,12.0), Surfaces.surface(1,Color("50564f")), "BayDriveway")
+	var marked_half: float = 10.5
+	for z in [spec["z"]-marked_half,spec["z"]+marked_half]:
+		G.box(self,Vector3(bay_x,bay_y,z),Vector3(3.0,0.012,0.055),G.solid(Color("d4b95b")),"BayEndMark")
+	for i in range(26):
+		G.box(self,Vector3(bay_x-s*(1.5),bay_y,spec["z"]-(10.0)+i*0.8),Vector3(0.04,0.012,0.4),G.solid(Color("d4b95b")),"BayEdgeMark")
 	# A spare minibus stands in the station yard, with a mate by the desk.
 	var parked := Fleet.new()
 	parked.configure("trotro",int(abs(spec["z"])*7))
 	parked.position = Vector3(2.8,0.11,-2.1)
 	parked.rotation.y = -0.3
+	parked.set_metric_dimensions(preload("res://scripts/CorridorGeometry.gd").vehicle_size("trotro",corridor_mode))
+	parked.position = Vector3(0.0,0.11,-2.5)
+	parked.rotation.y = PI/2
 	parked.set_destination(spec["destination"])
 	root.add_child(parked)
 	var mate := Person.new()
 	mate.configure(83+int(abs(spec["z"])))
+	mate.scale *= 2.0
+	mate.character_scale *= 2.0
 	mate.position = Vector3(-3.6,0.20,0.8)
 	root.add_child(mate)
 	_stations[spec["id"]]["mate"] = mate
@@ -104,8 +113,10 @@ func update_transit(data: Dictionary) -> void:
 			if not _passengers.has(pid):
 				var actor := Person.new()
 				actor.configure(str(pid).hash())
-				var waiting_x: float = float(spec.get("bay_x", spec["side"]*spec["road_half"])) + spec["side"]*0.85
-				actor.position = Vector3(waiting_x,0.205 if spec.get("parking",false) else 0.15,spec["z"]+(index+1)*0.52)
+				actor.scale *= 2.0
+				actor.character_scale *= 2.0
+				var waiting_x: float = float(spec.get("bay_x", spec["side"]*spec["road_half"])) + spec["side"]*(2.2)
+				actor.position = Vector3(waiting_x,0.205 if spec.get("parking",false) else 0.15,spec["z"]+(index+1)*(0.8))
 				actor.rotation.y = -spec["side"]*PI/2
 				actor.visible = _enabled
 				add_child(actor)
@@ -139,7 +150,7 @@ func _process(delta: float) -> void:
 				var coach: Node3D = bus.get_node_or_null("Coach")
 				if coach and coach.get("_door_blend") > 0.6:
 					var door := coach.to_global(Vector3(0.35,0.17,0.04))
-					actor.position = actor.position.move_toward(door,delta*0.6)
+					actor.position = actor.position.move_toward(door,delta*(1.2))
 					if actor.position.distance_to(door) < 0.45:
 						actor.scale.y = lerpf(actor.scale.y,actor.character_scale*0.78,1.0-exp(-delta*8))
 						actor.rotation.x = lerpf(actor.rotation.x,0.12,1.0-exp(-delta*8))

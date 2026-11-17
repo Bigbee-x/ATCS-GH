@@ -1,30 +1,14 @@
 #!/usr/bin/env python3
-"""
-ATCS-GH | Multi-Agent Corridor Training (v4 methodology)
-═════════════════════════════════════════════════════════
-Train 3 independent Double-DQN agents to control the N6 Nsawam Road corridor
-(J0, J1, J2), each with a 46-dim neighbour-aware state. Agents learn
-independently but share one simulation, enabling emergent green-wave coordination.
+"""Corridor training entry point.
 
-Ported up to the single-junction v4 methodology (2026-06-21, corridor Phase 3 —
-mirrors scripts/train_agent.py):
-  • Expert warm-start — during ε-exploration, EXPERT_FRAC of actions follow the
-    per-junction sustained-green expert (env.expert_action(jid)) instead of a
-    uniform-random action, so heavy episodes keep flowing and agents learn to
-    HOLD greens rather than thrash.
-  • Maximin best-model selection — save best_{jid}.pth when the WORST junction's
-    rolling wait-relative-to-its-baseline improves (mean tie-break), with the
-    normalising baseline floored at MIN_SELECT_BASELINE_S and selection gated to
-    ε ≤ MAX_SELECT_EPSILON so the saved models reflect near-greedy (deployed)
-    behaviour, not the expert-propped early window. Per-junction baselines come
-    from data/corridor_baselines.csv (run scripts/run_corridor_baseline.py).
-  • Scenario rotation — SCENARIOS rotates one route file per episode (only the
-    recalibrated morning exists today; evening/off-peak slot in here later).
+The CLI delegates to train_corridor_deployment.py: isolated output directory,
+seeded CPU training, crossing/boarding services and the deployed supervisor.
 
-Usage:
-    python scripts/train_corridor.py                 # 200 episodes, morning scenario
-    python scripts/train_corridor.py --episodes 120
-    python scripts/train_corridor.py --resume        # resume from best_{jid}.pth
+    python scripts/train_corridor.py --output ai/checkpoints/corridor/my-run --episodes 18
+    python scripts/train_corridor.py --output ai/checkpoints/corridor/my-run --episodes 30 --resume
+
+The historical train() below is retained only to reproduce earlier experiments.
+It is not the CLI path and does not have the deployment pipeline's safeguards.
 """
 
 import sys
@@ -135,7 +119,7 @@ def train(n_episodes: int = 200, resume: bool = False) -> None:
     training_start = time.time()
 
     print("=" * 72)
-    print("  ATCS-GH Corridor Training — v4 methodology (multi-agent Double-DQN)")
+    print("  TrafIQ Corridor Training — v4 methodology (multi-agent Double-DQN)")
     print("=" * 72)
     print(f"  Junctions    : {JUNCTION_IDS}   state {STATE_SIZE} · actions {ACTION_SIZE}")
     print(f"  Episodes     : {n_episodes}")
@@ -264,8 +248,8 @@ def train(n_episodes: int = 200, resume: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train corridor multi-agent DQN (v4 methodology)")
-    parser.add_argument("--episodes", type=int, default=200, help="Episodes (default: 200)")
-    parser.add_argument("--resume", action="store_true", help="Resume from best_{jid}.pth")
-    args = parser.parse_args()
-    train(n_episodes=args.episodes, resume=args.resume)
+    # The historical implementation above remains for reproducing old runs.
+    # New CLI runs use deployed services, bounded inputs and isolated bundles;
+    # --output is required so a retrain cannot overwrite shipped checkpoints.
+    from train_corridor_deployment import main
+    main()

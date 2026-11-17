@@ -87,7 +87,7 @@ const CR_X_BOUND: float = 58.0        # junc_half + cross_arm
 const CR_FADE_DIST: float = 12.0      # Start fading 12 units before edge
 
 # ── Pool limits ──────────────────────────────────────────────────────────────
-var MAX_VEHICLES: int = 200
+var MAX_VEHICLES: int = 2000
 
 # ── Internal state ───────────────────────────────────────────────────────────
 ## Active vehicles: vid -> { node: Node3D, target_pos: Vector3,
@@ -344,7 +344,7 @@ func set_corridor_mode(enabled: bool) -> void:
 	## Switch between single-junction and corridor coordinate mapping.
 	corridor_mode = enabled
 	if enabled:
-		MAX_VEHICLES = 500  # 3 junctions need more vehicles
+		MAX_VEHICLES = 2000  # Metric corridor retains queues; no compressed-space tail culling.
 		print("[VehicleManager] Corridor mode enabled (shared road layout, max=%d)" % MAX_VEHICLES)
 
 
@@ -379,15 +379,14 @@ func update_vehicles(data: Dictionary) -> void:
 			continue
 		var pos: Vector3 = display_positions[vid]
 		# Curbside stop alignment is visual only; longitudinal motion remains SUMO's.
-		if v.has("station_id"):
+		if v.has("station_id") and v.has("bay_x"):
+			# Parking bays have an explicit lateral presentation offset. Curbside
+			# single-junction stops retain SUMO's actual lane position.
 			var remaining: float = float(v.get("stop_distance",10000.0))
-			var approach: float = smoothstep(85.0,10.0,remaining) if remaining >= 0 else 1.0-smoothstep(0.0,32.0,-remaining)
+			var approach: float = smoothstep(18.0,4.0,remaining) if remaining >= 0 else 1.0-smoothstep(0.0,12.0,-remaining)
 			if absf(remaining) < 85:
-				var curb: float = 2.42 if corridor_mode else 2.62
-				var bay: float = float(v.get("bay_x", signf(pos.x) * curb))
-				pos.x = lerpf(pos.x, bay, approach)
-				if v.has("bay_x"):
-					pos.y = lerpf(pos.y, 0.45, approach)
+				pos.x = lerpf(pos.x,signf(float(v.bay_x))*10.4,approach)
+
 		var rot := _sumo_angle_to_godot(v.get("angle", 0.0))
 		var vtype: String = str(v.get("type", "DEFAULT_VEHTYPE"))
 
@@ -486,6 +485,10 @@ func _spawn_vehicle(vid: String, pos: Vector3, rot: float, vtype: String) -> voi
 	else:
 		node = _acquire_car(vid, vtype)
 
+	if node.has_node("Coach"):
+		node.get_node("Coach").set_metric_dimensions(Layout.Metric.vehicle_size(vtype,corridor_mode))
+	else:
+		node.scale = Vector3.ONE*(Layout.Metric.vehicle_size(vtype,corridor_mode).z/2.0)
 	node.position = pos
 	node.rotation.y = rot
 	node.visible = true
@@ -685,19 +688,10 @@ func _set_node_opacity(node: Node3D, alpha: float) -> void:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _get_boundary_fade(pos: Vector3) -> float:
-	## Returns 1.0 if fully visible, 0.0 if beyond boundary, fractional in
-	## the fade zone.  Works for both single-junction and corridor mode.
-	if corridor_mode:
-		# Z axis (north/south corridor length)
-		var fz: float = _edge_fade(pos.z, CR_Z_MIN, CR_Z_MAX, CR_FADE_DIST)
-		# X axis (east/west cross-streets)
-		var fx: float = _edge_fade(pos.x, -CR_X_BOUND, CR_X_BOUND, CR_FADE_DIST)
-		return minf(fz, fx)
-	else:
-		# Single junction — symmetric bounds on both axes
-		var fx: float = _edge_fade(pos.x, -SJ_BOUND, SJ_BOUND, SJ_FADE_DIST)
-		var fz: float = _edge_fade(pos.z, -SJ_BOUND, SJ_BOUND, SJ_FADE_DIST)
-		return minf(fx, fz)
+	# Network positions are never altered. The corridor draws a window of its
+	# 1.5 km approaches (CorridorGeometry.VIEW): vehicles fade in as they enter
+	# it and out as they leave. The single junction still shows everything.
+	return Layout.Metric.view_fade(pos, corridor_mode)
 
 
 func _edge_fade(val: float, low: float, high: float, fade_dist: float) -> float:

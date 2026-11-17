@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATCS-GH Dashboard</title>
+    <title>TrafIQ Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         :root {
@@ -398,8 +398,8 @@
 <!-- ── Header ──────────────────────────────────────────────────────────── -->
 <div class="header">
     <div>
-        <h1>ATCS-GH Dashboard</h1>
-        <div class="subtitle">Adaptive Traffic Control System &mdash; Achimota/Neoplan Junction, Accra</div>
+        <h1>TrafIQ · Training &amp; evaluation archive</h1>
+        <div class="subtitle">Recorded training and evaluation results &mdash; separate from the live simulation</div>
     </div>
     <div id="statusBadge" class="status-badge training">
         <div class="pulse"></div>
@@ -441,7 +441,7 @@
         <button class="tab active" onclick="switchTab('training')">Training</button>
         <button class="tab" onclick="switchTab('scenarios')">Scenario Analysis</button>
         <button class="tab" onclick="switchTab('comparison')">AI vs Baseline</button>
-        <button class="tab" onclick="switchTab('live')">Live Simulation</button>
+        <button class="tab" onclick="switchTab('live')">Live operations ↗</button>
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -654,6 +654,7 @@
 
     // ── Tab Switching ──────────────────────────────────────────────────
     function switchTab(tab) {
+        if (tab === 'live') { window.location.href = '/'; return; }
         activeTab = tab;
         document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
         event.target.classList.add('active');
@@ -1025,6 +1026,7 @@
         'NS_ALL': '#10b981', 'EW_ALL': '#3b82f6', 'UNKNOWN': '#6b7280',
     };
 
+    const liveWSUrl = {{ simulation_ws_url | tojson }};
     let liveWS = null;
     let liveConnected = false;
     let liveMode = 'single'; // or 'corridor'
@@ -1046,7 +1048,7 @@
             return; // Already connected or connecting
         }
         try {
-            liveWS = new WebSocket('ws://localhost:8765');
+            liveWS = new WebSocket(liveWSUrl);
         } catch (e) {
             setLiveStatus(false);
             return;
@@ -1077,7 +1079,7 @@
         const txt = document.getElementById('liveStatusText');
         if (connected) {
             el.className = 'live-status connected';
-            txt.textContent = 'Connected to simulation (ws://localhost:8765)';
+            txt.textContent = 'Connected to simulation (' + liveWSUrl + ')' ;
         } else {
             el.className = 'live-status disconnected';
             txt.textContent = 'Disconnected — start a simulation to see live data';
@@ -1279,6 +1281,7 @@
         // Check URL for ?tab=live (auto-opened from Godot)
         const tabNames = ['training', 'scenarios', 'comparison', 'live'];
         const urlTab = new URLSearchParams(window.location.search).get('tab');
+        if (urlTab === 'live') { window.location.replace('/'); return; }
         if (urlTab && tabNames.includes(urlTab)) {
             activeTab = urlTab;
             const buttons = document.querySelectorAll('.tabs .tab');

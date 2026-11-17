@@ -43,7 +43,7 @@ OFFPEAK_CORRIDOR = {            # balanced, light through-traffic both ways
 }
 
 EVENING_HEADER = """<!--
-  ATCS-GH | N6 Nsawam Road Corridor — Evening Rush Hour Demand
+  TrafIQ | N6 Nsawam Road Corridor — Evening Rush Hour Demand
   ═════════════════════════════════════════════════════════════
   3-junction corridor: J0 (Aggrey/Guggisberg), J1 (Asylum Down/Ring),
   J2 (Nima/Tesano) along Achimota Forest Road.
@@ -55,7 +55,7 @@ EVENING_HEADER = """<!--
 -->"""
 
 OFFPEAK_HEADER = """<!--
-  ATCS-GH | N6 Nsawam Road Corridor — Off-Peak (Midday) Demand
+  TrafIQ | N6 Nsawam Road Corridor — Off-Peak (Midday) Demand
   ═════════════════════════════════════════════════════════════
   3-junction corridor: J0 (Aggrey/Guggisberg), J1 (Asylum Down/Ring),
   J2 (Nima/Tesano) along Achimota Forest Road.

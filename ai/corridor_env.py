@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Corridor Traffic Environment — 3-Junction N6 Nsawam Road
+TrafIQ | Corridor Traffic Environment — 3-Junction N6 Nsawam Road
 ═══════════════════════════════════════════════════════════════════
 Multi-junction SUMO environment for training multi-agent DQN.
 
@@ -28,7 +28,8 @@ Per-junction state vector (46 dims):
   [37-40] 4  pedestrian waiting counts  (/ MAX_PED_QUEUE)
   [41-42] 2  south neighbor info        (queue_norm, phase_norm)
   [43-44] 2  north neighbor info        (queue_norm, phase_norm)
-  [45]    1  max corridor link occupancy (spillback risk)
+  [45]    1  max corridor link occupancy (spillback risk; scale set by
+             LINK_OCCUPANCY_FEATURE, legacy for the shipped checkpoints)
 
 Actions per junction (5): protected-left only, same as single-junction env
   0=HOLD, 1=NS_THROUGH, 2=NS_LEFT, 3=EW_THROUGH, 4=EW_LEFT
@@ -89,6 +90,11 @@ except ImportError as e:
         f"Cannot import traci: {e}\n"
         f"Ensure SUMO_HOME/tools is in sys.path (SUMO_HOME={SUMO_HOME})"
     ) from e
+
+try:
+    from occupancy import LinkOccupancy, legacy_link_feature
+except ImportError:  # imported as ai.corridor_env
+    from ai.occupancy import LinkOccupancy, legacy_link_feature
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -203,7 +209,17 @@ JUNCTION_SPACING = 300.0   # metres between consecutive junctions
 CORRIDOR_SPEED   = 13.89   # 50 km/h
 IDEAL_OFFSET     = JUNCTION_SPACING / CORRIDOR_SPEED  # ~21.6 seconds
 OFFSET_TOLERANCE = 5.0     # ±5 seconds of ideal is rewarded
-SPILLBACK_THRESH = 0.8     # occupancy above this triggers penalty
+SPILLBACK_THRESH = 0.8     # link fullness above this triggers penalty
+                           #   (1.0 = jammed bumper to bumper; ai/occupancy.py)
+
+# State slot 45 (max corridor link occupancy). The shipped checkpoints
+# (ai/checkpoints/corridor/best_J*.pth) were trained while this slot held edge
+# occupancy divided by 100 a second time, which never exceeds ~0.004, so they
+# have never seen a real value here. "legacy" keeps feeding them exactly that;
+# "fullness" is the corrected signal (0..1, 1 = link jammed). Switch only
+# together with checkpoints retrained on "fullness". The spillback reward
+# always uses fullness.
+LINK_OCCUPANCY_FEATURE = "legacy"
 
 
 # ── Signal string builder ────────────────────────────────────────────────────
@@ -415,13 +431,19 @@ class CorridorEnv:
     """
 
     def __init__(self, gui: bool = False, verbose: bool = False,
-                 route_file: str | None = None):
+                 route_file: str | None = None, occupancy_feature: str | None = None):
         self.gui        = gui
         self.verbose    = verbose
         self.route_file = route_file
+        if occupancy_feature not in (None, "legacy", "fullness"):
+            raise ValueError(f"Unknown occupancy feature: {occupancy_feature}")
+        self.occupancy_feature = occupancy_feature
 
         self._connected = False
         self._sim_step  = 0
+        self.before_step = None
+        self.after_step = None
+        self._links = LinkOccupancy()
 
         # Per-junction mutable state
         self._jstate: dict[str, JunctionState] = {
@@ -477,6 +499,15 @@ class CorridorEnv:
         if not self._connected:
             raise RuntimeError("Call env.reset() before env.step()")
 
+        self.apply_actions(actions)
+        block_arrived = 0
+        for _ in range(DECISION_INTERVAL):
+            block_arrived += self.advance_one_second()
+            if traci.simulation.getMinExpectedNumber() == 0:
+                break
+        return self.finish_decision(actions, block_arrived)
+
+    def apply_actions(self, actions: dict[str, int]) -> None:
         # ── Apply actions for each junction ──────────────────────────────────
         for jid in JUNCTION_IDS:
             action = actions.get(jid, ACTION_HOLD)
@@ -486,29 +517,28 @@ class CorridorEnv:
                 if target is not None and target != js.phase:
                     self._initiate_switch(jid, target)
 
-        # ── Advance DECISION_INTERVAL simulation steps ───────────────────────
-        block_arrived = 0
 
-        for _ in range(DECISION_INTERVAL):
-            # Handle yellow countdowns for all junctions
-            for jid in JUNCTION_IDS:
-                js = self._jstate[jid]
-                if js.in_yellow:
+    def advance_one_second(self) -> int:
+        """Shared physics step used by training, live playback and evaluation."""
+        for jid in JUNCTION_IDS:
+            js = self._jstate[jid]
+            if js.in_yellow:
+                # Apply all three yellow seconds before releasing the new green.
+                if js.yellow_countdown <= 0:
+                    self._complete_switch(jid)
+                else:
                     js.yellow_countdown -= 1
-                    if js.yellow_countdown <= 0:
-                        self._complete_switch(jid)
+        if self.before_step is not None:
+            self.before_step()
+        traci.simulationStep()
+        self._sim_step += 1
+        for jid in JUNCTION_IDS:
+            self._jstate[jid].phase_timer += 1
+        if self.after_step is not None:
+            self.after_step()
+        return traci.simulation.getArrivedNumber()
 
-            traci.simulationStep()
-            self._sim_step += 1
-
-            for jid in JUNCTION_IDS:
-                self._jstate[jid].phase_timer += 1
-
-            block_arrived += traci.simulation.getArrivedNumber()
-
-            if traci.simulation.getMinExpectedNumber() == 0:
-                break
-
+    def finish_decision(self, actions: dict[str, int], block_arrived: int):
         # ── Collect metrics and compute rewards ──────────────────────────────
         self.total_arrived += block_arrived
 
@@ -655,13 +685,13 @@ class CorridorEnv:
         south_info = _neighbor_info(south_jid)
         north_info = _neighbor_info(north_jid)
 
-        # Corridor link occupancy (max of adjacent links)
+        # Corridor link occupancy (max of adjacent links); scale set by
+        # LINK_OCCUPANCY_FEATURE so the shipped checkpoints keep their inputs.
         max_occ = 0.0
         for link_edge in [cfg.south_link, cfg.north_link]:
             if link_edge:
                 try:
-                    occ = traci.edge.getLastStepOccupancy(link_edge)
-                    max_occ = max(max_occ, occ / 100.0)  # occupancy is 0-100%
+                    max_occ = max(max_occ, self._link_occupancy_feature(link_edge))
                 except traci.exceptions.TraCIException:
                     pass
 
@@ -758,13 +788,22 @@ class CorridorEnv:
         for link_edge in [cfg.south_link, cfg.north_link]:
             if link_edge:
                 try:
-                    occ = traci.edge.getLastStepOccupancy(link_edge) / 100.0
-                    if occ > SPILLBACK_THRESH:
-                        reward -= W_SPILLBACK * (occ - SPILLBACK_THRESH)
+                    full = self._links.fullness(traci, link_edge)
+                    if full > SPILLBACK_THRESH:
+                        reward -= W_SPILLBACK * (full - SPILLBACK_THRESH)
                 except traci.exceptions.TraCIException:
                     pass
 
         return reward
+
+    def _link_occupancy_feature(self, edge: str) -> float:
+        """State slot 45 for one corridor link, in the scale the policy expects."""
+        feature = self.occupancy_feature or LINK_OCCUPANCY_FEATURE
+        if feature == "fullness":
+            return self._links.fullness(traci, edge)
+        if feature == "legacy":
+            return legacy_link_feature(traci, edge)
+        raise ValueError(f"Unknown LINK_OCCUPANCY_FEATURE {feature!r}")
 
     # ── Phase Control ────────────────────────────────────────────────────────
 

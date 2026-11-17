@@ -2,10 +2,10 @@ extends CanvasLayer
 ## Lightweight flight instruments shared by both simulation scenes.
 ## No input is consumed: Tab can release the cursor for the existing controls.
 
-const INK := Color("e8f3f0")
-const MUTED := Color("a5b9b4")
-const ACCENT := Color("7ee6b7")
-const AMBER := Color("f0c27c")
+const INK := Color("eeeeee")
+const MUTED := Color("a4a4a4")
+const ACCENT := Color("f59a50")
+const AMBER := Color("f59a50")
 
 var _mode: Label
 var _status: Label
@@ -44,8 +44,9 @@ func update_flight(data: Dictionary) -> void:
 	if not is_instance_valid(_mode):
 		return
 	_mode.text = "DRONE  /  " + str(data.get("mode", "CRUISE"))
-	_speed.text = "SPEED  %04.1f u/s" % float(data.get("speed", 0.0))
-	_altitude.text = "HEIGHT  %04.1f u" % float(data.get("altitude", 0.0))
+	var unit: String = "m"
+	_speed.text = "SPEED  %04.1f %s/s" % [float(data.get("speed", 0.0)), unit]
+	_altitude.text = "HEIGHT  %04.1f %s" % [float(data.get("altitude", 0.0)), unit]
 	_view.text = "%s  ·  %d°" % [str(data.get("view", "CHASE")), roundi(float(data.get("zoom", 72.0)))]
 	var paused: bool = bool(data.get("paused", false))
 	var obstacle: bool = bool(data.get("obstacle", false))
@@ -67,8 +68,8 @@ func _panel(parent: Control) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.035, 0.067, 0.068, 0.91)
-	style.border_color = Color(0.38, 0.61, 0.55, 0.48)
+	style.bg_color = Color(0.07, 0.07, 0.07, 0.94)
+	style.border_color = Color(0.4, 0.4, 0.4, 0.48)
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(10)
 	style.content_margin_left = 14
@@ -160,7 +161,7 @@ func _build_instruments() -> void:
 		stats.add_child(item)
 	var divider := HSeparator.new()
 	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	divider.modulate = Color(0.48, 0.68, 0.62, 0.5)
+	divider.modulate = Color(0.5, 0.5, 0.5, 0.5)
 	rows.add_child(divider)
 	var help := _label("WASD fly   ·   Space/Ctrl up/down   ·   Shift boost   ·   1/2/3 speed\nF camera   ·   Wheel zoom   ·   X brake   ·   R home   ·   Tab cursor   ·   H/Esc exit", 12, MUTED)
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -193,7 +194,7 @@ class FlightCompass extends Control:
 			if x < 4 or x > size.x - 4:
 				continue
 			var major: bool = posmod(roundi(degree), 30) == 0
-			draw_line(Vector2(x, 37), Vector2(x, 42 if major else 40), Color("70958b"), 1.0)
+			draw_line(Vector2(x, 37), Vector2(x, 42 if major else 40), Color("999999"), 1.0)
 			if major:
 				var cardinal: String = ""
 				match posmod(roundi(degree), 360):
@@ -203,15 +204,15 @@ class FlightCompass extends Control:
 					270: cardinal = "W"
 				var caption: String = cardinal if not cardinal.is_empty() else str(posmod(roundi(degree), 360))
 				var width: float = font.get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
-				draw_string(font, Vector2(x - width * 0.5, 32), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("a5b9b4"))
+				draw_string(font, Vector2(x - width * 0.5, 32), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("a4a4a4"))
 		var reading := "%03d°" % posmod(roundi(heading), 360)
 		var reading_width: float = font.get_string_size(reading, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 		draw_style_box(_reading_plate(), Rect2(center - 27, -1, 54, 20))
-		draw_string(font, Vector2(center - reading_width * 0.5, 14), reading, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("e8f3f0"))
-		draw_colored_polygon(PackedVector2Array([Vector2(center - 4, 49), Vector2(center, 43), Vector2(center + 4, 49)]), Color("7ee6b7"))
+		draw_string(font, Vector2(center - reading_width * 0.5, 14), reading, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("eeeeee"))
+		draw_colored_polygon(PackedVector2Array([Vector2(center - 4, 49), Vector2(center, 43), Vector2(center + 4, 49)]), Color("f59a50"))
 	func _reading_plate() -> StyleBoxFlat:
 		var plate := StyleBoxFlat.new()
-		plate.bg_color = Color("132a28")
+		plate.bg_color = Color("202020")
 		plate.set_corner_radius_all(3)
 		return plate
 
@@ -222,33 +223,33 @@ class FlightMap extends Control:
 	var corridor: bool = false
 	func _point(at: Vector3) -> Vector2:
 		# World X is mirrored by the simulation: east is negative X.
-		var scale: float = minf(size.x, size.y) / (220.0 if not corridor else 196.0)
-		var midpoint: float = 30.0 if corridor else 0.0
+		var scale: float = minf(size.x, size.y) / (3400.0 if not corridor else 4000.0)
+		var midpoint: float = 300.0 if corridor else 0.0
 		return size * 0.5 + Vector2(-at.x, midpoint - at.z) * scale
 	func _road(a: Vector3, b: Vector3, width: float) -> void:
-		var scale: float = minf(size.x, size.y) / (220.0 if not corridor else 196.0)
-		draw_line(_point(a), _point(b), Color("68827b"), maxf(width * scale, 2.0), true)
+		var scale: float = minf(size.x, size.y) / (3400.0 if not corridor else 4000.0)
+		draw_line(_point(a), _point(b), Color("888888"), maxf(width * scale, 2.0), true)
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color("0a1719"))
+		draw_rect(Rect2(Vector2.ZERO, size), Color("141414"))
 		for n in range(1, 5):
 			var line_x: float = size.x * n / 5.0
 			var line_y: float = size.y * n / 5.0
-			draw_line(Vector2(line_x, 0), Vector2(line_x, size.y), Color(0.24, 0.36, 0.33, 0.22))
-			draw_line(Vector2(0, line_y), Vector2(size.x, line_y), Color(0.24, 0.36, 0.33, 0.22))
+			draw_line(Vector2(line_x, 0), Vector2(line_x, size.y), Color(0.35, 0.35, 0.35, 0.22))
+			draw_line(Vector2(0, line_y), Vector2(size.x, line_y), Color(0.35, 0.35, 0.35, 0.22))
 		if corridor:
-			_road(Vector3(0, 0, -58), Vector3(0, 0, 118), 6.0)
-			for z in [0.0, 30.0, 60.0]:
-				_road(Vector3(-58, 0, z), Vector3(58, 0, z), 5.0)
+			_road(Vector3(0, 0, -1500), Vector3(0, 0, 2100), 12.8)
+			for z in [0.0, 300.0, 600.0]:
+				_road(Vector3(-1500, 0, z), Vector3(1500, 0, z), 12.8)
 		else:
-			_road(Vector3(0, 0, -93.5), Vector3(0, 0, 93.5), 6.4)
-			_road(Vector3(-93.5, 0, 0), Vector3(93.5, 0, 0), 6.4)
+			_road(Vector3(0,0,-1500),Vector3(0,0,1500),12.8)
+			_road(Vector3(-1500,0,0),Vector3(1500,0,0),12.8)
 		var home: Vector2 = _point(home_position).clamp(Vector2(7, 7), size - Vector2(7, 7))
 		var pilot: Vector2 = _point(flight_position).clamp(Vector2(7, 7), size - Vector2(7, 7))
-		draw_line(home, pilot, Color(0.49, 0.9, 0.72, 0.3), 1.0, true)
+		draw_line(home, pilot, Color(0.96, 0.6, 0.31, 0.3), 1.0, true)
 		var diamond := PackedVector2Array([home + Vector2(0, -4), home + Vector2(4, 0), home + Vector2(0, 4), home + Vector2(-4, 0), home + Vector2(0, -4)])
-		draw_polyline(diamond, Color("e4d3a9"), 1.4, true)
+		draw_polyline(diamond, Color("eeeeee"), 1.4, true)
 		var angle: float = deg_to_rad(heading)
 		var triangle := PackedVector2Array()
 		for point: Vector2 in [Vector2(0, -7), Vector2(5, 5), Vector2(0, 2), Vector2(-5, 5)]:
 			triangle.append(pilot + point.rotated(angle))
-		draw_colored_polygon(triangle, Color("7ee6b7"))
+		draw_colored_polygon(triangle, Color("f59a50"))

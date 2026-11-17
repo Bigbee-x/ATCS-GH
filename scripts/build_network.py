@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Network Builder
+TrafIQ | Network Builder
 ══════════════════════════
 Generates SUMO network files from hand-crafted node + edge definitions
 using SUMO's `netconvert` tool.
@@ -177,7 +177,7 @@ def _run_netconvert(netconvert: str, nodes: Path, edges: Path, output: Path,
 def build_network(corridor: bool = False):
     mode = "Corridor (3 Junctions)" if corridor else "Single Junction"
     print("=" * 60)
-    print(f"  ATCS-GH Network Builder — {mode}")
+    print(f"  TrafIQ Network Builder — {mode}")
     print("=" * 60)
 
     # 1. Verify SUMO
@@ -199,6 +199,7 @@ def build_network(corridor: bool = False):
     if corridor:
         _run_netconvert(netconvert, CORR_NODES_FILE, CORR_EDGES_FILE,
                         CORR_OUTPUT_NET, "corridor")
+        subprocess.run([sys.executable, str(Path(__file__).with_name("export_corridor_geometry.py"))], check=True)
         print("\n" + "=" * 60)
         print("  Corridor network ready. Next steps:")
         print("  1.  python scripts/train_corridor.py")
@@ -208,6 +209,7 @@ def build_network(corridor: bool = False):
         _run_netconvert(netconvert, NODES_FILE, EDGES_FILE,
                         OUTPUT_NET, "single junction",
                         connections=CONNECTIONS_FILE)
+        subprocess.run([sys.executable, str(Path(__file__).with_name("export_corridor_geometry.py")), "--single"], check=True)
         print("\n" + "=" * 60)
         print("  Network ready. Next steps:")
         print("  1.  python scripts/run_baseline.py")
@@ -216,7 +218,7 @@ def build_network(corridor: bool = False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ATCS-GH Network Builder")
+    parser = argparse.ArgumentParser(description="TrafIQ Network Builder")
     parser.add_argument("--corridor", action="store_true",
                         help="Build 3-junction corridor network instead of single junction")
     parser.add_argument("--all", action="store_true",

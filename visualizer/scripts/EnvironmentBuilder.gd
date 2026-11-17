@@ -16,14 +16,21 @@ const SignLayout = preload("res://scripts/StreetSignLayout.gd")
 # ── Road geometry (must match Intersection.gd) ──────────────────────────────
 const Streetscape = preload("res://scripts/AccraStreetscape.gd")
 const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
+const StreetLife = preload("res://scripts/AccraStreetLife.gd")
 var _streetscape: Node3D
+# Traders, hawkers, okadas and signboards on the aprons in front of the shops.
+var _street_life: RefCounted
+# Shop front to back of footway: the dusty trading apron every Accra road has.
+var _frontage_setback: float = 6.0
+# Width behind the footway kept for lamp columns, poles and the open drain.
+var _frontage_service: float = 2.0
 
 const ROAD_LENGTH     := 90.0
-const NS_ROAD_WIDTH   := 6.4
-const E_ROAD_WIDTH    := 6.4
-const W_ROAD_WIDTH    := 6.4
+const NS_ROAD_WIDTH   := 12.8
+const E_ROAD_WIDTH    := 12.8
+const W_ROAD_WIDTH    := 12.8
 const JUNCTION_SIZE   := 7.0
-const JUNCTION_HALF   := 3.5
+const JUNCTION_HALF   := 10.4
 const SIDEWALK_WIDTH  := 1.5
 const ROAD_THICKNESS  := 0.1
 
@@ -138,6 +145,11 @@ func _ready() -> void:
 	_streetscape.name = "DetailedStreetscape"
 	add_child(_streetscape)
 	_streetscape.configure(_mat_window_warm_early, _mat_window_cool_early)
+	_street_life = StreetLife.new(_streetscape)
+	if corridor_mode:
+		_streetscape.clean_rects = preload("res://scripts/CityDistrictBuilder.gd").PAVED
+		_frontage_setback = 7.0
+		_frontage_service = StreetLife.DRAIN_OFFSET + StreetLife.DRAIN_WIDTH + 0.35
 
 	for stop in TransitLayout.stations(corridor_mode):
 		var reserved: Rect2 = TransitLayout.plot(stop)
@@ -146,7 +158,8 @@ func _ready() -> void:
 		var plot: Rect2 = SignLayout.plot(spec)
 		_add_exclusion_zone(plot.position.x, plot.position.y, plot.end.x, plot.end.y)
 	if corridor_mode:
-		_build_corridor()
+		preload("res://scripts/CityDistrictBuilder.gd").reserve_streets(self)
+		_build_metric_corridor()
 	else:
 		# Lay out districts and their access streets before filling roadside plots.
 		_build_quadrants()
@@ -171,10 +184,19 @@ func _ready() -> void:
 			for zs in [-1.0, 1.0]:
 				_scatter_trees(xs, zs, TREES_PER_QUADRANT)
 
+	_station_traders()
+
 	# Open land between the districts and the surrounding street grid gets homes,
 	# smallholdings and greenery before the grid itself is laid.
-	_infill_lots()
-	_streetscape.backdrop(corridor_mode)
+	if not corridor_mode:
+		_infill_lots()
+		_streetscape.backdrop(false)
+	if corridor_mode:
+		var city := preload("res://scripts/CityDistrictBuilder.gd").new()
+		city.build(self)
+		set_meta("city_parcels",city.parcels)
+		set_meta("city_mix",city.counts)
+		set_meta("city_footways",city.footway_surfaces)
 	_streetscape.finish()
 
 	# Hook into day/night cycle so emissive materials + OmniLights toggle correctly
@@ -486,7 +508,7 @@ func _build_arm_buildings(arm_name: String, axis: int, dir_sign: float,
 	var arm_id: int = ["north", "south", "east", "west"].find(arm_name)
 	for side in range(2):
 		var side_sign: float = -1.0 if side == 0 else 1.0
-		var face: float = side_sign * (road_width * 0.5 + SIDEWALK_WIDTH + BUILDING_OFFSET)
+		var face: float = side_sign * (road_width * 0.5 + SIDEWALK_WIDTH + _frontage_setback)
 		_build_frontage_strip(axis, dir_sign, JUNCTION_HALF + JUNCTION_MARGIN + 5.0,
 			JUNCTION_HALF + ROAD_LENGTH - ROAD_END_MARGIN, face, side_sign, arm_id * 2 + side)
 
@@ -505,6 +527,13 @@ func _build_frontage_strip(axis: int, direction: float, start: float, end: float
 			"mechanic": Vector2(8.0, 5.8), "police": Vector2(7.0, 5.0),
 			"shop": Vector2(4.6, 3.6), "kiosk": Vector2(2.6, 2.4)}
 		var size: Vector2 = sizes[kind]
+		if corridor_mode:
+			# Metre-scale premises: an anchor store has a usable trading floor,
+			# while smaller tenancies form a continuous, varied high street.
+			var metric_sizes := {"supermarket":Vector2(20,12),"mall":Vector2(27,15),
+				"mechanic":Vector2(18,15),"police":Vector2(18,12),
+				"shop":Vector2(7.5+(index%3)*1.5,8),"kiosk":Vector2(3.2,3)}
+			size = metric_sizes[kind]
 		if cursor + size.x > end:
 			break
 		var center := _compute_position(axis, direction, cursor + size.x * 0.5, face, side, size.y)
@@ -513,20 +542,76 @@ func _build_frontage_strip(axis: int, direction: float, start: float, end: float
 		if not _plot_available(plot):
 			cursor += 1.0
 			continue
-		_streetscape.commercial(center, facing, size.x, size.y, kind)
-		# Each entrance has its own paved connection over the drain to the sidewalk.
-		var path := CSGBox3D.new()
-		var access_width: float = size.x * 0.75 if kind == "mechanic" else 1.35
-		path.size = _orient_size(axis, access_width, 0.08, BUILDING_OFFSET + 0.15)
-		path.position = _compute_position(axis, direction, cursor + size.x * 0.5,
-			face - side * (BUILDING_OFFSET + 0.075), side, BUILDING_OFFSET + 0.15) + Vector3(0, 0.16, 0)
-		path.material = SurfaceMaterials.surface(2, Color("aaa89a"))
-		path.name = "ShopAccessBridge"
-		add_child(path)
+		if corridor_mode and kind == "shop" and index%3 != 0:
+			_streetscape.building(center,facing,size.x,size.y,2+index%2,true)
+		else:
+			_streetscape.commercial(center, facing, size.x, size.y, kind)
+		# Each entrance has its own slab over the drain, from the footway to the
+		# trading apron; the apron itself is swept, compacted laterite.
+		var access_width: float = size.x * 0.75 if kind == "mechanic" else 1.6
+		var kerb: float = face - side * _frontage_setback
+		var across := _compute_position(axis, direction, cursor + size.x * 0.5, kerb, side, _frontage_service)
+		_streetscape._box(Transform3D(Basis.IDENTITY, across), Vector3(0, 0.16, 0),
+			_orient_size(axis, access_width, 0.08, _frontage_service), SurfaceMaterials.surface(2, Color("aaa69a")))
+		if not corridor_mode:
+			var apron := _compute_position(axis, direction, cursor + size.x * 0.5, kerb, side, _frontage_setback)
+			_streetscape._box(Transform3D(Basis.IDENTITY, apron), Vector3(0, 0.02, 0),
+				_orient_size(axis, size.x + 1.3, 0.02, _frontage_setback), SurfaceMaterials.surface(9, Color("9c6c4e")))
+		var kept: bool = corridor_mode and preload("res://scripts/CityDistrictBuilder.gd").paved_at(center.x, center.z)
+		_street_life.frontage(center + facing * (size.y * 0.5), facing, size.x, _frontage_setback, kind, _frontage_service, kept)
 		_occupied_plots.append(plot)
 		frontage_uses.append({"kind": kind, "center": center, "plot": plot})
 		cursor += size.x + 1.25
 		index += 1
+
+
+func _open_drain(axis: int, direction: float, start: float, end: float, kerb: float) -> void:
+	## Drain behind the footway from `start` to `end` along a road, broken
+	## wherever a station, billboard plot or side-street mouth needs the ground.
+	## Open in most of town; under cover slabs through the paved districts.
+	var town = preload("res://scripts/CityDistrictBuilder.gd")
+	var side: float = signf(kerb)
+	var across: float = kerb + side * (StreetLife.DRAIN_OFFSET + StreetLife.DRAIN_WIDTH * 0.5)
+	var run_start: float = start
+	var open: bool = false
+	var run_covered: bool = false
+	var along: float = start
+	while along <= end + 0.01:
+		var at := _compute_position(axis, direction, along, across, side, 0.0)
+		var clear: bool = not _in_exclusion_zone(at.x, at.z) and along < end
+		var covered: bool = town.paved_at(at.x, at.z)
+		if open and (not clear or covered != run_covered):
+			open = false
+			_street_life.drain(_compute_position(axis, direction, run_start, across, side, 0.0),
+				_compute_position(axis, direction, along - 2.0, across, side, 0.0), [], run_covered)
+		if clear and not open:
+			run_start = along
+			run_covered = covered
+			open = true
+		along += 2.0
+
+
+func _station_traders() -> void:
+	## A trotro stop draws its own market: traders, produce heaps and a container
+	## kiosk in a row behind the bays. Scenery only; SUMO still owns the stop,
+	## the queue and boarding, and nothing here stands inside the station plot.
+	for stop in TransitLayout.stations(corridor_mode):
+		var plot: Rect2 = TransitLayout.plot(stop)
+		var side: float = float(stop.side)
+		var back: float = (plot.end.x if side > 0 else plot.position.x) + side * 2.4
+		var yaw: float = atan2(-side, 0.0)
+		for i in range(7):
+			var at := Vector3(back, 0, plot.position.y + 4.0 + i * 7.0)
+			var spot := Rect2(at.x - 1.9, at.z - 1.9, 3.8, 3.8)
+			if not _plot_available(spot):
+				continue
+			_occupied_plots.append(spot)
+			if i % 4 == 3:
+				_streetscape.commercial(at, Vector3(-side, 0, 0), 3.2, 3.0, "kiosk")
+			elif i % 4 == 1:
+				_street_life.ground_heap(at, yaw)
+			else:
+				_street_life.vendor(at, yaw)
 
 
 func _build_arm_gutters(axis: int, dir_sign: float, road_width: float) -> void:
@@ -635,16 +720,14 @@ func _build_corridor() -> void:
 ##    and −X flanks (cx already carries the side's sign). ──────────────────────
 
 func _corridor_offices(cx: float, cz: float) -> void:
-	## Commercial core: tall glassy towers + mid-rise + parking.
-	_place_residential_street(Vector3(cx - 20, 0, cz), 30.0, true, 2.5, "CommercialAccess")
-	_place_residential_street(Vector3(cx, 0, cz - 10), 40.0, false, 2.5, "CommercialAccess")
-	_place_office_tower(Vector3(cx - 12, 0, cz - 4), 12, 7.0, 7.0)
-	_place_office_tower(Vector3(cx + 2, 0, cz + 4), 10, 7.0, 6.5)
-	_place_midrise_office(Vector3(cx + 14, 0, cz - 4), 8, 6.0, 6.0)
-	_place_midrise_office(Vector3(cx - 4, 0, cz + 7), 3, 4.5, 4.5)
-	_place_parking_lot(Vector3(cx + 13, 0, cz + 6), 9.0, 5.0, 6)
-	_place_stadium_light(Vector3(cx + 6, 0, cz))
-	_add_exclusion_zone(cx - 20, cz - 12, cx + 20, cz + 12)
+	## Business quarter: three towers with real floor plates around an earth
+	## parking yard, the nearest thing the corridor has to Airport City.
+	_place_office_tower(Vector3(cx - 19, 0, cz - 2), 12, 15.0, 14.0)
+	_place_office_tower(Vector3(cx + 1, 0, cz + 1), 10, 14.0, 13.0)
+	_place_midrise_office(Vector3(cx + 20, 0, cz - 4), 8, 12.0, 12.0)
+	_place_parking_lot(Vector3(cx + 1, 0, cz - 15.5), 30.0, 9.0, 9)
+	_place_stadium_light(Vector3(cx + 11, 0, cz + 11))
+	_add_exclusion_zone(cx - 28, cz - 21, cx + 28, cz + 14)
 
 
 func _corridor_residential(cx: float, cz: float, cols: int, rows: int) -> void:
@@ -684,21 +767,21 @@ func _corridor_institutional(cx: float, cz: float) -> void:
 	## (school + church), with the rest of the block deliberately left open as a
 	## car park and trees. The keep-clear zone registered in _build_corridor stops
 	## generic frontage from cluttering this block.
-	_place_football_pitch(Vector3(cx - 8, 0, cz), 18.0, 11.0, "ADINKRA PARK", 4)
-	_place_school_building(Vector3(cx + 14, 0, cz + 3), 3, 11.0, 6.0)   # big — kept
-	_place_church(Vector3(cx + 15, 0, cz - 6))                          # big — kept
+	_place_football_pitch(Vector3(cx - 8, 0, cz), 28.0, 18.0, "ADINKRA PARK", 4)
+	_place_school_building(Vector3(cx + 26, 0, cz + 6), 3, 15.0, 9.0)
+	_place_church(Vector3(cx + 24, 0, cz - 17))
 
 	# Car park west of the pitch (serves the school + stadium), clear of its fence.
-	_place_parking_lot(Vector3(cx - 23, 0, cz), 6.0, 14.0, 12)
+	_place_parking_lot(Vector3(cx - 29, 0, cz), 8.0, 18.0, 6)
 
 	# Trees dotted around the grounds (south edge and the gap between the pitch
 	# and the school), clear of the fence, the stand and the buildings.
-	for t in [Vector3(cx - 14, 0, cz - 9), Vector3(cx - 4, 0, cz - 9),
-			Vector3(cx + 4, 0, cz - 9), Vector3(cx + 6, 0, cz + 8),
-			Vector3(cx + 9, 0, cz)]:
+	for t in [Vector3(cx - 14, 0, cz - 17), Vector3(cx - 4, 0, cz - 17),
+			Vector3(cx + 5, 0, cz - 17), Vector3(cx + 12, 0, cz + 15),
+			Vector3(cx + 12, 0, cz)]:
 		_place_tree(t)
 
-	_place_residential_lamp(Vector3(cx + 5, 0, cz))
+	_place_residential_lamp(Vector3(cx + 13, 0, cz))
 
 
 func _corridor_hospital(cx: float, cz: float) -> void:
@@ -736,13 +819,96 @@ func _corridor_industrial(cx: float, cz: float) -> void:
 
 
 func _corridor_market(cx: float, cz: float) -> void:
-	## Market + transport — dense stalls, trotro station, a mall, parking.
+	## Market + transport: dense stalls, the lorry park, a small plaza.
 	_place_dense_market_stalls(Vector3(cx - 6, 0, cz + 8), 4, 5)
 	_place_dense_market_stalls(Vector3(cx + 12, 0, cz - 8), 3, 5)
-	_place_trotro_station(Vector3(cx - 10, 0, cz - 12))
+	_lorry_park(Vector3(cx - 11, 0, cz - 11))
 	_place_shopping_mall(Vector3(cx + 12, 0, cz + 12), 14.0, 5.0, 8.0)
-	_place_parking_lot(Vector3(cx + 2, 0, cz - 2), 9.0, 5.0, 6)
 	_place_stadium_light(Vector3(cx, 0, cz))
+
+
+func _junction_corner_life() -> void:
+	## Each junction corner is a trading spot: an umbrella seller, hawkers who
+	## work the queues from the kerb, and riders or direction boards behind them.
+	## Everything stands on the corner apron, clear of the footway, the crossing
+	## landings and the signal hardware.
+	for j in range(3):
+		var widths := preload("res://scripts/CorridorGeometry.gd").widths(j)
+		for sx in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				var cross: float = widths.y if sx < 0 else widths.z
+				var corner := Vector3(sx * 13.2, 0, j * 300.0 + sz * (cross * 0.5 + 6.8))
+				if _in_exclusion_zone(corner.x, corner.z):
+					continue
+				var yaw: float = atan2(-sx, -sz)
+				_street_life.vendor(corner, yaw)
+				_street_life.person(corner + Vector3(-sx * 2.6, 0, sz * 1.4), yaw + 0.5, false, 1)
+				_street_life.person(corner + Vector3(sx * 1.6, 0, -sz * 2.8), yaw - 0.6, false, 1)
+				if posmod(j + int(sx) + int(sz), 2) == 0:
+					for i in range(2):
+						_street_life.okada(corner + Vector3(sx * (3.2 + i), 0, sz * 3.4), yaw + PI * 0.5, i == 0)
+				else:
+					_street_life.sign_cluster(corner + Vector3(sx * 3.6, 0, sz * 3.6), yaw, 3)
+
+
+func _corridor_footbridge(z: float) -> void:
+	## Pedestrian footbridge across the main road. The piers and stairs stand on
+	## the aprons behind the drain; the ground at each foot is kept open.
+	var span: float = 24.6
+	for side in [-1.0, 1.0]:
+		_add_exclusion_zone(minf(side * 9.6, side * 17.0), z - 2.4, maxf(side * 9.6, side * 17.0), z + 14.2)
+		_street_life.vendor(Vector3(side * 14.6, 0, z + 5.0), -side * PI * 0.5)
+		_street_life.person(Vector3(side * 14.2, 0, z + 9.0), side * 0.6, false, 1)
+	_streetscape.footbridge(Vector3(0, 0, z), span, 1.0, "VALIBORN TECH\nBuild Beyond.")
+	for i in range(3):
+		_street_life.person(Vector3(-6.0 + i * 5.0, 5.7, z + 0.5 - i * 0.4), PI * 0.5 if i != 1 else -PI * 0.5)
+
+
+func _lorry_park(center: Vector3) -> void:
+	## Trotro and taxi yard beside the market: minibuses loading in ranks, the
+	## bookman's shed, traders and waiting passengers. Parked scenery only; the
+	## simulated trotro stops are the SUMO stations on the main road.
+	var w: float = 32.0
+	var d: float = 24.0
+	_add_exclusion_zone(center.x - w * 0.5 - 1.0, center.z - d * 0.5 - 1.0, center.x + w * 0.5 + 1.0, center.z + d * 0.5 + 1.0)
+	var frame := Transform3D(Basis.IDENTITY, center)
+	_streetscape._box(frame, Vector3(0, 0.02, 0), Vector3(w, 0.04, d), SurfaceMaterials.surface(9, Color("8a5c44")))
+	var bus_size: Vector3 = preload("res://scripts/CorridorGeometry.gd").vehicle_size("trotro")
+	for i in range(8):
+		var bus: Node3D = _streetscape.FleetActor.new()
+		bus.configure("trotro", 11 + i * 5)
+		# Place first: assigning a transform would discard the metre-scale sizing.
+		bus.transform = frame * Transform3D(Basis(Vector3.UP, (PI if i < 4 else 0.0) + sin(float(i) * 1.7) * 0.07),
+			Vector3(-w * 0.5 + 5.0 + (i % 4) * 4.4, 0.05, -d * 0.5 + 5.5 + (i / 4) * 9.5))
+		bus.set_metric_dimensions(bus_size)
+		bus.name = "ParkedTrotro"
+		_streetscape.add_child(bus)
+		if i % 2 == 0:
+			_street_life.person(frame * Vector3(-w * 0.5 + 7.2 + (i % 4) * 4.4, 0, -d * 0.5 + 6.0 + (i / 4) * 9.5), PI * 0.5, false, 1 if i % 4 == 0 else 0)
+	for i in range(4):
+		var taxi: Node3D = _streetscape.FleetActor.new()
+		taxi.configure("car", 2 + i * 3)
+		taxi.transform = frame * Transform3D(Basis(Vector3.UP, PI * 0.5 + sin(float(i) * 2.1) * 0.1), Vector3(w * 0.5 - 4.0, 0.05, -d * 0.5 + 4.0 + i * 3.2))
+		taxi.set_metric_dimensions(Vector3(1.8, 1.5, 4.5))
+		taxi.name = "ParkedTaxi"
+		_streetscape.add_child(taxi)
+	# Bookman's shed: zinc on timber posts, benches under it, the park's board above.
+	var shed := frame * Transform3D(Basis.IDENTITY, Vector3(w * 0.5 - 7.0, 0, d * 0.5 - 3.6))
+	_streetscape._hip_roof(shed, 11.0, 5.0, 3.0, 1.0, true)
+	for x in [-5.0, 0.0, 5.0]:
+		for z in [-2.1, 2.1]:
+			_streetscape._beam(shed, Vector3(x, 0, z), Vector3(x, 3.0, z), 0.14, SurfaceMaterials.surface(6, Color("6a5638")))
+	for x in [-3.0, 2.0]:
+		_streetscape._box(shed, Vector3(x, 0.45, 0.8), Vector3(3.6, 0.08, 0.4), SurfaceMaterials.surface(6, Color("7c6746")))
+		_street_life.person(shed * Vector3(x - 0.8, 0, 0.75), PI, true, 0, false)
+		_street_life.person(shed * Vector3(x + 0.6, 0, 0.75), PI, true, 0, false)
+	_streetscape._sign(shed, "ACHIMOTA LORRY PARK\nKumasi  •  Nsawam  •  Circle  •  Madina", Vector3(0, 4.6, -2.3), 9.0, 1.2, Color("f2c318"))
+	for x in [-4.0, 4.0]:
+		_streetscape._beam(shed, Vector3(x, 3.0, -2.3), Vector3(x, 4.2, -2.3), 0.1, SurfaceMaterials.solid(Color("4a4f50"), 0.5, 0.6))
+	for i in range(5):
+		_street_life.vendor(frame * Vector3(-w * 0.5 + 3.5 + i * 5.2, 0, d * 0.5 - 1.6), 0.0)
+	_street_life.handcart(frame * Vector3(-w * 0.5 + 3.0, 0, 1.0), 0.3)
+	_street_life.ground_heap(frame * Vector3(2.0, 0, -d * 0.5 + 1.6), PI)
 
 
 func _place_airport(_cx: float, _cz: float) -> void:
@@ -753,7 +919,9 @@ func _place_airport(_cx: float, _cz: float) -> void:
 	_add_exclusion_zone(access.position.x, access.position.y, access.end.x, access.end.y)
 	var airport = preload("res://scripts/AirportBuilder.gd").new()
 	airport.name = "Airport"
+	airport.scale = Vector3.ONE*layout.SCALE
 	add_child(airport)
+	_place_residential_street(Vector3(247.5,0,19.1),31.8,true,10.5,"AirportAccess")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -834,8 +1002,8 @@ func _build_quadrants() -> void:
 	# footway and bridging the open drain; the station's other driveway stays closed.
 	# The lane runs just south of the footway's street lamp at z -14.5.
 	_place_petrol_station(Vector3(17.2, 0, -20.6), Vector3.LEFT, -1.0, 0.0, 0.0, false)
-	_streetscape.access_lane(Vector3(3.2, 0, -15.8), Vector3(13.0, 0, -15.8), 2.1)
-	_add_exclusion_zone(3.2, -17.0, 13.0, -14.6)
+	_streetscape.access_lane(Vector3(6.4, 0, -15.8), Vector3(13.0, 0, -15.8), 2.1)
+	_add_exclusion_zone(6.4, -17.0, 13.0, -14.6)
 
 
 # ─── NE: Commercial / Office district ───────────────────────────────────────
@@ -948,25 +1116,26 @@ func _build_industrial_quadrant(xs: float, zs: float) -> void:
 # ─── SE: Residential compound district ──────────────────────────────────────
 
 func _build_residential_quadrant(xs: float, zs: float) -> void:
+	var offset := Vector3(xs*4.0,0,zs*4.0)
 	## SE quadrant — compound houses in a loose 3x3 grid.
 	var grid_positions: Array = [
-		Vector3(xs * 24, 0, zs * 26),
-		Vector3(xs * 46, 0, zs * 26),
-		Vector3(xs * 68, 0, zs * 26),
-		Vector3(xs * 24, 0, zs * 50),
-		Vector3(xs * 46, 0, zs * 50),
-		Vector3(xs * 68, 0, zs * 50),
+		Vector3(xs * 24, 0, zs * 26) + offset,
+		Vector3(xs * 46, 0, zs * 26) + offset,
+		Vector3(xs * 68, 0, zs * 26) + offset,
+		Vector3(xs * 24, 0, zs * 50) + offset,
+		Vector3(xs * 46, 0, zs * 50) + offset,
+		Vector3(xs * 68, 0, zs * 50) + offset,
 		# Row 3 aligned with the other rows so compounds don't clip the N-S
 		# streets at x=35 and x=57 (14-wide compounds extend ±7 from center).
-		Vector3(xs * 24, 0, zs * 74),
-		Vector3(xs * 46, 0, zs * 74),
-		Vector3(xs * 68, 0, zs * 74),
+		Vector3(xs * 24, 0, zs * 74) + offset,
+		Vector3(xs * 46, 0, zs * 74) + offset,
+		Vector3(xs * 68, 0, zs * 74) + offset,
 	]
 	for pos in grid_positions:
 		var stories: int = 1 if _rng.randf() < 0.4 else 2
-		if pos.is_equal_approx(Vector3(xs * 46, 0, zs * 74)):
+		if pos.is_equal_approx(Vector3(xs * 46, 0, zs * 74) + offset):
 			_place_apartment(pos, 11, 10.0, 9.0)
-		elif pos.is_equal_approx(Vector3(xs * 68, 0, zs * 50)):
+		elif pos.is_equal_approx(Vector3(xs * 68, 0, zs * 50) + offset):
 			_place_apartment(pos, 9, 10.0, 9.0)
 		else:
 			_place_house_compound(pos, 14.0, stories)
@@ -980,24 +1149,24 @@ func _build_residential_quadrant(xs: float, zs: float) -> void:
 	var street_center: float = 45.0
 	for street_x in [35.0, 57.0]:
 		_place_residential_street(
-			Vector3(xs * street_x, 0, zs * street_center),
+			Vector3(xs * street_x, 0, zs * street_center) + offset,
 			street_len, true
 		)
 	for street_z in [38.0, 62.0]:
 		_place_residential_street(
-			Vector3(xs * street_center, 0, zs * street_z),
+			Vector3(xs * street_center, 0, zs * street_z) + offset,
 			street_len, false
 		)
 
 	# Prevent trees from spawning on the new asphalt.
-	var z_lo: float = min(zs * 5.0, zs * 85.0)
-	var z_hi: float = max(zs * 5.0, zs * 85.0)
+	var z_lo: float = min(zs * 9.0, zs * 89.0)
+	var z_hi: float = max(zs * 9.0, zs * 89.0)
 	for street_x in [35.0, 57.0]:
-		_add_exclusion_zone(xs * street_x - 1.6, z_lo, xs * street_x + 1.6, z_hi)
-	var x_lo: float = min(xs * 5.0, xs * 85.0)
-	var x_hi: float = max(xs * 5.0, xs * 85.0)
+		_add_exclusion_zone(xs * (street_x+4.0) - 1.6, z_lo, xs * (street_x+4.0) + 1.6, z_hi)
+	var x_lo: float = min(xs * 9.0, xs * 89.0)
+	var x_hi: float = max(xs * 9.0, xs * 89.0)
 	for street_z in [38.0, 62.0]:
-		_add_exclusion_zone(x_lo, zs * street_z - 1.6, x_hi, zs * street_z + 1.6)
+		_add_exclusion_zone(x_lo, zs * (street_z+4.0) - 1.6, x_hi, zs * (street_z+4.0) + 1.6)
 
 	# Street lamps at intersections + near the main-road approaches + far end.
 	# N-S streets run at x=35 and x=57 (width 3 → edges at ±1.5 from center).
@@ -1009,12 +1178,12 @@ func _build_residential_quadrant(xs: float, zs: float) -> void:
 		Vector2(37, 15), Vector2(59, 15),    # east-side curbs near main-road approach
 		Vector2(37, 82), Vector2(59, 82),    # east-side curbs at far dead-end
 	]:
-		_place_residential_lamp(Vector3(xs * lp.x, 0, zs * lp.y))
+		_place_residential_lamp(Vector3(xs * lp.x, 0, zs * lp.y) + offset)
 
 	# Three small residential parking lots tucked against the quadrant edges.
-	_place_parking_lot(Vector3(xs * 15, 0, zs * 42), 5.0, 3.0, 3)
-	_place_parking_lot(Vector3(xs * 82, 0, zs * 42), 5.0, 3.0, 3)
-	_place_parking_lot(Vector3(xs * 40, 0, zs * 88), 6.0, 3.0, 4)
+	_place_parking_lot(Vector3(xs * 15, 0, zs * 42) + offset, 5.0, 3.0, 3)
+	_place_parking_lot(Vector3(xs * 82, 0, zs * 42) + offset, 5.0, 3.0, 3)
+	_place_parking_lot(Vector3(xs * 40, 0, zs * 88) + offset, 6.0, 3.0, 4)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1039,6 +1208,11 @@ func _place_shopping_mall(center: Vector3, w: float, _h: float, d: float) -> voi
 
 func _place_parking_lot(center: Vector3, w: float, d: float, num_cars: int) -> void:
 	_add_exclusion_zone(center.x - w * 0.5, center.z - d * 0.5, center.x + w * 0.5, center.z + d * 0.5)
+	if corridor_mode:
+		# Metre-scale cars on a compacted yard; the kit's marked lot is drawn for
+		# the single junction's smaller district layouts.
+		_streetscape.yard_parking(center, w, d, num_cars)
+		return
 	_streetscape.parking_lot(center, w, d, num_cars)
 
 
@@ -1593,8 +1767,8 @@ func _arterial_rects() -> Array[Rect2]:
 	## The simulated roads as tools/validate_zoning.gd sees them.
 	var roads: Array[Rect2] = []
 	if not corridor_mode:
-		roads.append(Rect2(-3.2, -93.5, 6.4, 187.0))
-		roads.append(Rect2(-93.5, -3.2, 187.0, 6.4))
+		roads.append(Rect2(-6.4,-1500.0,12.8,3000.0))
+		roads.append(Rect2(-1500.0,-6.4,3000.0,12.8))
 		return roads
 	roads.append(Rect2(-3.0, -58.0, 6.0, 176.0))
 	for i in range(3):
@@ -1912,3 +2086,61 @@ func _infill_greenery(rng: RandomNumberGenerator) -> Vector2i:
 			_occ_mark(spot)
 			shrubs += 1
 	return Vector2i(trees, shrubs)
+
+
+func _build_metric_corridor() -> void:
+	# Use existing detailed premises at metre-scale road setbacks. Reserve the
+	# airport/stations before placing frontage; keep corners open for sightlines.
+	_place_airport(38, 96)
+	_corridor_residential(58, -95, 3, 3)
+	_corridor_offices(-65, 145)
+	_corridor_institutional(65, 445)
+	_corridor_hospital(-65, 445)
+	_corridor_industrial(-70, 720)
+	_corridor_market(-55, -95)
+	# Roadside landmarks claim their ground before the shop rows are laid: two
+	# Sankofa filling stations, the footbridge between the school and the clinic,
+	# and three telecom masts.
+	_place_petrol_station(Vector3(15.3, 0, 236), Vector3.LEFT, 1.0, 3.2, 1.5, true)
+	_place_petrol_station(Vector3(-15.3, 0, 672), Vector3.RIGHT, -1.0, 3.2, 1.5, true)
+	_corridor_footbridge(462.0)
+	for mast in [Vector3(128, 0, 346), Vector3(-100, 0, 622), Vector3(96, 0, -52)]:
+		_add_exclusion_zone(mast.x - 6.4, mast.z - 6.4, mast.x + 6.4, mast.z + 6.4)
+		_streetscape.telecom_mast(mast, 44.0 if mast.x > 0 else 38.0)
+	for j in range(3):
+		for side in [-1.0, 1.0]:
+			# J0's eastern apartment stays clear of the airport access street.
+			_place_apartment(Vector3(side*52, 0, j*300.0+(40 if j == 0 and side > 0 else 65)), 8+j*2, 16, 12)
+			for end in [-1.0,1.0]:
+				# Modest corner blocks define the junction without filling its
+				# sightlines or turning it into a cluster of identical towers.
+				_streetscape.building(Vector3(side*25,0,j*300.0+end*25),
+					Vector3(0,0,-end),14,12,3+posmod(j+int(side),2),true)
+	_reserve_district_buildings()
+	for j in range(3):
+		_placement_origin = Vector3(0, 0, j*300.0)
+		var widths := preload("res://scripts/CorridorGeometry.gd").widths(j)
+		for direction in [-1.0, 1.0]:
+			var road_width: float = widths.y if direction < 0 else widths.z
+			for side in [-1.0, 1.0]:
+				var face: float = side*(road_width*0.5+1.5+_frontage_setback)
+				_build_frontage_strip(0,direction,30,145,face,side,j*2+int(side>0))
+				_open_drain(0,direction,22,150,side*(road_width*0.5+1.5))
+	_placement_origin = Vector3.ZERO
+	_junction_corner_life()
+	for side in [-1.0, 1.0]:
+		var face: float = side*(6.4+1.5+_frontage_setback)
+		for stretch in [Vector2(-140,-30),Vector2(30,270),Vector2(330,570),Vector2(630,820)]:
+			_build_frontage_strip(1,1,stretch.x,stretch.y,face,side,int(absf(stretch.x)/100)+int(side>0))
+			_open_drain(1,1,stretch.x-8,stretch.y+8,side*(6.4+1.5))
+		# Shade trees stand on the trading apron behind the drain, never in the
+		# footway: neem and mango every thirty-odd metres, traders beneath them.
+		var along: float = -134.0
+		while along < 816.0:
+			var z: float = along + sin(along * 0.37 + side) * 5.0
+			var near_junction: bool = false
+			for j in range(3):
+				if absf(z - j * 300.0) < 36.0: near_junction = true
+			if not near_junction and not _in_exclusion_zone(side * 11.8, z):
+				_streetscape.tree(Vector3(side * 11.8, 0, z), false, 8, 12, 1.45)
+			along += 34.0

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Metrics Logger
+TrafIQ | Metrics Logger
 ═════════════════════════
 Reusable class for collecting per-step simulation metrics via TraCI.
 

@@ -1,8 +1,47 @@
-# ATCS-GH 3D Visualizer
+# TrafIQ 3D Visualizer
 
-Real-time 3D visualisation of the ATCS-GH adaptive traffic control system, powered by **Valiborn Technologies**.
+Real-time 3D visualisation of the TrafIQ adaptive traffic control system, powered by **Valiborn Technologies**.
 
-Watch a Double DQN AI agent control the **Achimota/Neoplan Junction** (N6 Nsawam Road, Accra), or an entire **3-junction corridor**, live in a Godot 4 3D environment — detailed procedural architecture, weathered materials, and a shared vehicle fleet with working trotro pickups.
+The active experience is the **N6 three-junction corridor**: J0 Achimota, J1 Asylum Down and J2 Nima. The single-junction launcher option is retired; legacy files remain for compatibility and historical experiments. The 3D world includes detailed architecture, weather and trotro pickups.
+
+The signal agents operate on semantic traffic data independently of this artwork. See [the traffic observation contract](../docs/traffic-observation-contract.md).
+
+## Corridor control interface
+
+The monochrome/orange HUD keeps only essential metrics and compact J0/J1/J2
+summaries visible. Click a junction to focus it. Open **Traffic** for measured
+queues and history, **Scene** for appearance/visibility, or **Controls** for
+server-confirmed mode changes and a clearly selected manual-request target.
+Escape closes the inspector first. See [interface details and checks](../docs/corridor-interface.md).
+
+## Compact corridor town
+
+The developed town is concentrated in a 368 m × 1 km strip around the three
+junctions. Four separately planned sections replace the repeated housing rows:
+commercial courts, a civic/shopping district, a northern residential/workshop
+neighbourhood and a covered market district. Varied building wings share yards,
+parking and service canopies. Smaller premises fill gaps between the anchors.
+Non-repeating terrain, continuous shopfront paving and irregular tree groups
+replace the brown tiled ground and uniformly spaced planting.
+The airport uses the detailed two-stand terminal, aircraft and service vehicles
+in a smaller precinct beside the town. Press **4** outside drone mode to see it.
+Local streets and buildings are scenery; the metric SUMO network is unchanged.
+
+## Road scale
+
+Both scenes render their existing SUMO networks at **one unit per metre**:
+300 m between junctions, 3.2 m motor lanes, and side roads with their actual
+6.4 m or 12.8 m carriageway widths. Vehicles, pedestrian paths, crossings and
+stop bars share that geometry. Buildings, signals, lights and boarding bays
+have been repositioned around it. The synthetic network and trained models
+are unchanged. All four single-junction arms now have 12.8 m carriageways,
+and its ground-level camera uses a 1.62 m eye height.
+See [geometry and validation notes](../docs/streetscape.md).
+
+**1 / 2 / 3** focus J0 / J1 / J2, **0** shows the corridor, **R** resets, and
+**H** flies the drone. Number keys select speed presets while flying.
+Outside drone mode, **5 / 6 / 7 / 8** frame the four town sections in the order
+listed above; **4** frames the airport.
 
 ## Realistic Accra streetscape
 
@@ -43,8 +82,10 @@ source locations, offline previews, and the scene checks.
 
 ## Live traffic startup
 
-Use **F5** and choose Single Junction or N6 Corridor. Direct scene play with
-**F6** also starts the matching traffic backend. Startup waits for real SUMO
+Use **F5** and select **Launch corridor**. The lobby offers a route schematic,
+real session status, logs and an optional browser dashboard. Returning with
+Escape offers **Resume corridor** if its session is still running. Direct
+corridor scene play with **F6** also starts the corridor backend. Startup waits for real SUMO
 state data before the launcher opens the scene. If startup fails, the launcher
 keeps the error and server log visible instead of opening an empty town.
 
@@ -92,20 +133,18 @@ The launcher selects a free traffic port, starts the correct WebSocket server, o
 
 1. Open **Godot 4.6+** → Import → `visualizer/project.godot`
 2. Press **F5**
-3. Pick a simulation card:
-   - **Single Junction** — Achimota/Neoplan (J0 only)
-   - **N6 Corridor** — 3 junctions (J0, J1, J2) with green-wave coordination
-4. Wait a moment — the server boots, the dashboard opens in your browser, the 3D scene loads
+3. Choose whether to open the live dashboard, then select **Launch corridor**
+4. Wait for live traffic readiness; the 3D scene then opens. Failure stays in the lobby with a log and retry action.
 
 ### What the launcher does behind the scenes
 
 | Step | What happens | File |
 |------|--------------|------|
 | 1 | Select a free traffic port starting at 8765; preserve existing port owners | `ServerManager.gd` |
-| 2 | Spawn `visualizer_server.py` or `corridor_visualizer_server.py` | `ServerManager.gd` |
+| 2 | Spawn `corridor_visualizer_server.py` | `ServerManager.gd` |
 | 3 | Start `dashboard/app.py` (Flask) if port 5050 is available | `ServerManager.gd` |
 | 4 | Open `http://127.0.0.1:5050?tab=live` in an available Chromium/Firefox browser, falling back to the default | `ServerManager.gd` |
-| 5 | Load the correct scene and connect via WebSocket | `Main.gd` / `CorridorMain.gd` |
+| 5 | Load the corridor scene and connect via WebSocket | `CorridorMain.gd` |
 | 6 | Clean shutdown: stop only the traffic and dashboard processes started by this launcher | `ServerManager.gd` |
 
 ## Manual Workflow (terminal)
@@ -113,12 +152,6 @@ The launcher selects a free traffic port, starts the correct WebSocket server, o
 If you prefer running the Python side by hand:
 
 ```bash
-# Single-junction AI
-python scripts/visualizer_server.py               # AI mode
-python scripts/visualizer_server.py --demo        # Random actions (no trained model)
-python scripts/visualizer_server.py --manual      # Control from Godot HUD
-python scripts/visualizer_server.py --speed 10    # 10× faster simulation
-
 # 3-junction corridor
 python scripts/corridor_visualizer_server.py
 
@@ -126,7 +159,7 @@ python scripts/corridor_visualizer_server.py
 python dashboard/app.py                           # http://localhost:5050
 ```
 
-Then open `visualizer/project.godot` in Godot and press **F5** — skip the launcher by setting the main scene to `Main.tscn` or `CorridorMain.tscn` directly.
+For an externally managed server, open `CorridorMain.tscn`, set `WebSocketClient.auto_start_server = false` and its matching server URL, then use **F6**. The normal F5 launcher owns its own server session.
 
 ## Controls
 
@@ -140,7 +173,8 @@ Then open `visualizer/project.godot` in Godot and press **F5** — skip the laun
 | **Time-of-Day Slider** | Manually set sun position (in HUD top-left) |
 | **Time Mode Toggle** | Switch between Manual / Auto-Cycle / Sim-Linked day-night |
 | **Override Buttons** | Force green on N/S/E/W (bottom bar — single junction) |
-| **Junction Selector** | Switch focus between J0/J1/J2 (corridor mode) |
+| **1 / 2 / 3, outside drone mode** | Focus J0 / J1 / J2 (corridor) |
+| **0, outside drone mode** | Show all three corridor junctions |
 
 ### Drone navigation
 
@@ -170,7 +204,7 @@ suspended camera gimbal that counteracts body tilt.
 The drone remembers its position, view and speed between toggles until the
 scene reloads. Losing window focus engages hover and releases the cursor;
 press **Tab** to resume. Simulation traffic keeps running while you use the
-dashboard. Height and speed use the scene's compressed world units (`u`).
+dashboard. Both scenes report height and speed in metres and m/s.
 Rain follows the active camera at its current altitude.
 
 ## Modes
@@ -261,11 +295,11 @@ Random actions (60% HOLD, 40% random protected phase). No trained model required
 
 | Problem | Cause / Fix |
 |---------|-------------|
-| Sim keeps connecting/reconnecting | Check the Godot output for the WebSocket close code. Code **1009, "Message too big"** occurred when dense traffic exceeded the old 64 KiB receive buffer. The client and startup probe now use a **16 MiB** receive buffer; stop and restart the running viewer to load the fix. If the issue persists, inspect the Launcher Log panel or `/tmp/atcs_gh_server.log`. |
-| No live traffic / connection pending | Check the Launcher Log panel or `/tmp/atcs_gh_server.log` for startup errors. The launcher selects a free traffic port starting at **8765** and preserves other applications using those ports. For an externally started server, ensure the client URL matches its port. |
+| Sim keeps connecting/reconnecting | Check the Godot output for the WebSocket close code. Code **1009, "Message too big"** occurred when dense traffic exceeded the old 64 KiB receive buffer. The client and startup probe now use a **16 MiB** receive buffer; stop and restart the running viewer to load the fix. If the issue persists, inspect the Launcher Log panel or `/tmp/trafiq_server.log`. |
+| No live traffic / connection pending | Check the Launcher Log panel or `/tmp/trafiq_server.log` for startup errors. The launcher selects a free traffic port starting at **8765** and preserves other applications using those ports. For an externally started server, ensure the client URL matches its port. |
 | "SUMO not found" in server log | Set `SUMO_HOME` or install: `pip install eclipse-sumo` |
 | "Model not found" | Use `--demo` mode, or train first: `python scripts/train_agent.py` |
-| Dashboard doesn't open | Check `/tmp/atcs_gh_dashboard.log` and the Godot output. If port **5050** is occupied, the launcher skips opening its dashboard and leaves the existing application running; traffic simulation continues. Close that application yourself only if you want to free the dashboard port. |
+| Dashboard doesn't open | Check `/tmp/trafiq_dashboard.log` and the Godot output. If port **5050** is occupied, the launcher skips opening its dashboard and leaves the existing application running; traffic simulation continues. Close that application yourself only if you want to free the dashboard port. |
 | Godot can't import project | Ensure you're using Godot **4.6+ (Standard, not .NET)**. |
 | Vehicles invisible / scene black | Press **R** to reset the camera — it may have drifted out of view. |
 | Traffic lights not updating | Usually a runtime type error in `Intersection.gd`. Check the Errors panel in the Godot debugger. |
@@ -277,7 +311,7 @@ visualizer/
 ├── project.godot                   # Godot 4 project config (main scene: LauncherMenu.tscn)
 ├── icon.svg
 ├── scenes/
-│   ├── LauncherMenu.tscn           # Entry scene — sim-selection cards + log panel
+│   ├── LauncherMenu.tscn           # Entry scene — corridor lobby + session log
 │   ├── Main.tscn                   # Single-junction 3D world
 │   └── CorridorMain.tscn           # 3-junction corridor 3D world
 ├── scripts/
@@ -300,8 +334,8 @@ visualizer/
 
 ## Screenshots
 
-The launcher menu, single-junction sim at noon, corridor view, and night-time scene with street lights / headlights are all worth capturing. Contributions welcome — add under `docs/screenshots/`.
+The corridor launcher, street view at noon, overview, and night-time scene with street lights / headlights are all worth capturing. Contributions welcome — add under `docs/screenshots/`.
 
 ---
 
-*Built for the ATCS-GH project by Valiborn Technologies.*
+*Built for the TrafIQ project by Valiborn Technologies.*

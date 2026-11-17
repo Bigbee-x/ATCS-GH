@@ -8,10 +8,9 @@ var _rain_collision: GPUParticlesCollisionHeightField3D
 var _rain_audio: AudioStreamPlayer
 ## Weather system layered on top of TimeOfDayManager.
 ##
-## Supports four modes:
+## Supports three modes:
 ##   CLEAR     — default, no modifiers
 ##   OVERCAST  — grey sky, dim sun, light haze
-##   HARMATTAN — Accra's Dec–Feb dry-season dust (warm yellow-brown haze)
 ##   RAIN      — dark sky, heavy fog, GPU-particle rain falling over the scene
 ##
 ## Each frame:
@@ -29,8 +28,10 @@ var _rain_audio: AudioStreamPlayer
 signal weather_changed(weather_idx: int)
 
 # ── Weather modes ───────────────────────────────────────────────────────────
-enum Weather { CLEAR, OVERCAST, HARMATTAN, RAIN }
-const WEATHER_NAMES: Array = ["Clear", "Overcast", "Harmattan", "Rain"]
+# Harmattan haze was removed at the owner's request: the indices are now
+# 0 Clear, 1 Overcast, 2 Rain everywhere (UI, HUD, tools and validators).
+enum Weather { CLEAR, OVERCAST, RAIN }
+const WEATHER_NAMES: Array = ["Clear", "Overcast", "Rain"]
 
 var weather: Weather = Weather.CLEAR
 
@@ -175,20 +176,6 @@ func _preset_for(w: Weather) -> WeatherMods:
 			m.fog_color_tint = Color(0.65, 0.68, 0.72)
 			m.fog_tint_strength = 0.55
 			m.rain_intensity = 0.0
-		Weather.HARMATTAN:
-			m.cloud_cover = 0.18
-			m.dust = 1.0
-			m.wind = Vector3(-4.0, 0, 2.2)
-			# Accra dry-season dust haze — warm yellow-brown, low visibility.
-			m.sun_energy_mul = 0.60
-			m.ambient_energy_mul = 0.85
-			m.sky_top_tint = Color(0.72, 0.65, 0.48)
-			m.sky_horizon_tint = Color(0.82, 0.72, 0.52)
-			m.sky_tint_strength = 0.65
-			m.fog_density_add = 0.006
-			m.fog_color_tint = Color(0.78, 0.68, 0.50)
-			m.fog_tint_strength = 0.65
-			m.rain_intensity = 0.0
 		Weather.RAIN:
 			m.cloud_cover = 1.0
 			m.wind = Vector3(6.0, 0, 2.3)
@@ -255,9 +242,9 @@ func _apply_weather_layer() -> void:
 
 	# Fog — add density (capped), tint color (scaled)
 	if _environment:
-		var density_add: float = m.fog_density_add * fog_scale
+		var density_add: float = m.fog_density_add * fog_scale * 0.12
 		var new_density: float = minf(_environment.fog_density + density_add, FOG_DENSITY_MAX)
-		if new_density > 0.0005:
+		if new_density > 0.00005:
 			_environment.fog_enabled = true
 			_environment.fog_density = new_density
 			if m.fog_tint_strength > 0.001:

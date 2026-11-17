@@ -49,6 +49,11 @@ static func surface(kind: int, color: Color) -> ShaderMaterial:
 		material.set_shader_parameter("roughness_map", maps[2])
 		material.set_shader_parameter("tile_size", 3.0 if kind == 1 else (4.0 if kind in [3, 8] else 2.0))
 	_cache[key] = material
+	if color != Color.WHITE:
+		# Batched geometry draws this colour through the white material of the
+		# same kind, as an instance colour: one draw call per kind, not per paint.
+		material.set_meta("paint", color)
+		material.set_meta("shared", surface(kind, Color.WHITE))
 	return material
 
 static func foliage() -> ShaderMaterial:
@@ -66,6 +71,20 @@ static func solid(color: Color, metallic: float = 0.0, roughness: float = 0.75) 
 		material.albedo_color = color
 		material.metallic = metallic
 		material.roughness = roughness
+		material.set_meta("paint", color)
+		material.set_meta("shared", _tinted(metallic, roughness))
+		_cache[key] = material
+	return _cache[key]
+
+## White finish whose albedo is the per-instance colour of a MultiMesh batch.
+static func _tinted(metallic: float, roughness: float) -> StandardMaterial3D:
+	var key := "tinted:%.1f:%.1f" % [metallic, roughness]
+	if not _cache.has(key):
+		var material := StandardMaterial3D.new()
+		material.vertex_color_use_as_albedo = true
+		material.vertex_color_is_srgb = true
+		material.metallic = snappedf(metallic, 0.1)
+		material.roughness = snappedf(roughness, 0.1)
 		_cache[key] = material
 	return _cache[key]
 

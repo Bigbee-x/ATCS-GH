@@ -1,16 +1,50 @@
-# CLAUDE.md — ATCS-GH project brief (authoritative current state)
+# CLAUDE.md — TrafIQ project brief (authoritative current state)
 
-> Read this first — it is the working engineering brief, current as of
-> **2026-07-03**. `README.md` was rewritten 2026-07-03 (PR #27) and is now the
-> accurate public-facing overview with multi-seed results; keep BOTH in sync
-> when results or architecture change. `plan.md` and `docs/phase1_notes.md`
-> are historical design records (delivered).
+Project branding is **TrafIQ** (renamed from ATCS-GH). The active checkout is
+still `/Users/osborn/Developer/ATCS-GH`. Preserve existing versioned sensor
+schema IDs and archived experiment/network files; their identifiers and hashes
+are compatibility contracts, not display branding.
+
+> Read this first. Active scope was updated **2026-11-16**. The July history
+> and benchmark sections below are retained reference; current corridor
+> deployment reports and the active-scope section take precedence. Keep this
+> brief and `README.md` in sync when scope or architecture changes. `plan.md`
+> and `docs/phase1_notes.md` are historical design records.
+
+## Active scope — 16 November 2026
+
+Interface branding is **monochrome with an orange accent**, not green. The
+corridor scene uses `CorridorHUD.gd` with collapsible Traffic/Scene/Controls
+inspectors; see `docs/corridor-interface.md`. Preserve its measured-data and
+selected-junction command contracts. `UI.gd` is legacy single-junction UI.
+
+**N6 corridor only:** J0 Achimota → J1 Asylum Down → J2 Nima. The redesigned
+launcher has one corridor launch/resume action; the single-junction experience
+is retired from the product. Keep legacy files/checkpoints for historical
+reproduction and shared dependencies, not as a new development target.
+
+The policy/runtime is Python + SUMO (`ai/corridor_env.py`,
+`ai/corridor_controller.py`, `scripts/corridor_runtime.py`); the three shipped
+policies use 46 observations and five actions. Godot is the presentation client.
+Read `docs/traffic-observation-contract.md`: artwork, cameras, lighting and
+render rate must not influence semantic traffic observations or decisions.
+Physical roads, vehicles, pedestrians, signal state and qualified sensor
+measurements remain relevant. Real occlusion belongs in the perception model,
+not an implicit dependency on a cosmetic scene edit.
+
+For new intelligence work, use `docs/corridor-next-session-prompt.md` and the
+latest deployment/review reports. Historical results below do not supersede
+known current corridor failures. Launcher checks:
+`visualizer/tools/validate_corridor_launcher.gd`; preview:
+`visualizer/tools/preview_launcher.gd`. Launch waits for actual traffic data,
+keeps failures visible, supports retry/resume, and offers an optional dashboard.
 
 ## What this is
-Adaptive Traffic Control System for the **Achimota/Neoplan Junction, Accra**
-(GPS 5.6216 N, 0.2193 W). A **Double-DQN** agent controls the signals in a
-**SUMO** simulation; a **Godot 4** app renders it in 3D over a WebSocket.
-Founder: Osborn Dogbe (Valiborn Technologies). Motto: "Relax, it works."
+TrafIQ is an adaptive traffic-control simulator for the **three-junction N6
+Nsawam Road corridor, Accra**. Double-DQN agents and a safety supervisor control
+SUMO traffic; Godot 4 renders the corridor over WebSocket.
+Founder: Osborn Dogbe (Valiborn Technologies). Motto: "Valiborn Tech. Build Beyond."
+The earlier motto, "Relax, it works.", is retired.
 
 ## The one-paragraph story (how we got here)
 The single junction shipped a working model, then we discovered three real
@@ -23,7 +57,7 @@ reward was **unbounded** (gridlock-trap) → bounded + clipped. Then we built a
 flip) and **removed the ambulance-priority feature** entirely (it was a
 hard-coded override, not learned — removing it makes the AI's results honest).
 
-## Current architecture (single junction = the live system)
+## Historical single-junction architecture (retained reference)
 - `ai/traffic_env.py` — SUMO env. **STATE_SIZE=41**, **ACTION_SIZE=5**
   (HOLD / NS_THROUGH / NS_LEFT / EW_THROUGH / EW_LEFT — protected-left, no
   all-green). Bounded/clipped reward. `expert_action()` = sustained-green
@@ -131,6 +165,30 @@ hard-coded override, not learned — removing it makes the AI's results honest).
   (No Godot automation here — parse-check with `Godot --headless --check-only
   --script` + a headless scene-load, then verify visually.)
 
+## Metric renderers (15 Nov 2026)
+
+This supersedes the historical compressed-corridor geometry notes above.
+`CorridorGeometry.gd` reads `visualizer/assets/network/corridor.json` or
+`single.json` (its optional `corridor` argument defaults to true), exported
+read-only from the existing SUMO network by `scripts/export_corridor_geometry.py`.
+One scene unit is one metre; junction Z anchors are 0/300/600. Roads, stop bars,
+crossings, vehicles and pedestrians share those coordinates. Do not reintroduce
+the old 0/30/60 mapping or truncate queues to fit it. `MetricRoadBuilder.gd`
+builds network surfaces; `EnvironmentBuilder._build_metric_corridor` sets scenery.
+The single-junction scene also uses its actual network geometry; decorative
+neighbourhood/airport layouts remain separate. Export single.json with
+`--single`; both exports support `--check`. Main.gd ground navigation uses
+metric body/camera dimensions and generated footway collision.
+
+Run exporter `--check` for both modes, `validate_metric_single.gd`,
+`validate_metric_corridor.gd`, `validate_zoning.gd`,
+`validate_transit.gd`, `validate_crossings.gd` and `validate_live_traffic.gd` for
+related changes. Generate crossing replays with `validate_crossing_safety.py`.
+On restricted macOS runs, give Godot a writable `--log-file` under `/private/tmp`.
+Keys 1/2/3 focus junctions, 0 overview, H drone; flight retains its speed keys.
+No SUMO network, route, observation or checkpoint changes were made for this
+migration. Full details and limitations: `docs/streetscape.md`.
+
 ## Scenarios (`simulation/scenarios/`)
 `continuous_day` (the centerpiece — quiet→N-heavy morning→lull→S-heavy
 evening→quiet, built by `scripts/build_continuous_day.py`), `morning_rush`
@@ -143,6 +201,45 @@ recalibrated to solvable demand (originals in `scenarios/_pre_recal/`).
   morning (N-heavy 1901) and evening (S-heavy 2350) need different demand.
 - **All-green phases deadlock the box** — never reintroduce them.
 - **Reward must stay bounded/clipped** or heavy traffic hits the gridlock trap.
+- **SUMO occupancy is already 0–1** (checked on 1.27.1): `getLastStepOccupancy` is vehicle
+  lengths ÷ lane length, gaps excluded, and an edge's value also averages its sidewalk lane.
+  Read it through `ai/occupancy.py` (`fullness`: vehicle lanes only, 1.0 = bumper to bumper),
+  never ÷100. Corridor state slot 45 stays on the old ÷100 scale (`LINK_OCCUPANCY_FEATURE =
+  "legacy"`) because the shipped corridor checkpoints were trained on it; switch to
+  `"fullness"` only together with retrained checkpoints. See `docs/corridor-occupancy-fix.md`.
+- **The shipped corridor checkpoints are a strong draw**: three fresh 240-episode retrains
+  (Nov 2026, including a faithful re-run of their own setup) didn't reproduce them on the
+  audited cases. Never swap corridor models on one training run; train several and choose by
+  the supervised audited cases + seeded runs.
+- **TSH-1 sensor interface** (Nov 2026): `docs/tsh1-sensor-interface.md` has the arm-frame
+  schema, the slot map and the sensor-range results. The adapter is `ai/tsh1_interface.py`
+  (single junction), checked by `scripts/validate_tsh1_interface.py`.
+  `ai/tsh1_corridor.py` now provides the 46-slot corridor receiver, ideal emulator
+  and wire-only supervisor API; `scripts/validate_tsh1_corridor.py` checks every
+  second. Simulator exit occupancy/turn intent are labelled oracles and rejected
+  by physical-input defaults. Exact simulator round trips do not prove hardware
+  accuracy; range saturation, turn intent, link fusion and physical interlocks
+  still need validation.
+- **Corridor deployment training (14 Nov):** the `train_corridor.py` CLI now uses
+  `train_corridor_deployment.py`, requiring an isolated `--output`. Use immutable
+  model manifests, complete-episode resume and matched `validate_corridor_candidates.py`
+  audits. Never install a model from training reward alone. Optional version-matched
+  `libsumo==1.27.1` runs experiments much faster (`LIBSUMO_AS_TRACI=quiet`); use
+  separate processes and keep the live viewer on normal TraCI. Details/results:
+  `docs/corridor-deployment-validation.md`.
+  Results: six warm-start runs / 72 full episodes / 24 screened snapshots;
+  none passed the replacement gate. Calibrated fullness weights reproduce
+  shipped traffic outcomes on all 22 cases, but are not promoted. Keep shipped
+  weights, legacy slot 45 and graded capacity off. Fresh holdouts exposed a
+  minimum-gap event on morning seed 20261121 and worse-than-fixed stopped
+  vehicles on evening 20261121; both are now regression cases, not unseen
+  promotion evidence. Exact per-case results/model hashes are retained in
+  `docs/corridor-deployment-results.json`.
+- **Right-turn yellow clearance:** `CrossingSafety` must retain right-turn yellow
+  while the straight movement is yellow. Testing only `Gg` there cut right turns
+  straight to red and caused emergency braking/minimum-gap collisions. Pedestrian
+  occupancy still overrides conflicting movements; protected-left right turns
+  remain red.
 - **No emergency/ambulance feature anywhere** (removed 2026-06-13).
 - **`simulation/intersection.net.xml` is gitignored** — a fresh clone must generate it with
   `python scripts/build_network.py`. That script passes `simulation/connections.con.xml`
@@ -206,3 +303,113 @@ Commit messages end with `Co-Authored-By: Claude ...`. Don't commit model
 - `metrics_logger.py` unused emergency tracking — **DONE** (PR #16): removed
   `EMERGENCY_TYPE` / `emergency_log` / `_track_emergency_vehicles` + the dead
   `run_baseline.py` emergency report block; all call sites updated.
+
+## Compact corridor town (16 November 2026)
+`CityDistrictBuilder.gd` fills a 368 × 1000 m developed strip around the three
+metric junctions. The previous metropolitan sprawl has been replaced with
+larger high-street premises, mixed-height corner blocks, shared paved courts,
+interior compounds and connected local streets. Reserve those streets before
+building the frontage; clip their footways at main and local junctions.
+The later section-by-section pass removes the uniform square-lot infill and
+town-wide laterite slab. CityDistrictBuilder.sections() describes four bands:
+J0–J1 commercial, J1–J2 civic, north of J2 residential/workshops, south of J0
+market. UrbanBlockKit composes asymmetric building wings, service canopies,
+solar panels, courtyard parking and covered market aisles. Keys 5–8 focus these
+sections outside drone mode. Surface kinds 9/10 use non-periodic urban/natural
+ground; do not reintroduce a repeated small ground photo over the whole town.
+`AirportBuilder.gd` is the active detailed two-stand airport, uniformly scaled
+by 1.5. AirportLayout reserves a 144 × 213 m site at (135,50) plus its J0 access
+road. The airfield is compressed scenery. Key 4 frames it. Use
+validate_city_expansion.gd, validate_airport_weather.gd, validate_zoning.gd and
+validate_metric_corridor.gd for current placement checks. Roads still match
+SUMO metre for metre; scenery changes do not alter the network or checkpoints.
+
+## Accra street character (16 November 2026)
+The earlier scenery read as a tidy temperate suburb (brick-brown blocks, grey
+paved courts, lawns, nobody on the roadside). This pass gives the shared kit
+and, above all, the **corridor** an Accra look. Roads, lanes, crossings,
+footways, signals, stations, vehicles, networks, routes and checkpoints are
+untouched. Full notes: the last section of `docs/streetscape.md`.
+
+- **Kit (`AccraStreetscape.gd`)**: painted sandcrete over a darker dado; storey
+  buildings with shops under a verandah; lock-up stores with steel doors, stock
+  and a signboard each; long-span roofs in oxide red/blue/green/zinc or a flat
+  slab with polytank, dish and starter bars; container kiosks; `uncompleted()`,
+  `walled_plot()`, `telecom_mast()`, `footbridge()`, `tank_stand()`,
+  `banana()`, `yard_parking()`. Trees are mango/neem/almond/flamboyant; palms
+  are batched crowns. Shop, church and school names are invented in the style
+  of Accra signboards. Keep to invented names and the project's own Sankofa /
+  Valiborn brands; no real retailer, telecom or fuel brand.
+- **Street life (`AccraStreetLife.gd`)**: umbrella traders, table sellers,
+  produce heaps, hawkers with head pans, okadas, hand carts, direction boards,
+  the open drain. Batched scenery only, never on a carriageway or footway,
+  never counted as SUMO pedestrians or vehicles.
+- **Trading apron**: shop fronts stand `_frontage_setback` behind the footway
+  (7 m corridor, 6 m single). Lamps and poles keep the first strip, then the
+  corridor's drain, then swept earth with traders. `CityDistrictBuilder.
+  _reserved()` keeps infill 8.9 m off the arterials for that reason; pass
+  `roadside = true` only for boards, riders and shade trees.
+- **Corridor landmarks** claim exclusion zones in `_build_metric_corridor`
+  before the shop rows: two Sankofa filling stations, a footbridge at z 462
+  (piers solid, deck has no collider because it crosses the road), three
+  telecom masts, the lorry park beside the market, three metre-scale office
+  towers and 16 × 12 m apartment blocks.
+- **Ground**: GREEN, by the user's choice on 17 Nov 2026 (asked between the
+  red-brown rework and the green ground of PR #29). Kind 3 (single) is
+  rainy-season grass, olive where it dries, laterite only in small worn
+  patches. Kind 10 (corridor plane, tint `4f6a33`) is green savanna. Inside the
+  `town_rect` uniform (frayed edge) it is still mostly grass, worn to swept
+  laterite in broad patches. Red earth stays in the roadside aprons, shoulders,
+  yards and tracks, and the paved districts stay paved. Do not turn the open
+  ground back to red-brown or straw. Kind 11 is blockwork. Kind 0 has a wall
+  branch and an upward-face branch: the carriageway mesh uses kind 0, so leave
+  the upward branch alone.
+- **Gotchas**: (1) `StreetscapeMaterials.solid()` and coloured `surface()`
+  materials carry `paint`/`shared` metadata; `_batch()` draws through the
+  shared white material with the colour per instance. Do not mutate such a
+  material afterwards to restyle batched geometry. (2) Trim emitted between
+  `_detail = true/false` casts no shadow and hides beyond 140 m. (3) Earth
+  plates thinner than about 2 cm above the ground plane shade dark at a
+  distance; the corridor ground no longer casts shadows and shoulders are laid
+  in 120 m lengths. (4) Call `set_metric_dimensions()` on a `VehicleActor`
+  after assigning its transform, or the scale is lost and the car is toy-sized.
+  (5) `validate_street_details.gd` still expects ambient sidewalk walkers that
+  the metric migration disabled (`_spawn_ambient` loops over `range(0)`); that
+  failure predates this pass.
+- `tools/preview_views.gd` renders named camera views of either scene in one
+  launch: `-- corridor /abs/out 13 0 "name=px,py,pz>lx,ly,lz@fov" ...`.
+
+## Night, paved districts, lamps and sound (16 November 2026, later pass)
+Details in the last section of `docs/streetscape.md`.
+- **Night**: `TimeOfDayManager` owns a shadowless `MoonLight` and a brighter
+  night ambient; `StreetLamp` has a wide 24 m cone; `LampPools.gd` (corridor)
+  is one MultiMesh of additive quads that takes over as lamp spot lights fade
+  with distance. Do not lower these back toward black: the user found night,
+  and the road above all, too dark.
+- **Vehicle lamps**: shared lens materials (off / on / brake), additive halo and
+  road-pool meshes via `shaders/vehicle_glow.gdshader`, per-instance `boost`
+  for braking. `validate_transit.gd` reads `_lamps` / `_brakes`.
+- **Paved districts**: `CityDistrictBuilder.PAVED` (business quarter J0–J1 and
+  the mall/bank frontage north of J1) are block-paved and clean; the rest of
+  town keeps laterite aprons and worn patches on green ground (see Ground).
+  `paved_at()` drives aprons, covered drains, kerbed side streets, tidy courts
+  and frontages, and the kit's `clean_rects`. The user wants both kinds of
+  Accra visible, not red earth everywhere.
+- **Sound**: NO continuous engine, traffic-roar or murmur layer. Two synthesised
+  attempts were both heard by the user as a fake engine noise that starts with
+  the sim and never stops; do not add one back without real recordings and the
+  user's go-ahead. `TrafficAudio.gd` plays only occasional horn taps, night
+  crickets and day birds (quiet), owns the `AudioListener3D` and the master
+  limiter, and **M** mutes everything. `scripts/build_soundscape.py` writes the
+  six WAVs in `visualizer/assets/audio/` (`.gdignore`d, read with
+  `AudioStreamWAV.load_from_file`). `AudioManager`'s 110 Hz hum is retired.
+- **Drawn window**: `CorridorGeometry.VIEW` (x ±380, z −430…1030) is all the
+  corridor scene draws of its 1.5 km approaches; roads, lamps, poles and
+  shoulders are clipped to it, forest closes each end
+  (`CityDistrictBuilder._road_ends`) and `VehicleManager._get_boundary_fade`
+  fades vehicles at its edge. SUMO positions and all counts are untouched. The
+  user asked for this because the long roads into nothing looked fake; a queue
+  longer than a visible approach continues out of sight by design.
+- **Weather** is Clear / Overcast / Rain (indices 0 / 1 / 2). Harmattan was
+  removed at the user's request; do not bring it back.
+

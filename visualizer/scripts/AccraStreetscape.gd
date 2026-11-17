@@ -2,17 +2,45 @@ extends Node3D
 ## Architectural kit for both SUMO scenes. Front faces local +Z.
 ## Small repeated details are batched by material and 24-unit spatial cell.
 ## Only building envelopes and boundary walls get physics shapes.
+##
+## The look is roadside Accra: painted sandcrete over a darker dado, storey
+## buildings with shops under a verandah, long-span aluminium roofs in oxide
+## red, blue and green, flat slabs left with starter bars for the next floor,
+## black polytanks, lock-up stores with steel doors and hand-painted signboards.
 
 const Props = preload("res://scripts/PropGeometry.gd")
 const Materials = preload("res://scripts/StreetscapeMaterials.gd")
+# Emulsion colours seen on Accra walls; the first four also dress the backdrop.
 const WALLS: Array[Color] = [
-	Color("b7a583"), Color("c2b7a0"), Color("a9977b"), Color("9d8e78"),
-	Color("b58c6a"), Color("8e9e92"), Color("b9b6aa"), Color("a6a493")]
-const ROOFS: Array[Color] = [Color("735044"), Color("666d6a"), Color("8b5945"), Color("526365")]
+	Color("ead9ae"), Color("f0e6cf"), Color("e7b98c"), Color("e6cf7c"),
+	Color("a9cbdc"), Color("b5d6b4"), Color("dfa58c"), Color("c9c3b4"),
+	Color("e9c9a0"), Color("d8b25e"), Color("9cc2c0"), Color("efe3c0")]
+# Oil-paint dado below the emulsion: it hides the laterite splash-back.
+const DADOS: Array[Color] = [Color("7b3328"), Color("2f4f77"), Color("2f6b4a"),
+	Color("6b4a33"), Color("8a6a2a"), Color("55585a")]
+# Long-span aluminium sheets and weathered zinc.
+const ROOFS: Array[Color] = [Color("8d3b2f"), Color("2f5f93"), Color("2e7352"), Color("a3a8a6"),
+	Color("8a5b3e"), Color("b3b6b1"), Color("70392c"), Color("3d6d8a")]
+const DOORS: Array[Color] = [Color("2f5f93"), Color("2e7352"), Color("6b3a2a"),
+	Color("7d8384"), Color("1f3f66"), Color("8d3b2f")]
+# Illustrative shop names in the style of Accra signboards: a name, then a trade.
 const SHOP_NAMES: Array[String] = [
-	"AKWAABA\nPROVISIONS", "ADOM\nPHARMACY", "KOFI'S\nBARBER SHOP", "ABENA\nFABRICS",
-	"NEOPLAN\nSPARE PARTS", "MAMA ESI\nCHOP BAR", "ACCRA\nELECTRICALS", "GRACE\nCOLD STORE"]
-const SHOP_COLORS: Array[Color] = [Color("2c5853"), Color("345e41"), Color("514233"), Color("825a39")]
+	"GOD IS GOOD\nEnterprise", "NYAME ADOM\nCold Store", "BLESSED HANDS\nBeauty Salon",
+	"BY HIS GRACE\nPhones & Accessories", "AKWAABA\nProvisions", "SHALOM\nChemical Shop",
+	"KOFI'S\nBarbering Shop", "ABENA\nFabrics & Lace", "NEOPLAN\nSpare Parts",
+	"MAMA ESI\nChop Bar", "ONYAME NNAE\nElectricals", "GYE NYAME\nHardware",
+	"STILL BELIEVE\nFashion Home", "AUNTIE AKOS\nWaakye & Kenkey", "NO WEAPON\nAluminium Works",
+	"PSALM 23\nMobile Money", "EL-SHADDAI\nVentures", "CLAP FOR JESUS\nTailoring",
+	"OBAATANPA\nDrinking Spot", "DE-LORD\nBlock Factory", "ANOINTED\nMotors",
+	"PEACE & LOVE\nCosmetics", "ASEDA\nBoutique", "MERCY'S\nCheck-Check & Fried Rice",
+	"THANK YOU JESUS\nPlumbing Materials", "ADOM WO WIM\nRice & Oil Depot",
+	"SIKA MPE DEDE\nFurniture Works", "EBENEZER\nPrinting Press"]
+const SHOP_COLORS: Array[Color] = [Color("c62f25"), Color("f2c318"), Color("1c63a8"), Color("1c7a45"),
+	Color("f08a1c"), Color("f4f1e6"), Color("7a1f5c"), Color("16181a")]
+const CLOTH: Array[Color] = [Color("d43a2c"), Color("f2c318"), Color("1c63a8"), Color("2a9a55"),
+	Color("f08a1c"), Color("f4f1e6"), Color("8a2f7c"), Color("27b0c0"), Color("e85f8a")]
+const STORY := 3.0
+const DETAIL_RANGE := 140.0
 # Filling stations carry the project's own fuel brand, "Sankofa", in the sim's teal and amber.
 const FUEL_TEAL := Color("1f5a55")
 const FUEL_AMBER := Color("e9a93a")
@@ -20,7 +48,7 @@ const FleetActor = preload("res://scripts/VehicleActor.gd")
 # Pitchside advertisers are the sim's own businesses: [name, board colour, lettering].
 const PITCH_ADVERTS: Array = [
 	["SANKOFA FUEL", "1f5a55", "f4f1e6"], ["VALIBORN TECHNOLOGIES", "1d2b3a", "f4f1e6"],
-	["AKWAABA PROVISIONS", "2c5853", "e9dfc5"], ["RELAX, IT WORKS", "e9a93a", "1d2b3a"],
+	["AKWAABA PROVISIONS", "2c5853", "e9dfc5"], ["BUILD BEYOND", "e9a93a", "1d2b3a"],
 	["ADOM PHARMACY", "345e41", "f4f1e6"], ["MAMA ESI CHOP BAR", "825a39", "f4e9d2"],
 	["GRACE COLD STORE", "514233", "e9dfc5"]]
 
@@ -28,8 +56,13 @@ var _rng := RandomNumberGenerator.new()
 var _batches: Dictionary = {}
 var _box_mesh := BoxMesh.new()
 var _cylinder_mesh := CylinderMesh.new()
+var _tube_mesh := CylinderMesh.new()
+var _cone_mesh := CylinderMesh.new()
+var _sphere_mesh := SphereMesh.new()
 var _leaf_mesh: ArrayMesh
 var _roof_mesh: ArrayMesh
+var _gable_mesh: ArrayMesh
+var _palm_crowns: Array[Mesh] = []
 var _warm: Material
 var _cool: Material
 var _building_count: int = 0
@@ -37,6 +70,11 @@ var _tree_count: int = 0
 var _sign_count: int = 0
 var _background_count: int = 0
 var _building_backdrop: bool = false
+# Fine trim goes in its own batches: no shadows, and hidden beyond DETAIL_RANGE.
+var _detail: bool = false
+# Well-kept, paved districts: surfaces batched inside these rectangles carry a
+# low instance alpha, which the surface shader reads as less dirt and rust.
+var clean_rects: Array[Rect2] = []
 # Plot metadata stays separate from the render batches for zoning validation.
 var land_uses: Array[Dictionary] = []
 var _premise_counts: Dictionary = {}
@@ -51,7 +89,9 @@ func _premise_name(kind: String) -> String:
 		"mall": ["RINGWAY MALL", "PALM PLAZA MALL", "JUNCTION MALL"],
 		"supermarket": ["AKWAABA SUPERMARKET", "ADOM SUPERMARKET", "FRESHWAY SUPERMARKET", "CITY MART SUPERMARKET"],
 		"police": ["DISTRICT POLICE", "COMMUNITY POLICE", "NORTH DISTRICT POLICE"],
-		"kiosk": ["ADOM KIOSK", "AMA'S KIOSK", "UNITY KIOSK", "ABENA'S KIOSK"],
+		"kiosk": ["MOMO & AIRTIME", "AMA'S PROVISIONS", "UNITY PHONE REPAIRS", "ABENA'S COLD DRINKS",
+			"PURE WATER DEPOT", "LOTTO KIOSK"],
+		"mechanic": ["GOD FIRST FITTING SHOP", "KOFI'S AUTO WORKS", "ABOSSEY SPARE PARTS & SPRAYING"],
 		"apartment": ["PALM COURT", "GARDEN HEIGHTS", "ACACIA COURT", "RIDGE VIEW"]}
 	var index: int = int(_premise_counts.get(kind, 0))
 	_premise_counts[kind] = index + 1
@@ -67,18 +107,43 @@ func configure(warm: Material, cool: Material) -> void:
 	_cylinder_mesh.height = 1.0
 	_cylinder_mesh.radial_segments = 12
 	_cylinder_mesh.rings = 1
+	_tube_mesh.top_radius = 0.5
+	_tube_mesh.bottom_radius = 0.5
+	_tube_mesh.height = 1.0
+	_tube_mesh.radial_segments = 14
+	_tube_mesh.rings = 1
+	_cone_mesh.top_radius = 0.0
+	_cone_mesh.bottom_radius = 0.5
+	_cone_mesh.height = 1.0
+	_cone_mesh.radial_segments = 8
+	_cone_mesh.rings = 1
+	_sphere_mesh.radius = 0.5
+	_sphere_mesh.height = 1.0
+	_sphere_mesh.radial_segments = 10
+	_sphere_mesh.rings = 6
 	_leaf_mesh = _make_leaf_cluster()
 	_roof_mesh = _make_hip_roof()
+	_gable_mesh = _make_gable_roof()
+	for variant in range(3):
+		_palm_crowns.append(_make_palm_crown(variant))
 
 func _frame(center: Vector3, facing: Vector3 = Vector3.BACK) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, atan2(facing.x, facing.z)), center)
 
 func _batch(mesh: Mesh, material: Material, transform: Transform3D, shade: Color = Color.WHITE) -> void:
+	if material.has_meta("shared"):
+		# Paint rides on the instance so every colour of a finish shares a batch.
+		shade = material.get_meta("paint")
+		material = material.get_meta("shared")
+		for zone in clean_rects:
+			if zone.has_point(Vector2(transform.origin.x, transform.origin.z)):
+				shade.a = 0.25
 	var cell_size: float = 64.0 if _building_backdrop else 24.0
 	var cell := Vector2i(floori(transform.origin.x / cell_size), floori(transform.origin.z / cell_size))
-	var key := "%d:%d:%d:%d:%s" % [mesh.get_instance_id(), material.get_instance_id(), cell.x, cell.y, _building_backdrop]
+	var key := "%d:%d:%d:%d:%s:%s" % [mesh.get_instance_id(), material.get_instance_id(), cell.x, cell.y, _building_backdrop, _detail]
 	if not _batches.has(key):
-		_batches[key] = {"mesh": mesh, "material": material, "transforms": [], "colors": [], "background": _building_backdrop}
+		_batches[key] = {"mesh": mesh, "material": material, "transforms": [], "colors": [],
+			"background": _building_backdrop, "detail": _detail}
 	_batches[key]["transforms"].append(transform)
 	_batches[key]["colors"].append(shade)
 
@@ -102,6 +167,13 @@ func _beam(frame: Transform3D, a: Vector3, b: Vector3, diameter: float, material
 	basis = basis * Basis.from_scale(Vector3(diameter, direction.length(), diameter))
 	_batch(_cylinder_mesh, material, frame * Transform3D(basis, (a + b) * 0.5))
 
+## Upright straight-sided drum: tanks, tyres, basins, oil drums and gas bottles.
+func _drum(frame: Transform3D, at: Vector3, diameter: float, height: float, material: Material) -> void:
+	_batch(_tube_mesh, material, frame * Transform3D(Basis.from_scale(Vector3(diameter, height, diameter)), at + Vector3(0, height * 0.5, 0)))
+
+func _ball(frame: Transform3D, at: Vector3, size: Vector3, material: Material) -> void:
+	_batch(_sphere_mesh, material, frame * Transform3D(Basis.from_scale(size), at))
+
 func finish() -> void:
 	for batch: Dictionary in _batches.values():
 		var multimesh := MultiMesh.new()
@@ -118,156 +190,315 @@ func finish() -> void:
 		instance.name = "StreetscapeBatch"
 		if batch["background"]:
 			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if batch["detail"]:
+			instance.name = "StreetscapeDetail"
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			instance.visibility_range_end = DETAIL_RANGE
+			instance.visibility_range_end_margin = 12.0
 		add_child(instance)
 	_batches.clear()
 	print("[Streetscape] %d detailed buildings, %d background buildings, %d trees; spatially batched geometry" % [_building_count, _background_count, _tree_count])
 
+## Shop-below, rooms-above storey building, a single-storey line of lock-up
+## stores, or a plain house, depending on `floors` and `shop`. Institutional
+## blocks take the yellow-and-brown of public schools and clinics.
 func building(center: Vector3, facing: Vector3, width: float, depth: float,
 		floors: int, shop: bool = false, institutional: bool = false,
 		institution_name: String = "COMMUNITY\nLEARNING CENTRE") -> void:
 	_building_count += 1
 	_record_use("civic" if institutional else ("shop" if shop else "house"), center, facing, width, depth, floors)
 	var frame := _frame(center, facing)
-	var h: float = floors * 2.55
-	var color: Color = WALLS[_rng.randi_range(0, WALLS.size() - 1)]
-	var plaster := Materials.surface(0, color)
-	var trim := Materials.surface(0, color.lightened(0.12))
-	var concrete := Materials.surface(2, Color("807c70"))
-	var dark := Materials.solid(Color("383b37"), 0.45)
-	var front: float = depth * 0.5
-	_box(frame, Vector3(0, 0.025, 0.3), Vector3(width + 0.65, 0.12, depth + 1.3), Materials.surface(5, Color("998c77")))
-	_box(frame, Vector3(0, h * 0.5, 0), Vector3(width, h, depth), plaster, true)
-	_box(frame, Vector3(0, 0.22, 0), Vector3(width + 0.04, 0.44, depth + 0.04), concrete)
-	# Recessed bays, projecting floor slabs and small structural pilasters.
-	for floor_index in range(floors):
-		var y: float = floor_index * 2.55
-		if floor_index > 0:
-			_box(frame, Vector3(0, y, 0), Vector3(width + 0.16, 0.13, depth + 0.16), trim)
-		for side in range(4):
-			var angle: float = side * PI * 0.5
-			var facade_frame := frame * Transform3D(Basis(Vector3.UP, angle), Vector3.ZERO)
-			var span: float = width if side % 2 == 0 else depth
-			var face_depth: float = depth if side % 2 == 0 else width
-			var bays: int = maxi(2, floori(span / 1.6))
-			for bay in range(bays):
-				var x: float = -span * 0.5 + (bay + 0.5) * span / bays
-				if side == 0 and floor_index == 0:
-					if shop or bay == bays / 2:
-						continue
-				_window(facade_frame, Vector3(x, y + 1.48, face_depth * 0.5 + 0.025),
-					minf(0.86, span / bays * 0.63), 1.05, floor_index == 0, trim)
-		for x in [-width * 0.5 + 0.07, width * 0.5 - 0.07]:
-			_box(frame, Vector3(x, y + 1.27, front + 0.035), Vector3(0.14, 2.55, 0.13), trim)
-	if shop:
-		_shop_front(frame, width, depth, color)
-	else:
-		_door(frame, Vector3(0.1, 1.03, front + 0.04), 0.86, 1.95)
-		_box(frame, Vector3(0.1, 0.13, front + 0.32), Vector3(1.25, 0.26, 0.65), concrete)
-		_box(frame, Vector3(0.1, 2.18, front + 0.37), Vector3(1.45, 0.1, 0.85), trim)
-	if floors > 1 and not institutional:
-		_balcony(frame, width * 0.75, front, 2.58, trim)
-	# A mixture of hip roofs and inhabited flat rooftops changes the silhouette.
-	if floors == 1 or _rng.randf() < 0.58 or institutional:
-		_hip_roof(frame, width + 0.55, depth + 0.55, h + 0.12, minf(width, depth) * 0.25)
-	else:
-		_box(frame, Vector3(0, h + 0.04, 0), Vector3(width + 0.2, 0.12, depth + 0.2), concrete)
-		for z in [-front, front]:
-			_box(frame, Vector3(0, h + 0.28, z), Vector3(width + 0.1, 0.48, 0.14), trim)
-		for x in [-width * 0.5, width * 0.5]:
-			_box(frame, Vector3(x, h + 0.28, 0), Vector3(0.14, 0.48, depth), trim)
-		_water_tank(frame, Vector3(-width * 0.22, h + 0.1, -depth * 0.18))
-	# Rainwater downpipe and exterior AC units are actual geometry, not decals.
-	_beam(frame, Vector3(width * 0.5 + 0.05, 0.2, front - 0.1),
-		Vector3(width * 0.5 + 0.05, h, front - 0.1), 0.075, dark)
-	if floors > 1:
-		_air_conditioner(frame, Vector3(width * 0.25, 3.85, front + 0.21))
+	var h: float = floors * STORY
+	var paint: Color = WALLS[_rng.randi_range(0, WALLS.size() - 1)]
+	var dado: Color = DADOS[_rng.randi_range(0, DADOS.size() - 1)]
+	var two_tone: bool = _rng.randf() < 0.62
 	if institutional:
-		_sign(frame, institution_name, Vector3(0, 2.25, front + 0.1), minf(width - 0.3, 5.0), 0.52, SHOP_COLORS[0])
+		paint = Color("e3c067")
+		dado = Color("6d4127")
+		two_tone = true
+	var plaster := Materials.surface(0, paint)
+	var trim := Materials.surface(0, paint.lerp(Color("f6f1e4"), 0.62))
+	var band := Materials.surface(0, dado)
+	var concrete := Materials.surface(2, Color("8f8a7e"))
+	var front: float = depth * 0.5
+	var veranda: float = 1.25 if width >= 4.0 and (floors > 1 or shop or institutional) else 0.0
+	var bays: int = maxi(1, roundi(width / 3.3))
+	var bay_w: float = width / bays
+	# Screeded apron, the painted block and its oil-paint dado.
+	_box(frame, Vector3(0, 0.04, 0.3), Vector3(width + 0.65, 0.16, depth + 1.3), Materials.surface(2, Color("9c978b")))
+	_box(frame, Vector3(0, h * 0.5, 0), Vector3(width, h, depth), plaster, true)
+	if two_tone:
+		_box(frame, Vector3(0, 0.55, 0), Vector3(width + 0.05, 1.1, depth + 0.05), band)
+	for floor_index in range(1, floors):
+		_box(frame, Vector3(0, floor_index * STORY - 0.09, 0), Vector3(width + 0.12, 0.18, depth + 0.12), trim)
+	for floor_index in range(floors):
+		var y: float = floor_index * STORY
+		for side in range(4):
+			if side == 0 and floor_index == 0 and shop:
+				continue
+			var facade := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
+			var span: float = width if side % 2 == 0 else depth
+			var reach: float = depth if side % 2 == 0 else width
+			var count: int = maxi(1, floori(span / (2.2 if side == 0 else 2.9)))
+			for k in range(count):
+				var x: float = -span * 0.5 + (k + 0.5) * span / count
+				if side == 0 and k == count / 2 and (floor_index == 0 or veranda > 0.0):
+					if floor_index > 0:
+						_door(facade, Vector3(x, y + 1.05, reach * 0.5 + 0.03), 0.9, 2.05)
+					continue
+				_window(facade, Vector3(x, y + 1.62, reach * 0.5 + 0.025), minf(1.45, span / count * 0.6), 1.3,
+					floor_index == 0 and side == 0, trim, side != 0)
+	if shop:
+		_shop_front(frame, width, depth, paint, veranda, floors)
+	else:
+		_door(frame, Vector3(0.0, 1.05, front + 0.04), 0.95, 2.05)
+		_box(frame, Vector3(0.0, 0.13, front + 0.4), Vector3(1.6, 0.26, 0.8), concrete)
+		if veranda <= 0.0 or floors == 1:
+			_box(frame, Vector3(0.0, 2.45, front + 0.45), Vector3(1.9, 0.1, 0.95), trim)
+	if veranda > 0.0 and floors > 1:
+		_verandah(frame, width, front, veranda, floors, bays, band if two_tone else trim, trim, concrete, shop)
+	# Long-span sheets over most single-storey rows; taller blocks are as often a
+	# flat slab waiting for its next floor.
+	var roll: float = _rng.randf()
+	var cover: float = depth + veranda * (1.0 if floors > 1 else 0.0)
+	var shift: float = veranda * (0.5 if floors > 1 else 0.0)
+	if institutional or (floors == 1 and roll < 0.85) or (floors > 1 and roll < 0.6):
+		_hip_roof(frame, width + 0.75, cover + 0.75, h + 0.02, clampf(minf(width, cover) * 0.2, 0.8, 2.4),
+			roll < 0.32 and width > cover, shift)
+	else:
+		_slab_roof(frame, width, cover, h, shift, bays, plaster, concrete, floors > 1 and _rng.randf() < 0.5)
+	# Split-unit condensers on a side wall and a downpipe at the front corner.
+	_detail = true
+	_beam(frame, Vector3(width * 0.5 + 0.06, 0.2, front - 0.15), Vector3(width * 0.5 + 0.06, h, front - 0.15), 0.09, Materials.solid(Color("3a3d3a"), 0.45))
+	_detail = false
+	if floors > 1:
+		var flank := frame * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO)
+		for unit in range(mini(floors - 1, 2)):
+			_air_conditioner(flank, Vector3(depth * 0.22, STORY * (unit + 1) + 0.55, width * 0.5 + 0.2))
+	if institutional:
+		_sign(frame, institution_name, Vector3(0, STORY - 0.5 if floors > 1 else h - 0.45, front + (veranda if floors > 1 else 0.0) + 0.09),
+			minf(width - 0.6, 7.0), 0.8, Color("f4f1e6"))
 
-func _window(frame: Transform3D, at: Vector3, w: float, h: float, bars: bool, trim: Material) -> void:
-	var reveal := Materials.solid(Color("252c29"))
-	var aluminum := Materials.solid(Color("767d79"), 0.65, 0.34)
-	_box(frame, at, Vector3(w + 0.14, h + 0.16, 0.07), reveal)
-	var pane: Material = _warm if _rng.randf() < 0.36 else Materials.solid(Color("34464b"), 0.28, 0.19)
-	_box(frame, at + Vector3(0, 0, 0.046), Vector3(w - 0.06, h - 0.08, 0.02), pane)
-	for x in [-w * 0.5, 0.0, w * 0.5]:
-		_box(frame, at + Vector3(x, 0, 0.07), Vector3(0.035, h, 0.045), aluminum)
-	for y in [-h * 0.5, h * 0.5]:
-		_box(frame, at + Vector3(0, y, 0.07), Vector3(w + 0.08, 0.045, 0.045), aluminum)
-	_box(frame, at + Vector3(0, -h * 0.5 - 0.06, 0.08), Vector3(w + 0.24, 0.09, 0.23), trim)
-	_box(frame, at + Vector3(0, h * 0.5 + 0.11, 0.16), Vector3(w + 0.3, 0.08, 0.42), trim)
+## Upper-floor access balconies on posts: the shaded arcade over the shops.
+func _verandah(frame: Transform3D, width: float, front: float, reach: float, floors: int, bays: int,
+		rail: Material, trim: Material, concrete: Material, shop: bool) -> void:
+	var h: float = floors * STORY
+	var edge: float = front + reach
+	var solid_rail: bool = _rng.randf() < 0.55
+	for floor_index in range(1, floors):
+		var y: float = floor_index * STORY
+		_box(frame, Vector3(0, y - 0.08, front + reach * 0.5), Vector3(width, 0.16, reach), concrete)
+		if solid_rail:
+			_box(frame, Vector3(0, y + 0.47, edge - 0.06), Vector3(width, 0.94, 0.12), rail)
+			_box(frame, Vector3(0, y + 0.97, edge - 0.06), Vector3(width + 0.06, 0.06, 0.2), trim)
+		else:
+			_detail = true
+			var steel := Materials.solid(Color("2c3033"), 0.6)
+			for rail_y in [0.12, 0.52, 0.95]:
+				_box(frame, Vector3(0, y + rail_y, edge - 0.05), Vector3(width, 0.045, 0.045), steel)
+			var posts: int = maxi(4, ceili(width / 0.6))
+			for i in range(posts + 1):
+				_box(frame, Vector3(-width * 0.5 + width * i / posts, y + 0.52, edge - 0.05), Vector3(0.03, 0.88, 0.03), steel)
+			_detail = false
+	_box(frame, Vector3(0, h - 0.08, front + reach * 0.5), Vector3(width, 0.16, reach), concrete)
+	var bay_w: float = width / bays
+	for i in range(bays + 1):
+		var x: float = clampf(-width * 0.5 + i * bay_w, -width * 0.5 + 0.11, width * 0.5 - 0.11)
+		_box(frame, Vector3(x, h * 0.5, edge - 0.11), Vector3(0.22, h, 0.22), trim)
+	if not shop and _rng.randf() < 0.45:
+		# Washing on the top balcony.
+		_detail = true
+		var y: float = (floors - 1) * STORY
+		var start: float = -width * 0.5 + 0.5
+		var items: int = mini(8, floori((width - 1.0) / 0.55))
+		for i in range(items):
+			var cloth: Color = CLOTH[_rng.randi_range(0, CLOTH.size() - 1)]
+			var drop: float = _rng.randf_range(0.45, 0.85)
+			_box(frame, Vector3(start + i * 0.55, y + 1.95 - drop * 0.5, edge - 0.3), Vector3(0.42, drop, 0.02), Materials.solid(cloth, 0.0, 0.9))
+		_detail = false
+	elif shop and _rng.randf() < 0.5:
+		_banner(frame, Vector3(_rng.randf_range(-0.2, 0.2) * width, STORY * (floors - 1) + 0.5, edge + 0.02), minf(width * 0.5, 3.6))
+
+func _banner(frame: Transform3D, at: Vector3, w: float) -> void:
+	var texts: Array[String] = ["ROOMS TO LET", "COMPUTER TRAINING", "SHOP FOR RENT", "REMEDIAL CLASSES",
+		"HAIR BRAIDING HERE", "FORMS ON SALE", "DSTV & GOTV AGENT", "ADMISSION IN PROGRESS"]
+	var color: Color = SHOP_COLORS[_rng.randi_range(0, 5)]
+	_box(frame, at, Vector3(w, 0.62, 0.02), Materials.solid(color, 0.0, 0.85))
+	var ink := Color("f6f2e6") if color.get_luminance() < 0.45 else Color("a31d16")
+	var label := Props.label(self, texts[_sign_count % texts.size()], Vector3.ZERO, w - 0.25, 0.4, ink, "Banner")
+	label.transform = frame * Transform3D(Basis.IDENTITY, at + Vector3(0, 0, 0.016))
+	label.visibility_range_end = 60.0
+
+## Flat concrete roof with a parapet, the polytank and, when `unfinished`, the
+## column starter bars left standing for a floor that has not been built yet.
+func _slab_roof(frame: Transform3D, w: float, d: float, h: float, shift: float, bays: int,
+		plaster: Material, concrete: Material, unfinished: bool) -> void:
+	_box(frame, Vector3(0, h + 0.06, shift), Vector3(w + 0.3, 0.14, d + 0.3), concrete)
+	for z in [-d * 0.5, d * 0.5]:
+		_box(frame, Vector3(0, h + 0.36, shift + z), Vector3(w + 0.16, 0.5, 0.15), plaster)
+	for x in [-w * 0.5, w * 0.5]:
+		_box(frame, Vector3(x, h + 0.36, shift), Vector3(0.15, 0.5, d), plaster)
+	if unfinished:
+		var rust := Materials.solid(Color("5e3524"), 0.3, 0.8)
+		for i in range(bays + 1):
+			var x: float = clampf(-w * 0.5 + i * w / bays, -w * 0.5 + 0.14, w * 0.5 - 0.14)
+			for z in [-d * 0.5 + 0.14, d * 0.5 - 0.14]:
+				_box(frame, Vector3(x, h + 0.5, shift + z), Vector3(0.25, 0.8, 0.25), concrete)
+				_detail = true
+				for corner in range(4):
+					var bar := Vector3(x + (0.08 if corner % 2 == 0 else -0.08), 0, shift + z + (0.08 if corner < 2 else -0.08))
+					_beam(frame, bar + Vector3(0, h + 0.9, 0), bar + Vector3(_rng.randf_range(-0.05, 0.05), h + _rng.randf_range(1.55, 1.9), 0), 0.03, rust)
+				_detail = false
+	_water_tank(frame, Vector3(-w * 0.24, h + 0.13, shift - d * 0.2))
+	if _rng.randf() < 0.55:
+		# Satellite dish on a short mast, facing a little west of south.
+		var grey := Materials.solid(Color("b9bbb6"), 0.3, 0.5)
+		var at := Vector3(w * 0.3, h + 0.13, shift + d * 0.18)
+		_beam(frame, at, at + Vector3(0, 0.75, 0), 0.06, grey)
+		_batch(_sphere_mesh, grey, frame * Transform3D(Basis.from_euler(Vector3(-0.75, 0.6, 0)) * Basis.from_scale(Vector3(0.85, 0.85, 0.12)), at + Vector3(0, 0.95, 0)))
+
+## Aluminium sliding window: the frame and pane carry at any distance; the
+## mullion, sill and burglar-proof bars are close-range trim.
+func _window(frame: Transform3D, at: Vector3, w: float, h: float, bars: bool, trim: Material, plain: bool = false) -> void:
+	var pane: Material = _warm if _rng.randf() < 0.3 else Materials.solid(Color("2c4753"), 0.35, 0.2)
+	_box(frame, at, Vector3(w + 0.12, h + 0.12, 0.06), Materials.solid(Color("585f60"), 0.55, 0.4))
+	_box(frame, at + Vector3(0, 0, 0.034), Vector3(w, h, 0.02), pane)
+	if plain:
+		return
+	_detail = true
+	_box(frame, at + Vector3(0, 0, 0.05), Vector3(0.05, h, 0.03), Materials.solid(Color("8a9090"), 0.6, 0.35))
+	_box(frame, at + Vector3(0, -h * 0.5 - 0.08, 0.07), Vector3(w + 0.3, 0.08, 0.2), trim)
 	if bars:
-		var steel := Materials.solid(Color("44473e"), 0.5)
-		for i in range(5):
-			_box(frame, at + Vector3((i - 2) * w * 0.18, 0, 0.16), Vector3(0.018, h, 0.025), steel)
-		_box(frame, at + Vector3(0, 0, 0.16), Vector3(w, 0.025, 0.025), steel)
+		var steel := Materials.solid(Color("23262a"), 0.5)
+		for i in range(4):
+			_box(frame, at + Vector3((i - 1.5) * w * 0.25, 0, 0.11), Vector3(0.022, h, 0.022), steel)
+		for y in [-h * 0.25, h * 0.25]:
+			_box(frame, at + Vector3(0, y, 0.11), Vector3(w, 0.022, 0.022), steel)
+	_detail = false
 
 func _door(frame: Transform3D, at: Vector3, w: float, h: float) -> void:
 	_box(frame, at, Vector3(w + 0.14, h + 0.12, 0.08), Materials.solid(Color("363630")))
-	var wood := Materials.surface(6, Color("574332"))
+	var wood := Materials.surface(6, Color("6a4a30"))
 	_box(frame, at + Vector3(0, 0, 0.05), Vector3(w, h, 0.035), wood)
+	_detail = true
 	for y in [-h * 0.24, h * 0.24]:
-		_box(frame, at + Vector3(0, y, 0.075), Vector3(w * 0.74, h * 0.37, 0.025), Materials.surface(6, Color("68513a")))
+		_box(frame, at + Vector3(0, y, 0.075), Vector3(w * 0.74, h * 0.37, 0.025), Materials.surface(6, Color("7c5a3b")))
 	_box(frame, at + Vector3(w * 0.33, 0, 0.12), Vector3(0.045, 0.18, 0.05), Materials.solid(Color("b0a080"), 0.8))
+	_detail = false
 
-func _balcony(frame: Transform3D, w: float, front: float, y: float, trim: Material) -> void:
-	var steel := Materials.solid(Color("414640"), 0.65)
-	_box(frame, Vector3(0, y, front + 0.37), Vector3(w, 0.14, 0.85), trim)
-	for rail_y in [y + 0.25, y + 0.92]:
-		_box(frame, Vector3(0, rail_y, front + 0.77), Vector3(w, 0.045, 0.045), steel)
-	var rails: int = maxi(4, ceili(w / 0.24))
-	for i in range(rails + 1):
-		_box(frame, Vector3(-w * 0.5 + w * i / rails, y + 0.52, front + 0.77), Vector3(0.023, 0.78, 0.023), steel)
-	for x in [-w * 0.5, w * 0.5]:
-		_box(frame, Vector3(x, y + 0.92, front + 0.38), Vector3(0.045, 0.045, 0.8), steel)
-
-func _shop_front(frame: Transform3D, w: float, d: float, color: Color) -> void:
+## Lock-up stores: one steel double door per bay, most of them open on to a
+## stocked interior, stock spilling on to the apron, and a signboard each.
+func _shop_front(frame: Transform3D, w: float, d: float, paint: Color, veranda: float, floors: int) -> void:
 	var z: float = d * 0.5
-	var steel := Materials.solid(Color("53584f"), 0.35)
-	var count: int = maxi(1, floori(w / 1.7))
-	for bay in range(count):
-		var bay_w: float = w / count * 0.8
-		var x: float = -w * 0.5 + (bay + 0.5) * w / count
-		_box(frame, Vector3(x, 1.0, z + 0.03), Vector3(bay_w, 1.85, 0.08), Materials.solid(Color("222c28")))
-		# Partially lifted roller shutter, with visible slats and dark shop interior.
-		for slat in range(6):
-			_box(frame, Vector3(x, 1.48 + slat * 0.07, z + 0.09), Vector3(bay_w + 0.02, 0.058, 0.06), steel)
-		_box(frame, Vector3(x, 0.64, z + 0.12), Vector3(bay_w * 0.85, 0.72, 0.26), Materials.surface(6, Color("7c6746")))
-		for item in range(5):
-			var item_color: Color = [Color("ab793e"), Color("6b813e"), Color("9f583c")][item % 3]
-			_box(frame, Vector3(x - bay_w * 0.35 + item * bay_w * 0.17, 1.07, z + 0.18), Vector3(0.17, 0.16, 0.2), Materials.solid(item_color))
-	var sign_id: int = _sign_count % SHOP_NAMES.size()
-	_sign(frame, SHOP_NAMES[sign_id], Vector3(0, 2.17, z + 0.12), w - 0.12, 0.55, SHOP_COLORS[sign_id % SHOP_COLORS.size()])
-	_sign_count += 1
-	# Sloping sheet-metal canopy with fascia, braces and two slim posts.
-	var canopy_mat := Materials.surface(4, color.darkened(0.35))
-	var canopy := frame * Transform3D(Basis(Vector3.RIGHT, 0.12), Vector3(0, 1.99, z + 0.58))
-	_box(canopy, Vector3.ZERO, Vector3(w + 0.22, 0.055, 1.3), canopy_mat)
-	_box(frame, Vector3(0, 1.87, z + 1.2), Vector3(w + 0.22, 0.13, 0.04), canopy_mat)
-	for x in [-w * 0.45, w * 0.45]:
-		_beam(frame, Vector3(x, 0.1, z + 1.1), Vector3(x, 1.92, z + 1.1), 0.055, steel)
-		_beam(frame, Vector3(x, 1.9, z + 0.05), Vector3(x, 1.6, z + 1.1), 0.035, steel)
-	# Water barrels and a small timber bench live on the apron, outside the walkway.
-	_beam(frame, Vector3(w * 0.42, 0.1, z + 0.42), Vector3(w * 0.42, 0.68, z + 0.42), 0.38, Materials.solid(Color("385e69")))
-	_box(frame, Vector3(-w * 0.22, 0.4, z + 0.65), Vector3(w * 0.32, 0.09, 0.3), Materials.surface(6, Color("65513b")))
+	var count: int = maxi(1, roundi(w / 3.3))
+	var bay: float = w / count
+	var open_h: float = 2.4
+	var canopy_y: float = STORY - 0.2
+	for i in range(count):
+		var x: float = -w * 0.5 + (i + 0.5) * bay
+		var door_w: float = minf(bay * 0.48, 1.9)
+		var metal := Materials.surface(4, DOORS[_rng.randi_range(0, DOORS.size() - 1)])
+		if _rng.randf() < 0.72:
+			_box(frame, Vector3(x, open_h * 0.5, z + 0.02), Vector3(door_w, open_h, 0.06), Materials.solid(Color("15120f")))
+			for leaf in [-1.0, 1.0]:
+				_box(frame, Vector3(x + leaf * door_w * 0.76, open_h * 0.5, z + 0.05), Vector3(door_w * 0.5 - 0.04, open_h, 0.05), metal)
+			_detail = true
+			# Stocked shelves just inside the opening.
+			for shelf in range(3):
+				for item in range(4):
+					var stock: Color = CLOTH[_rng.randi_range(0, CLOTH.size() - 1)]
+					_box(frame, Vector3(x - door_w * 0.36 + item * door_w * 0.24, 0.7 + shelf * 0.55, z + 0.06),
+						Vector3(door_w * 0.2, 0.36, 0.05), Materials.solid(stock, 0.0, 0.8))
+			_detail = false
+			_box(frame, Vector3(x, open_h + 0.12, z + 0.09), Vector3(door_w * 0.7, 0.07, 0.07), _cool)
+			_shop_goods(frame, Vector3(x + _rng.randf_range(-0.3, 0.3), 0.12, z + 0.6), _rng.randi_range(0, 9))
+		else:
+			_box(frame, Vector3(x, open_h * 0.5, z + 0.04), Vector3(door_w, open_h, 0.07), metal)
+			_detail = true
+			_box(frame, Vector3(x, open_h * 0.5, z + 0.08), Vector3(0.03, open_h, 0.02), Materials.solid(Color("1b1c1c")))
+			_box(frame, Vector3(x + 0.08, 1.05, z + 0.1), Vector3(0.09, 0.12, 0.04), Materials.solid(Color("b9a14a"), 0.8, 0.4))
+			_detail = false
+		var sign_id: int = _sign_count % SHOP_NAMES.size()
+		var board: Color = SHOP_COLORS[(_sign_count * 3 + i) % SHOP_COLORS.size()]
+		var sign_w: float = minf(bay - 0.3, 3.6)
+		if floors > 1 and veranda > 0.0:
+			_sign(frame, SHOP_NAMES[sign_id], Vector3(x, STORY + 0.44, z + veranda + 0.06), sign_w, 0.8, board)
+		else:
+			_sign(frame, SHOP_NAMES[sign_id], Vector3(x, canopy_y + 0.52, z + veranda + 0.02), sign_w, 0.85, board)
+		_sign_count += 1
+	if floors == 1 or veranda <= 0.0:
+		# Flat concrete canopy over the shop doors, on slim pipe posts.
+		var reach: float = maxf(veranda, 0.9)
+		_box(frame, Vector3(0, canopy_y, z + reach * 0.5), Vector3(w + 0.2, 0.12, reach), Materials.surface(2, Color("a6a196")))
+		_box(frame, Vector3(0, canopy_y - 0.12, z + reach - 0.04), Vector3(w + 0.2, 0.2, 0.08), Materials.surface(0, paint.darkened(0.25)))
+		var steel := Materials.solid(Color("4a4f50"), 0.5)
+		for k in range(count + 1):
+			var x: float = clampf(-w * 0.5 + k * bay, -w * 0.5 + 0.08, w * 0.5 - 0.08)
+			_beam(frame, Vector3(x, 0.1, z + reach - 0.1), Vector3(x, canopy_y, z + reach - 0.1), 0.075, steel)
 
+## Stock set out on the apron in front of an open store.
+func _shop_goods(frame: Transform3D, at: Vector3, kind: int) -> void:
+	_detail = true
+	match kind:
+		0:  # Soft-drink crates.
+			for i in range(4):
+				_box(frame, at + Vector3((i % 2) * 0.46 - 0.23, 0.15 + (i / 2) * 0.31, 0), Vector3(0.42, 0.29, 0.32),
+					Materials.solid([Color("c62f25"), Color("f2c318"), Color("1c63a8")][i % 3], 0.0, 0.6))
+		1:  # Nested plastic basins and buckets.
+			for i in range(3):
+				_drum(frame, at + Vector3(i * 0.55 - 0.5, 0, 0), 0.5 - i * 0.03, 0.32 + i * 0.08,
+					Materials.solid([Color("1c63a8"), Color("2a9a55"), Color("d43a2c")][i], 0.0, 0.45))
+		2:  # Rice and maize sacks.
+			for i in range(5):
+				_box(frame, at + Vector3((i % 2) * 0.62 - 0.31, 0.11 + (i / 2) * 0.22, 0), Vector3(0.58, 0.2, 0.4),
+					Materials.solid(Color("e9e2cf") if i % 3 else Color("d8c79c"), 0.0, 0.9))
+		3:  # LPG cylinders.
+			for i in range(4):
+				var gas := Materials.solid([Color("2f5f93"), Color("b9bbb6"), Color("f2c318"), Color("c62f25")][i], 0.3, 0.5)
+				_drum(frame, at + Vector3(i * 0.36 - 0.54, 0, 0), 0.3, 0.55, gas)
+				_ball(frame, at + Vector3(i * 0.36 - 0.54, 0.55, 0), Vector3(0.3, 0.22, 0.3), gas)
+		4:  # Foam mattresses leaning on the wall.
+			for i in range(4):
+				_box(frame, at + Vector3(0, 0.95, -0.42 + i * 0.16), Vector3(1.0, 1.9, 0.14),
+					Materials.solid(CLOTH[(i * 2 + _sign_count) % CLOTH.size()], 0.0, 0.95))
+		5:  # Stacked plastic chairs.
+			for i in range(2):
+				var chair := Materials.solid(Color("f4f1e6") if i == 0 else Color("1c63a8"), 0.0, 0.5)
+				_box(frame, at + Vector3(i * 0.6 - 0.3, 0.3, 0), Vector3(0.46, 0.6, 0.46), chair)
+				_box(frame, at + Vector3(i * 0.6 - 0.3, 0.8, -0.2), Vector3(0.46, 0.5, 0.06), chair)
+		6:  # Provisions table: tins, tomato paste and milk.
+			_box(frame, at + Vector3(0, 0.7, 0), Vector3(1.3, 0.06, 0.6), Materials.surface(6, Color("7c6746")))
+			for leg in [-0.58, 0.58]:
+				_box(frame, at + Vector3(leg, 0.35, 0), Vector3(0.06, 0.7, 0.5), Materials.surface(6, Color("6a5638")))
+			for i in range(6):
+				_drum(frame, at + Vector3(i * 0.2 - 0.5, 0.73, _rng.randf_range(-0.15, 0.15)), 0.14, 0.2,
+					Materials.solid(CLOTH[i % CLOTH.size()], 0.2, 0.5))
+		7:  # Used tyres.
+			for i in range(5):
+				_drum(frame, at + Vector3((i / 3) * 0.72 - 0.3, (i % 3) * 0.2, 0), 0.66, 0.19, Materials.solid(Color("161616"), 0.0, 0.9))
+		8:  # Bags of sachet water.
+			for i in range(6):
+				_box(frame, at + Vector3((i % 2) * 0.5 - 0.25, 0.1 + (i / 2) * 0.19, 0), Vector3(0.46, 0.17, 0.36),
+					Materials.solid(Color("bcd9e6"), 0.0, 0.35))
+		_:  # Paint tins and buckets.
+			for i in range(5):
+				_drum(frame, at + Vector3((i % 3) * 0.34 - 0.34, (i / 3) * 0.33, 0), 0.3, 0.32,
+					Materials.solid([Color("f4f1e6"), Color("2f5f93"), Color("e6cf7c")][i % 3], 0.1, 0.5))
+	_detail = false
+
+## Painted sheet-metal signboard: bold ground, contrasting letters, a rule below.
 func _sign(frame: Transform3D, text: String, at: Vector3, w: float, h: float, color: Color) -> void:
-	var root := Node3D.new()
-	root.name = "LocalShopSign"
-	root.transform = frame * Transform3D(Basis.IDENTITY, at)
-	add_child(root)
-	Props.rounded_box(root, Vector3.ZERO, Vector3(w, h, 0.075), 0.025, Materials.solid(Color("363e36"), 0.4), "SignFrame")
-	Props.box(root, Vector3(0, 0, 0.041), Vector3(w - 0.055, h - 0.055, 0.012), Materials.solid(color), "PaintedFace")
-	var cream := Color("e9dfc5")
-	Props.box(root, Vector3(0, -h * 0.37, 0.05), Vector3(w - 0.17, 0.012, 0.01), Materials.solid(cream))
-	var lines := text.split("\n")
-	var text_x: float = h * 0.30
-	var badge_x: float = -w * 0.5 + h * 0.45
-	Props.ellipsoid(root, Vector3(badge_x, 0.02, 0.06), Vector3(h * 0.53, h * 0.53, 0.016), Materials.solid(cream), "ShopBadge")
-	Props.label(root, lines[0].substr(0, 1), Vector3(badge_x, 0.02, 0.074), h * 0.32, h * 0.34, color).visibility_range_end = 65.0
-	Props.label(root, lines[0], Vector3(text_x, h * 0.13, 0.055), w - h * 1.3, h * 0.33, cream, "ShopName").visibility_range_end = 65.0
-	if lines.size() > 1:
-		Props.label(root, lines[1], Vector3(text_x, -h * 0.19, 0.055), w - h * 1.3, h * 0.16, cream, "ShopType").visibility_range_end = 65.0
+	_box(frame, at, Vector3(w, h, 0.06), Materials.solid(Color("2b2b28"), 0.3, 0.6))
+	_box(frame, at + Vector3(0, 0, 0.034), Vector3(w - 0.07, h - 0.07, 0.012), Materials.solid(color, 0.0, 0.65))
+	var light: bool = color.get_luminance() > 0.45
+	var ink: Color = [Color("a31d16"), Color("123a73"), Color("16181a")][_sign_count % 3] if light else \
+		[Color("f6f2e6"), Color("f7d21e"), Color("f6f2e6")][_sign_count % 3]
+	_detail = true
+	_box(frame, at + Vector3(0, -h * 0.5 + 0.09, 0.042), Vector3(w - 0.2, 0.035, 0.008), Materials.solid(ink, 0.0, 0.7))
+	_detail = false
+	var label := Props.label(self, text, Vector3.ZERO, w - 0.28, h - 0.24, ink, "ShopName")
+	label.transform = frame * Transform3D(Basis.IDENTITY, at + Vector3(0, 0.03, 0.044))
+	label.visibility_range_end = 70.0
 
 func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, shade: Color = Color.WHITE) -> void:
 	var normal := (b - a).cross(c - a).normalized()
@@ -294,88 +525,157 @@ func _make_hip_roof() -> ArrayMesh:
 	_triangle(st, e, ridge_a, a)
 	return st.commit()
 
-func _hip_roof(frame: Transform3D, w: float, d: float, y: float, rise: float) -> void:
-	var material := Materials.surface(4, ROOFS[_rng.randi_range(0, ROOFS.size() - 1)])
-	_batch(_roof_mesh, material, frame * Transform3D(Basis.from_scale(Vector3(w, rise, d)), Vector3(0, y, 0)))
-	var ridge_a := Vector3(-w * 0.27, y + rise, 0)
-	var ridge_b := Vector3(w * 0.27, y + rise, 0)
-	_beam(frame, ridge_a, ridge_b, 0.12, material)
-	for z in [-d * 0.5, d * 0.5]:
-		_box(frame, Vector3(0, y - 0.05, z), Vector3(w, 0.14, 0.1), Materials.surface(0, Color("c0b7a2")))
-	for x in [-w * 0.5, w * 0.5]:
-		_box(frame, Vector3(x, y - 0.05, 0), Vector3(0.1, 0.14, d), Materials.surface(0, Color("c0b7a2")))
+func _make_gable_roof() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var a := Vector3(-0.5, 0, -0.5)
+	var b := Vector3(0.5, 0, -0.5)
+	var c := Vector3(0.5, 0, 0.5)
+	var e := Vector3(-0.5, 0, 0.5)
+	var ridge_a := Vector3(-0.5, 1, 0)
+	var ridge_b := Vector3(0.5, 1, 0)
+	_triangle(st, a, ridge_a, ridge_b)
+	_triangle(st, a, ridge_b, b)
+	_triangle(st, b, ridge_b, c)
+	_triangle(st, c, ridge_b, ridge_a)
+	_triangle(st, c, ridge_a, e)
+	_triangle(st, e, ridge_a, a)
+	return st.commit()
 
-func _water_tank(frame: Transform3D, at: Vector3) -> void:
-	var plastic := Materials.solid(Color("303b36"), 0.0, 0.55)
-	_box(frame, at + Vector3(0, 0.12, 0), Vector3(0.9, 0.24, 0.9), Materials.surface(2, Color("77756b")))
-	_beam(frame, at + Vector3(0, 0.24, 0), at + Vector3(0, 1.23, 0), 0.78, plastic)
-	for y in [0.35, 0.53, 0.72, 0.91, 1.12]:
-		_beam(frame, at + Vector3(0, y, 0), at + Vector3(0, y + 0.025, 0), 0.81, plastic)
-	_beam(frame, at + Vector3(0, 1.23, 0), at + Vector3(0, 1.29, 0), 0.45, plastic)
+## Long-span sheet roof with white fascia boards: hipped, or gabled when asked.
+func _hip_roof(frame: Transform3D, w: float, d: float, y: float, rise: float, gable: bool = false, shift: float = 0.0) -> void:
+	var material := Materials.surface(4, ROOFS[_rng.randi_range(0, ROOFS.size() - 1)])
+	_batch(_gable_mesh if gable else _roof_mesh, material, frame * Transform3D(Basis.from_scale(Vector3(w, rise, d)), Vector3(0, y, shift)))
+	var half: float = w * (0.5 if gable else 0.27)
+	_beam(frame, Vector3(-half, y + rise, shift), Vector3(half, y + rise, shift), 0.14, material)
+	var fascia := Materials.solid(Color("ece7da"), 0.0, 0.7)
+	for z in [-d * 0.5, d * 0.5]:
+		_box(frame, Vector3(0, y - 0.07, shift + z), Vector3(w, 0.18, 0.06), fascia)
+	for x in [-w * 0.5, w * 0.5]:
+		_box(frame, Vector3(x, y - 0.07, shift), Vector3(0.06, 0.18, d), fascia)
+
+## Black ribbed polytank on a low block base.
+func _water_tank(frame: Transform3D, at: Vector3, size: float = 1.0) -> void:
+	var plastic := Materials.solid(Color("15181a"), 0.0, 0.42)
+	_box(frame, at + Vector3(0, 0.1, 0), Vector3(1.5, 0.2, 1.5) * size, Materials.surface(2, Color("77756b")))
+	_drum(frame, at + Vector3(0, 0.2 * size, 0), 1.35 * size, 1.45 * size, plastic)
+	_ball(frame, at + Vector3(0, 1.65 * size, 0), Vector3(1.3, 0.5, 1.3) * size, plastic)
+	_drum(frame, at + Vector3(0, 1.82 * size, 0), 0.42 * size, 0.12 * size, plastic)
+	_detail = true
+	for y in [0.55, 0.9, 1.25]:
+		_drum(frame, at + Vector3(0, y * size, 0), 1.4 * size, 0.05 * size, plastic)
+	_detail = false
+
+## Polytank raised on an angle-iron stand, as in most compound yards.
+func tank_stand(center: Vector3, height: float = 3.2) -> void:
+	var frame := _frame(center)
+	var steel := Materials.solid(Color("4a3a30"), 0.5, 0.7)
+	for x in [-0.7, 0.7]:
+		for z in [-0.7, 0.7]:
+			_beam(frame, Vector3(x, 0, z), Vector3(x * 0.85, height, z * 0.85), 0.09, steel)
+	_detail = true
+	for y in [height * 0.35, height * 0.7]:
+		for side in range(4):
+			var turn := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
+			_beam(turn, Vector3(-0.66, y, 0.66), Vector3(0.66, y + height * 0.3, 0.66), 0.05, steel)
+	_detail = false
+	_box(frame, Vector3(0, height, 0), Vector3(1.6, 0.1, 1.6), Materials.surface(6, Color("5a4632")))
+	_water_tank(frame, Vector3(0, height - 0.12, 0))
 
 func _air_conditioner(frame: Transform3D, at: Vector3) -> void:
-	_box(frame, at, Vector3(0.66, 0.38, 0.3), Materials.solid(Color("afa998")))
-	for i in range(6):
-		_box(frame, at + Vector3(0, -0.13 + i * 0.05, 0.16), Vector3(0.54, 0.017, 0.02), Materials.solid(Color("62685f")))
+	_box(frame, at, Vector3(0.8, 0.55, 0.3), Materials.solid(Color("d8d6cc"), 0.1, 0.6))
+	_detail = true
+	_drum(frame * Transform3D(Basis(Vector3.RIGHT, PI * 0.5), at + Vector3(-0.12, 0, 0.14)), Vector3.ZERO, 0.4, 0.04, Materials.solid(Color("3c4040"), 0.3, 0.6))
+	_detail = false
 
 func compound(center: Vector3, size: float, floors: int, facing: Vector3 = Vector3.BACK) -> void:
-	# The gate and the house front face `facing`.
+	# The gate and the house front face `facing`. A swept laterite yard inside a
+	# painted block wall, a steel gate, the polytank stand and something growing.
 	var frame := _frame(center, facing)
-	var wall := Materials.surface(0, WALLS[_rng.randi_range(0, WALLS.size() - 1)])
+	var paint: Color = WALLS[_rng.randi_range(0, WALLS.size() - 1)]
+	var wall := Materials.surface(0, paint)
+	var coping := Materials.surface(0, paint.lerp(Color("f6f1e4"), 0.6))
 	var half: float = size * 0.5
-	_box(frame, Vector3(0, -0.005, 0), Vector3(size, 0.05, size), Materials.surface(5, Color("a6967b")))
+	var tall: float = 1.9 if size > 12.0 else 1.5
+	_box(frame, Vector3(0, -0.005, 0), Vector3(size, 0.05, size), Materials.surface(9, Color("9c6c4e")))
 	for z in [-half, half]:
 		if z < 0:
-			_box(frame, Vector3(0, 0.64, z), Vector3(size, 1.28, 0.18), wall, true)
+			_box(frame, Vector3(0, tall * 0.5, z), Vector3(size, tall, 0.18), wall, true)
+			_box(frame, Vector3(0, tall + 0.04, z), Vector3(size + 0.06, 0.08, 0.26), coping)
 		else:
 			for sign_value in [-1.0, 1.0]:
-				_box(frame, Vector3(sign_value * (size + 1.9) * 0.25, 0.64, z), Vector3((size - 1.9) * 0.5, 1.28, 0.18), wall, true)
+				_box(frame, Vector3(sign_value * (size + 2.6) * 0.25, tall * 0.5, z), Vector3((size - 2.6) * 0.5, tall, 0.18), wall, true)
+				_box(frame, Vector3(sign_value * (size + 2.6) * 0.25, tall + 0.04, z), Vector3((size - 2.6) * 0.5 + 0.06, 0.08, 0.26), coping)
 	for x in [-half, half]:
-		_box(frame, Vector3(x, 0.64, 0), Vector3(0.18, 1.28, size), wall, true)
-	for x in [-half, -0.99, 0.99, half]:
-		_box(frame, Vector3(x, 0.75, half), Vector3(0.3, 1.5, 0.3), wall, true)
-		_box(frame, Vector3(x, 1.53, half), Vector3(0.38, 0.12, 0.38), Materials.surface(2, Color("7f7c70")))
-	var gate := Materials.solid(Color("484c43"), 0.6)
-	for i in range(13):
-		_box(frame, Vector3(-0.88 + i * 0.147, 0.67, half), Vector3(0.105, 1.25, 0.06), gate)
-	_box(frame, Vector3(0, 1.25, half), Vector3(1.9, 0.05, 0.08), gate)
+		_box(frame, Vector3(x, tall * 0.5, 0), Vector3(0.18, tall, size), wall, true)
+		_box(frame, Vector3(x, tall + 0.04, 0), Vector3(0.26, 0.08, size + 0.06), coping)
+	for x in [-half, -1.34, 1.34, half]:
+		_box(frame, Vector3(x, (tall + 0.3) * 0.5, half), Vector3(0.34, tall + 0.3, 0.34), wall, true)
+		_box(frame, Vector3(x, tall + 0.36, half), Vector3(0.44, 0.12, 0.44), coping)
+	var gate := Materials.surface(4, DOORS[_rng.randi_range(0, DOORS.size() - 1)])
+	_box(frame, Vector3(0, tall * 0.5 + 0.03, half), Vector3(2.5, tall - 0.06, 0.07), gate)
+	_detail = true
+	for i in range(7):
+		_ball(frame, Vector3(-1.05 + i * 0.35, tall + 0.1, half), Vector3(0.07, 0.2, 0.07), Materials.solid(Color("c9a437"), 0.7, 0.4))
+	_detail = false
 	building(center + frame.basis * Vector3(-0.5, 0, -0.7), facing, size * 0.57, size * 0.5, floors)
 	# Validate the enclosing residential plot, not just the house inside its walls.
 	land_uses[-1].merge({"center": center, "width": size, "depth": size, "compound": true}, true)
-	tree(center + frame.basis * Vector3(half - 1.2, 0, -half + 1.2), true)
+	var corner := center + frame.basis * Vector3(half - 1.5, 0, -half + 1.5)
+	var pick: float = _rng.randf()
+	if pick < 0.4:
+		tree(corner, true)
+	elif pick < 0.75:
+		banana(corner)
+	else:
+		tree(corner, false, 6, 10)
+	if size > 9.0:
+		tank_stand(center + frame.basis * Vector3(half - 1.3, 0, half * 0.2), 2.8)
+	if _rng.randf() < 0.4:
+		for i in range(3):
+			shrub(center + frame.basis * Vector3(-half + 1.2 + i * 1.1, tall - 0.5, half + 0.1), 0.9, true)
 
 func boundary_wall(center: Vector3, facing: Vector3, width: float) -> void:
 	var frame := _frame(center, facing)
-	var material := Materials.surface(0, Color("a99f86"))
-	_box(frame, Vector3(0, 0.57, 0), Vector3(width, 1.14, 0.2), material, true)
-	_box(frame, Vector3(0, 1.17, 0), Vector3(width + 0.08, 0.12, 0.29), Materials.surface(2, Color("7e7c6e")))
-	var piers: int = maxi(1, floori(width / 1.8))
+	var material := Materials.surface(0, Color("d9c9a3"))
+	_box(frame, Vector3(0, 0.75, 0), Vector3(width, 1.5, 0.2), material, true)
+	_box(frame, Vector3(0, 1.54, 0), Vector3(width + 0.08, 0.1, 0.29), Materials.surface(0, Color("f0e9d8")))
+	var piers: int = maxi(1, floori(width / 3.0))
 	for i in range(piers + 1):
-		_box(frame, Vector3(-width * 0.5 + width * i / piers, 0.69, 0), Vector3(0.28, 1.38, 0.3), material)
+		_box(frame, Vector3(-width * 0.5 + width * i / piers, 0.85, 0), Vector3(0.3, 1.7, 0.32), material)
 
+## Timber market stall under rusting roofing sheets, piled with produce.
 func market_stall(center: Vector3, facing: Vector3, w: float, d: float) -> void:
 	var frame := _frame(center, facing)
 	var wood := Materials.surface(6, Color("756047"))
-	var canopy := Materials.surface(4, SHOP_COLORS[_rng.randi_range(0, 3)].lightened(0.1))
+	var canopy := Materials.surface(4, [Color("a3a8a6"), Color("8a5b3e"), Color("2f5f93"), Color("b3b6b1")][_rng.randi_range(0, 3)])
 	for x in [-w * 0.45, w * 0.45]:
 		for z in [-d * 0.45, d * 0.45]:
-			_beam(frame, Vector3(x, 0, z), Vector3(x, 1.8, z), 0.045, wood)
-	var pitched := frame * Transform3D(Basis(Vector3.RIGHT, -0.13), Vector3(0, 1.82, 0))
-	_box(pitched, Vector3.ZERO, Vector3(w + 0.25, 0.045, d + 0.3), canopy)
-	_box(frame, Vector3(0, 0.75, 0.14), Vector3(w, 0.13, d * 0.8), wood)
-	_box(frame, Vector3(0, 0.4, 0.14), Vector3(w * 0.9, 0.6, d * 0.6), Materials.surface(6, Color("8f724d")))
-	for i in range(4):
-		var fruit: Color = [Color("b79838"), Color("718843"), Color("ae593e"), Color("9a8242")][i]
-		_box(frame, Vector3(-w * 0.37 + i * w * 0.24, 0.9, 0.15), Vector3(w * 0.2, 0.17, d * 0.45), Materials.solid(fruit))
+			_beam(frame, Vector3(x, 0, z), Vector3(x, 2.1, z), 0.07, wood)
+	var pitched := frame * Transform3D(Basis(Vector3.RIGHT, -0.13), Vector3(0, 2.12, 0))
+	_box(pitched, Vector3.ZERO, Vector3(w + 0.3, 0.045, d + 0.4), canopy)
+	_box(frame, Vector3(0, 0.75, 0.14), Vector3(w, 0.08, d * 0.8), wood)
+	_ball(frame, Vector3(0, 1.85, 0.1), Vector3(0.15, 0.19, 0.15), _warm)
+	for x in [-w * 0.42, w * 0.42]:
+		_box(frame, Vector3(x, 0.37, 0.14), Vector3(0.08, 0.74, d * 0.7), wood)
+	_detail = true
+	var produce: Array[Color] = [Color("c8371f"), Color("e88d1c"), Color("5d8a2e"), Color("8a5a2f"), Color("e9c62c"), Color("b02a2a")]
+	var heaps: int = maxi(3, floori(w / 0.5))
+	for i in range(heaps):
+		var fruit := Materials.solid(produce[_rng.randi_range(0, produce.size() - 1)], 0.0, 0.7)
+		_ball(frame, Vector3(-w * 0.42 + (i + 0.5) * w * 0.84 / heaps, 0.88, 0.14 + _rng.randf_range(-0.2, 0.2) * d),
+			Vector3(0.42, 0.26, 0.42), fruit)
+	_detail = false
 
-func commercial(center: Vector3, facing: Vector3, w: float, d: float, kind: String) -> void:
+func commercial(center: Vector3, facing: Vector3, w: float, d: float, kind: String, title: String = "") -> void:
 	## Purpose-built roadside premises; their front apron fits inside the setback.
 	_building_count += 1
 	var floors: int = 2 if kind in ["mall", "police"] else 1
 	_record_use(kind, center, facing, w, d, floors)
 	var frame := _frame(center, facing)
-	var concrete := Materials.surface(2, Color("928e80"))
-	_box(frame, Vector3(0, 0.025, 0.45), Vector3(w + 0.5, 0.1, d + 1.5), concrete)
+	var concrete := Materials.surface(2, Color("9c978b"))
+	if kind != "kiosk":
+		_box(frame, Vector3(0, 0.025, 0.45), Vector3(w + 0.5, 0.1, d + 1.5), concrete)
 	match kind:
 		"mechanic":
 			_workshop(frame, w, d)
@@ -384,307 +684,548 @@ func commercial(center: Vector3, facing: Vector3, w: float, d: float, kind: Stri
 		"kiosk":
 			_kiosk(frame, w, d)
 		_:
-			_retail(frame, w, d, kind)
+			_retail(frame, w, d, kind, title)
 
-func _retail(frame: Transform3D, w: float, d: float, kind: String) -> void:
+func _retail(frame: Transform3D, w: float, d: float, kind: String, title: String = "") -> void:
 	var mall: bool = kind == "mall"
 	var supermarket: bool = kind == "supermarket"
-	var h: float = 6.2 if mall else (3.6 if supermarket else 3.0)
+	if not mall and not supermarket:
+		# Corner store: the same lock-up bays as any other line of shops.
+		var paint: Color = WALLS[_rng.randi_range(0, WALLS.size() - 1)]
+		_box(frame, Vector3(0, STORY * 0.5, 0), Vector3(w, STORY, d), Materials.surface(0, paint), true)
+		_box(frame, Vector3(0, 0.55, 0), Vector3(w + 0.05, 1.1, d + 0.05), Materials.surface(0, DADOS[_rng.randi_range(0, DADOS.size() - 1)]))
+		_shop_front(frame, w, d, paint, 0.9, 1)
+		_hip_roof(frame, w + 0.6, d + 0.6, STORY + 0.02, clampf(minf(w, d) * 0.2, 0.7, 1.6))
+		return
+	var h: float = 7.2 if mall else 4.4
 	var z: float = d * 0.5
-	var plaster := Materials.surface(0, Color("c5bca6") if mall else Color("b4af9a"))
-	var trim := Materials.surface(2, Color("b7b7a9"))
-	var accent: Color = Color("365b50") if supermarket else (Color("5c5147") if mall else SHOP_COLORS[_sign_count % SHOP_COLORS.size()])
+	# Supermarkets are white with one loud colour; the mall is clad in panels.
+	var accent: Color = [Color("c62f25"), Color("1c7a45"), Color("f08a1c"), Color("1c63a8")][_sign_count % 4]
+	var plaster := Materials.surface(0, Color("dfe1dc") if mall else Color("f1ede0"))
+	var trim := Materials.surface(2, Color("c9c9c0"))
+	var colour := Materials.solid(accent, 0.0, 0.6)
 	var metal := Materials.solid(Color("555f5d"), 0.65, 0.3)
 	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), plaster, true)
 	_box(frame, Vector3(0, 0.16, 0), Vector3(w + 0.06, 0.32, d + 0.06), trim)
-	var bays: int = maxi(2, floori(w / 2.1))
+	_box(frame, Vector3(0, h - 0.5, 0), Vector3(w + 0.08, 0.7, d + 0.08), colour)
+	var bays: int = maxi(2, floori(w / 3.0))
 	for i in range(bays):
 		var bay_w: float = w / bays
 		var x: float = -w * 0.5 + (i + 0.5) * bay_w
-		_glazed_shop_bay(frame, Vector3(x, 1.35, z + 0.055), bay_w - 0.25, 2.3, i == bays / 2)
-		_box(frame, Vector3(x - bay_w * 0.5 + 0.08, 1.5, z + 0.07), Vector3(0.16, 3.0, 0.2), trim)
+		_glazed_shop_bay(frame, Vector3(x, 1.45, z + 0.055), bay_w - 0.3, 2.5, i == bays / 2)
+		_box(frame, Vector3(x - bay_w * 0.5 + 0.1, 1.6, z + 0.07), Vector3(0.2, 3.2, 0.2), trim)
 		if mall:
-			_window(frame, Vector3(x, 4.65, z + 0.04), bay_w * 0.78, 1.75, false, trim)
-			_box(frame, Vector3(x - bay_w * 0.45, 4.65, z + 0.2), Vector3(0.1, 2.2, 0.32), metal)
+			_window(frame, Vector3(x, 5.0, z + 0.04), bay_w * 0.78, 1.9, false, trim, true)
+			_box(frame, Vector3(x - bay_w * 0.45, 5.0, z + 0.2), Vector3(0.12, 2.4, 0.32), metal)
 	if mall:
-		# The upper storey steps back visually behind a continuous retail canopy.
-		_box(frame, Vector3(0, 3.15, z + 0.38), Vector3(w + 0.35, 0.21, 0.9), trim)
 		for side in [-1.0, 1.0]:
 			var flank := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
-			for i in range(maxi(2, floori(d / 2.4))):
-				var count: int = maxi(2, floori(d / 2.4))
-				_window(flank, Vector3(-d * 0.5 + (i + 0.5) * d / count, 4.6, w * 0.5 + 0.025), d / count * 0.65, 1.6, false, trim)
-	var text: String = SHOP_NAMES[_sign_count % SHOP_NAMES.size()]
+			var count: int = maxi(2, floori(d / 3.2))
+			for i in range(count):
+				_window(flank, Vector3(-d * 0.5 + (i + 0.5) * d / count, 5.0, w * 0.5 + 0.025), d / count * 0.6, 1.8, false, trim, true)
+	var text: String
 	if mall:
-		text = _premise_name("mall") + "\nSHOPS  •  FOOD COURT"
-	elif supermarket:
-		text = _premise_name("supermarket") + "\nGROCERIES  •  HOME ESSENTIALS"
-	_sign(frame, text, Vector3(0, 2.88 if mall else h - 0.42, z + 0.22), w - 0.3, 0.67, accent)
+		text = (_premise_name("mall") if title.is_empty() else title) + "\nShops  •  Food Court  •  Cinema"
+	else:
+		text = (_premise_name("supermarket") if title.is_empty() else title) + "\nGroceries  •  Home Essentials"
+	_sign(frame, text, Vector3(0, h - 0.5, z + 0.09), minf(w - 0.6, 12.0), 1.1 if mall else 0.95, Color("f4f1e6") if _sign_count % 2 == 0 else accent)
 	_sign_count += 1
-	_box(frame, Vector3(0, 2.52, z + 0.58), Vector3(w + 0.3, 0.11, 1.18), metal)
+	_box(frame, Vector3(0, 3.1, z + 0.75), Vector3(w + 0.3, 0.14, 1.5), colour)
 	for x in [-w * 0.46, w * 0.46]:
-		_beam(frame, Vector3(x, 0.1, z + 1.04), Vector3(x, 2.51, z + 1.04), 0.055, metal)
-	# Roof parapet hides service equipment; no domestic pitched roof or balcony.
+		_beam(frame, Vector3(x, 0.1, z + 1.35), Vector3(x, 3.05, z + 1.35), 0.09, metal)
 	_flat_roof(frame, w, d, h, trim)
-	_box(frame, Vector3(w * 0.24, h + 0.45, -d * 0.2), Vector3(1.0, 0.6, 1.3), metal)
+	_box(frame, Vector3(w * 0.24, h + 0.55, -d * 0.2), Vector3(1.6, 0.9, 2.0), metal)
+	_water_tank(frame, Vector3(-w * 0.3, h + 0.13, -d * 0.25))
 	if supermarket:
 		# Nested trolley silhouettes alongside the entrance.
+		_detail = true
 		for i in range(3):
 			var at := Vector3(w * 0.34, 0.0, z + 0.4 + i * 0.2)
 			_box(frame, at + Vector3(0, 0.44, 0), Vector3(0.42, 0.26, 0.43), Materials.solid(Color("737f7d"), 0.8))
-			for x in [-0.17, 0.17]:
-				_beam(frame, at + Vector3(x, 0.14, -0.16), at + Vector3(x, 0.6, 0.17), 0.025, metal)
+		_detail = false
 
 func _glazed_shop_bay(frame: Transform3D, at: Vector3, w: float, h: float, entrance: bool) -> void:
 	var aluminum := Materials.solid(Color("a6aca6"), 0.75, 0.28)
-	var glass: Material = _cool if entrance else Materials.solid(Color("3a5354"), 0.35, 0.2)
+	var glass: Material = _cool if entrance else Materials.solid(Color("2f5f72"), 0.45, 0.16)
 	_box(frame, at, Vector3(w, h, 0.06), glass)
+	_detail = true
 	for x in [-w * 0.5, 0.0, w * 0.5]:
-		_box(frame, at + Vector3(x, 0, 0.045), Vector3(0.045, h + 0.04, 0.07), aluminum)
+		_box(frame, at + Vector3(x, 0, 0.045), Vector3(0.05, h + 0.04, 0.07), aluminum)
 	for y in [-h * 0.5, h * 0.5]:
-		_box(frame, at + Vector3(0, y, 0.045), Vector3(w + 0.04, 0.045, 0.07), aluminum)
-	if entrance:
-		for x in [-0.09, 0.09]:
-			_box(frame, at + Vector3(x, -0.06, 0.105), Vector3(0.025, 0.48, 0.035), aluminum)
-	else:
-		_box(frame, at + Vector3(0, -h * 0.26, 0.04), Vector3(w * 0.88, 0.18, 0.025), Materials.solid(Color("8f9b86")))
+		_box(frame, at + Vector3(0, y, 0.045), Vector3(w + 0.04, 0.05, 0.07), aluminum)
+	if not entrance:
+		# Promotional poster behind the glass.
+		_box(frame, at + Vector3(0, -h * 0.12, 0.04), Vector3(w * 0.6, h * 0.42, 0.02),
+			Materials.solid(CLOTH[_rng.randi_range(0, CLOTH.size() - 1)], 0.0, 0.7))
+	_detail = false
 
 func _flat_roof(frame: Transform3D, w: float, d: float, h: float, trim: Material) -> void:
-	_box(frame, Vector3(0, h + 0.04, 0), Vector3(w + 0.18, 0.12, d + 0.18), Materials.surface(2, Color("777e74")))
+	_box(frame, Vector3(0, h + 0.04, 0), Vector3(w + 0.18, 0.12, d + 0.18), Materials.surface(2, Color("8a8b84")))
 	for z in [-d * 0.5, d * 0.5]:
 		_box(frame, Vector3(0, h + 0.25, z), Vector3(w + 0.18, 0.42, 0.17), trim)
 	for x in [-w * 0.5, w * 0.5]:
 		_box(frame, Vector3(x, h + 0.25, 0), Vector3(0.17, 0.42, d), trim)
 
+## Fitting shop: bare block walls, a rusting zinc roof, a car under repair,
+## an engine block on the floor and the vulcanizer's tyre stack by the road.
 func _workshop(frame: Transform3D, w: float, d: float) -> void:
-	var h: float = 3.35
-	var wall := Materials.surface(0, Color("918e7b"))
-	var metal := Materials.surface(4, Color("5c6a66"))
-	var dark := Materials.solid(Color("292f2c"))
-	var bay_count: int = maxi(2, floori(w / 2.8))
+	var h: float = 3.6
+	var wall := Materials.surface(11, Color("9c9a92"))
+	var metal := Materials.surface(4, Color("8a5b3e"))
+	var dark := Materials.solid(Color("1c1d1c"))
+	var bay_count: int = maxi(2, floori(w / 4.2))
 	var z: float = d * 0.5
 	# Real open bays: collision follows rear and flank walls, not the openings.
 	_box(frame, Vector3(0, h * 0.5, -z + 0.12), Vector3(w, h, 0.24), wall, true)
 	for x in [-w * 0.5 + 0.1, w * 0.5 - 0.1]:
 		_box(frame, Vector3(x, h * 0.5, 0), Vector3(0.2, h, d), wall, true)
-	_box(frame, Vector3(0, 0.07, 0), Vector3(w, 0.14, d), Materials.surface(1, Color("4e5148")))
-	_hip_roof(frame, w + 0.4, d + 0.45, h, 0.5)
+	_box(frame, Vector3(0, 0.07, 0), Vector3(w, 0.14, d), Materials.surface(9, Color("5b5148")))
+	_hip_roof(frame, w + 0.6, d + 0.9, h, 0.9, true)
 	for i in range(bay_count + 1):
 		var x: float = -w * 0.5 + i * w / bay_count
-		_box(frame, Vector3(x, h * 0.5, z - 0.07), Vector3(0.15, h, 0.2), wall, true)
+		_box(frame, Vector3(x, h * 0.5, z - 0.07), Vector3(0.22, h, 0.22), wall, true)
 	for i in range(bay_count):
 		var x: float = -w * 0.5 + (i + 0.5) * w / bay_count
-		for slat in range(5):
-			_box(frame, Vector3(x, 2.55 + slat * 0.09, z + 0.05), Vector3(w / bay_count - 0.2, 0.07, 0.07), metal)
-		_box(frame, Vector3(x, 0.78, -z + 0.55), Vector3(w / bay_count * 0.75, 0.12, 0.64), metal)
-		_box(frame, Vector3(x, 1.38, -z + 0.24), Vector3(w / bay_count * 0.68, 0.7, 0.055), dark)
-		for tool in range(5):
-			_beam(frame, Vector3(x - 0.4 + tool * 0.2, 1.13, -z + 0.29), Vector3(x - 0.38 + tool * 0.2, 1.56, -z + 0.29), 0.028, Materials.solid(Color("adb2aa"), 0.7))
-	_sign(frame, "KOFI'S AUTO WORKS\nSERVICING  •  TYRES  •  SPARE PARTS", Vector3(0, 3.11, z + 0.13), w - 0.25, 0.53, Color("4f665c"))
-	# Service car, axle stands and tyre stack make the premises legible at street level.
+		_box(frame, Vector3(x, 0.8, -z + 0.6), Vector3(w / bay_count * 0.7, 0.1, 0.7), Materials.surface(6, Color("5a4632")))
+		_box(frame, Vector3(x, 1.5, -z + 0.26), Vector3(w / bay_count * 0.66, 0.9, 0.05), dark)
+	_sign(frame, _premise_name("mechanic") + "\nFitting  •  Vulcanizing  •  Spraying", Vector3(0, h - 0.35, z + 0.2), minf(w - 0.4, 9.0), 0.85, Color("f2c318"))
+	_sign_count += 1
+	# Service car, engine block and tyre stack make the premises legible at street level.
 	var car := FleetActor.new()
 	car.configure("car", 4)
-	car.transform = frame * Transform3D(Basis.from_scale(Vector3.ONE * 1.1), Vector3(-w * 0.22, 0.17, 0.1))
+	car.transform = frame * Transform3D(Basis(Vector3.UP, 0.25), Vector3(-w * 0.2, 0.17, 0.3))
+	car.set_metric_dimensions(Vector3(1.8, 1.5, 4.5))
 	car.name = "WorkshopVehicle"
 	add_child(car)
-	var tyre := TorusMesh.new()
-	tyre.inner_radius = 0.13
-	tyre.outer_radius = 0.26
-	tyre.rings = 12
-	tyre.ring_segments = 8
-	for i in range(4):
-		_batch(tyre, dark, frame * Transform3D(Basis.IDENTITY, Vector3(w * 0.36, 0.16 + i * 0.14, z - 0.48)))
-	_box(frame, Vector3(w * 0.34, 0.43, -z + 0.8), Vector3(0.6, 0.72, 0.65), Materials.solid(Color("8f493b")))
+	var rubber := Materials.solid(Color("161616"), 0.0, 0.9)
+	for i in range(6):
+		_drum(frame, Vector3(w * 0.38 + (i / 4) * 0.4, 0.14 + (i % 4) * 0.2, z + 0.5), 0.66, 0.19, rubber)
+	_drum(frame, Vector3(w * 0.22, 0.14, z - 1.2), 0.58, 0.88, Materials.solid(Color("2f5f93"), 0.4, 0.6))
+	_box(frame, Vector3(w * 0.05, 0.4, -z + 1.6), Vector3(0.7, 0.55, 0.5), Materials.solid(Color("3b3f41"), 0.7, 0.5))
 
 func _police_station(frame: Transform3D, w: float, d: float) -> void:
-	var h: float = 5.25
+	# Ghana Police stations are white over a strong blue band.
+	var h: float = STORY * 2.0
 	var z: float = d * 0.5
-	var wall := Materials.surface(0, Color("bfc0af"))
-	var blue := Materials.solid(Color("29455e"))
-	var trim := Materials.surface(2, Color("b9b8a5"))
+	var wall := Materials.surface(0, Color("eef0ea"))
+	var blue := Materials.surface(0, Color("1f4f9a"))
+	var trim := Materials.surface(2, Color("c9c9c0"))
 	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), wall, true)
-	_box(frame, Vector3(0, 0.46, 0), Vector3(w + 0.035, 0.92, d + 0.035), blue)
+	_box(frame, Vector3(0, 0.6, 0), Vector3(w + 0.04, 1.2, d + 0.04), blue)
 	for floor_index in range(2):
 		for side in range(4):
 			var face := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
 			var span: float = w if side % 2 == 0 else d
 			var dep: float = d if side % 2 == 0 else w
 			for x in [-span * 0.32, span * 0.32]:
-				_window(face, Vector3(x, 1.55 + floor_index * 2.5, dep * 0.5 + 0.025), minf(span * 0.22, 1.35), 1.1, floor_index == 0, trim)
-	_glazed_shop_bay(frame, Vector3(0, 1.15, z + 0.06), minf(1.5, w * 0.23), 2.1, true)
-	_box(frame, Vector3(0, 2.55, z + 0.58), Vector3(w * 0.48, 0.17, 1.2), blue)
-	_sign(frame, _premise_name("police") + "\nPOLICE STATION", Vector3(0, 2.95, z + 0.13), w - 0.35, 0.63, Color("29455e"))
+				_window(face, Vector3(x, 1.75 + floor_index * STORY, dep * 0.5 + 0.025), minf(span * 0.22, 1.5), 1.15, floor_index == 0, trim, side != 0)
+	_door(frame, Vector3(0, 1.1, z + 0.05), 1.3, 2.2)
+	_box(frame, Vector3(0, 2.75, z + 0.7), Vector3(w * 0.5, 0.16, 1.4), blue)
+	for x in [-w * 0.22, w * 0.22]:
+		_box(frame, Vector3(x, 1.38, z + 1.3), Vector3(0.22, 2.75, 0.22), wall)
+	_sign(frame, _premise_name("police") + "\nGhana Police Service", Vector3(0, STORY + 0.55, z + 0.1), minf(w - 0.6, 8.0), 0.9, Color("1f4f9a"))
+	_sign_count += 1
 	_flat_roof(frame, w, d, h, trim)
+	_water_tank(frame, Vector3(w * 0.25, h + 0.13, -d * 0.2))
 	var mast_x: float = -w * 0.43
-	_beam(frame, Vector3(mast_x, 0.1, z + 0.8), Vector3(mast_x, 4.3, z + 0.8), 0.045, Materials.solid(Color("a9ada4"), 0.75))
+	_beam(frame, Vector3(mast_x, 0.1, z + 1.0), Vector3(mast_x, 6.0, z + 1.0), 0.07, Materials.solid(Color("d9dbd6"), 0.5))
 	# Ghana's flag, mounted within the forecourt rather than over the pavement.
 	for stripe in range(3):
-		var color: Color = [Color("a84335"), Color("c6aa4b"), Color("49714c")][stripe]
-		_box(frame, Vector3(mast_x + 0.34, 4.15 - stripe * 0.14, z + 0.8), Vector3(0.65, 0.14, 0.022), Materials.solid(color))
-	var flag := Node3D.new()
-	flag.transform = frame
-	add_child(flag)
-	Props.label(flag, "★", Vector3(mast_x + 0.34, 4.01, z + 0.82), 0.14, 0.14, Color("202b27"), "FlagStar")
+		var color: Color = [Color("c8281e"), Color("f2c318"), Color("1c7a45")][stripe]
+		_box(frame, Vector3(mast_x + 0.6, 5.75 - stripe * 0.25, z + 1.0), Vector3(1.1, 0.25, 0.022), Materials.solid(color, 0.0, 0.8))
+	_ball(frame, Vector3(mast_x + 0.6, 5.5, z + 1.0), Vector3(0.2, 0.2, 0.04), Materials.solid(Color("16181a")))
 
+## Container shop: a painted steel box with a serving hatch under a propped
+## awning. Mobile-money yellow, airtime red and cold-drink blue are everywhere.
 func _kiosk(frame: Transform3D, w: float, d: float) -> void:
-	var h: float = 2.55
+	var h: float = 2.5
 	var z: float = d * 0.5
-	var accent: Color = SHOP_COLORS[_sign_count % SHOP_COLORS.size()]
+	var accent: Color = [Color("f2c318"), Color("c62f25"), Color("1c63a8"), Color("1c7a45"), Color("f08a1c"), Color("f4f1e6")][_sign_count % 6]
 	var steel := Materials.surface(4, accent)
-	var frame_mat := Materials.solid(Color("636c5d"), 0.6)
-	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), steel, true)
-	for side in [-1.0, 1.0]:
-		for i in range(ceili(d / 0.22)):
-			_box(frame, Vector3(side * (w * 0.5 + 0.015), h * 0.5, -z + (i + 0.5) * d / ceili(d / 0.22)), Vector3(0.035, h - 0.15, 0.035), frame_mat)
-	_box(frame, Vector3(0, 1.34, z + 0.04), Vector3(w * 0.77, 1.1, 0.05), Materials.solid(Color("27392f")))
-	_box(frame, Vector3(0, 0.83, z + 0.2), Vector3(w * 0.85, 0.13, 0.55), Materials.surface(6, Color("927755")))
+	var dark := Materials.solid(Color("15120f"))
+	_box(frame, Vector3(0, 0.1, 0), Vector3(w * 0.9, 0.2, d * 0.9), Materials.surface(11, Color("9c9a92")))
+	_box(frame, Vector3(0, 0.2 + h * 0.5, 0), Vector3(w, h, d), steel, true)
+	_box(frame, Vector3(0, h + 0.24, 0), Vector3(w + 0.1, 0.08, d + 0.1), Materials.surface(4, Color("a3a8a6")))
+	_box(frame, Vector3(0, 1.55, z + 0.02), Vector3(w * 0.72, 1.05, 0.05), dark)
+	_box(frame, Vector3(0, 1.0, z + 0.2), Vector3(w * 0.78, 0.06, 0.42), Materials.surface(6, Color("8a7350")))
+	var awning := frame * Transform3D(Basis(Vector3.RIGHT, 0.32), Vector3(0, 2.3, z + 0.55))
+	_box(awning, Vector3.ZERO, Vector3(w * 0.8, 0.04, 1.15), steel)
+	_detail = true
+	for x in [-w * 0.36, w * 0.36]:
+		_beam(frame, Vector3(x, 1.05, z + 0.05), Vector3(x, 2.1, z + 1.05), 0.03, Materials.solid(Color("3a3d3a"), 0.5))
 	for i in range(6):
-		_box(frame, Vector3(-w * 0.31 + i * w * 0.12, 1.04, z + 0.1), Vector3(w * 0.08, 0.29, 0.18), Materials.solid([Color("b29a52"), Color("7f975f"), Color("a66d4c")][i % 3]))
-	var canopy := frame * Transform3D(Basis(Vector3.RIGHT, 0.13), Vector3(0, 2.36, z + 0.36))
-	_box(canopy, Vector3.ZERO, Vector3(w + 0.35, 0.07, 1.35), steel)
-	_box(frame, Vector3(0, h + 0.03, 0), Vector3(w + 0.3, 0.1, d + 0.3), steel)
-	_sign(frame, _premise_name("kiosk") + "\nMOBILE MONEY  •  PROVISIONS", Vector3(0, 2.05, z + 0.11), w - 0.16, 0.45, accent)
+		_box(frame, Vector3(-w * 0.28 + i * w * 0.11, 1.15, z + 0.2), Vector3(w * 0.08, 0.24, 0.16), Materials.solid(CLOTH[i % CLOTH.size()], 0.0, 0.7))
+	for i in range(5):
+		_drum(frame, Vector3(-w * 0.26 + i * w * 0.13, 1.72, z + 0.06), 0.09, 0.26, Materials.solid(CLOTH[(i + 3) % CLOTH.size()], 0.1, 0.5))
+	_detail = false
+	_ball(frame, Vector3(0, 2.2, z + 0.5), Vector3(0.16, 0.2, 0.16), _warm)
+	_sign(frame, _premise_name("kiosk") + "\nTransfer  •  Credit  •  Provisions", Vector3(0, h + 0.62, z - 0.05), w, 0.62, accent)
 	_sign_count += 1
 
 func _entrance_apron(frame: Transform3D, w: float, d: float) -> void:
 	# All paving and planting remain inside the plot's existing reserved envelope.
-	var paving := Materials.surface(5, Color("a3a292"))
-	var trim := Materials.surface(2, Color("8b8f81"))
+	var paving := Materials.surface(5, Color("b3ada0"))
+	var trim := Materials.surface(2, Color("9a9a8e"))
 	var z: float = d * 0.5
 	_box(frame, Vector3(0, 0.025, 0.45), Vector3(w + 0.6, 0.1, d + 1.5), paving)
 	_box(frame, Vector3(0, 0.13, 0), Vector3(w + 0.08, 0.26, d + 0.08), trim)
 	var entry_w: float = minf(2.6, w * 0.46)
 	_box(frame, Vector3(0, 0.085, z + 0.7), Vector3(entry_w + 0.3, 0.07, 0.88), trim)
 	_box(frame, Vector3(0, 0.12, z + 0.35), Vector3(entry_w, 0.14, 0.52), paving)
-	# Paving joints make the narrow entrance terrace read as a designed surface.
-	for i in range(ceili(w / 1.2)):
-		var x: float = -w * 0.5 + i * 1.2
-		_box(frame, Vector3(x, 0.079, z + 0.66), Vector3(0.015, 0.006, 1.05), trim)
 	for side in [-1.0, 1.0]:
 		var x: float = side * w * 0.36
 		var planter_w: float = minf(1.25, w * 0.2)
 		_box(frame, Vector3(x, 0.25, z + 0.65), Vector3(planter_w, 0.35, 0.66), trim)
-		_box(frame, Vector3(x, 0.43, z + 0.65), Vector3(planter_w - 0.08, 0.035, 0.56), Materials.solid(Color("534d3b")))
 		for cluster in range(3):
 			var leaf_at := Vector3(x + (cluster - 1) * planter_w * 0.22, 0.6, z + 0.65)
-			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(Basis.from_scale(Vector3(0.75, 0.6, 0.7)), leaf_at))
+			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(Basis.from_scale(Vector3(0.75, 0.6, 0.7)), leaf_at),
+				Color(0.5, 0.2 if cluster == 1 else 0.5, 0.0 if cluster == 1 else 0.5))
 
+## Block of flats: painted render, a balcony to every flat, condensers, washing
+## and the row of polytanks that every Accra roofline carries.
 func apartment(center: Vector3, facing: Vector3, floors: int, w: float, d: float) -> void:
 	_building_count += 1
 	_record_use("apartment", center, facing, w, d, floors)
 	var frame := _frame(center, facing)
-	var story: float = 2.65
+	var story: float = 3.0
 	var h: float = floors * story
-	var plaster := Materials.surface(0, Color("c4bdac"))
-	var accent := Materials.surface(0, Color("8c9c97"))
-	var trim := Materials.surface(2, Color("b0b1a2"))
-	var metal := Materials.solid(Color("485e5c"), 0.65, 0.3)
+	var scheme: int = _rng.randi_range(0, 3)
+	var plaster := Materials.surface(0, [Color("f0e6cf"), Color("ead9ae"), Color("e9e4d8"), Color("efe3c0")][scheme])
+	var accent := Materials.surface(0, [Color("b6553c"), Color("3d6d8a"), Color("7b3328"), Color("c08a3a")][scheme])
+	var trim := Materials.surface(2, Color("d6d3c6"))
+	var metal := Materials.solid(Color("3c4446"), 0.65, 0.3)
 	_entrance_apron(frame, w, d)
 	# Recessed central volume leaves genuine balcony depth within the plot.
 	_box(frame, Vector3(0, h * 0.5, -0.35), Vector3(w, h, d - 0.7), plaster, true)
-	_box(frame, Vector3(0, 1.35, 0), Vector3(w, 2.7, d), accent, true)
+	_box(frame, Vector3(0, 1.5, 0), Vector3(w, 3.0, d), accent, true)
 	for side in range(4):
 		var face := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
 		var span: float = w if side % 2 == 0 else d
 		var dep: float = d if side % 2 == 0 else w
-		var bays: int = maxi(2, floori(span / 2.25))
+		var bays: int = maxi(2, floori(span / 3.0))
 		for floor_index in range(1, floors):
 			var y: float = floor_index * story
 			for bay in range(bays):
 				var x: float = -span * 0.5 + (bay + 0.5) * span / bays
 				var inset: float = 0.67 if side == 0 else 0.0
-				_window(face, Vector3(x, y + 1.28, dep * 0.5 - inset + 0.025), span / bays * 0.56, 1.55, false, trim)
+				_window(face, Vector3(x, y + 1.45, dep * 0.5 - inset + 0.025), span / bays * 0.5, 1.5, false, trim, true)
 				if side == 0:
-					# Individual loggias with solid partitions and metal railings.
+					# Individual balconies with solid partitions and painted upstands.
 					_box(face, Vector3(x, y + 0.06, dep * 0.5 - 0.23), Vector3(span / bays - 0.14, 0.15, 0.88), trim)
-					_box(face, Vector3(x - span / bays * 0.5 + 0.08, y + 1.2, dep * 0.5 - 0.25), Vector3(0.12, 2.4, 0.84), accent)
-					for rail_y in [0.3, 1.0]:
-						_box(face, Vector3(x, y + rail_y, dep * 0.5 + 0.16), Vector3(span / bays - 0.2, 0.045, 0.045), metal)
-					for baluster in range(5):
-						_box(face, Vector3(x + (baluster - 2) * span / bays * 0.17, y + 0.63, dep * 0.5 + 0.16), Vector3(0.025, 0.76, 0.025), metal)
+					_box(face, Vector3(x - span / bays * 0.5 + 0.08, y + 1.35, dep * 0.5 - 0.25), Vector3(0.14, 2.7, 0.84), accent)
+					_box(face, Vector3(x, y + 0.55, dep * 0.5 + 0.16), Vector3(span / bays - 0.2, 0.9, 0.08), accent if (bay + floor_index) % 2 == 0 else plaster)
+					if (bay * 3 + floor_index) % 4 == 0:
+						_air_conditioner(face, Vector3(x + span / bays * 0.25, y + 2.2, dep * 0.5 - 0.5))
+					if (bay + floor_index * 2) % 5 == 0:
+						_detail = true
+						for item in range(4):
+							_box(face, Vector3(x - 0.6 + item * 0.4, y + 1.55, dep * 0.5 + 0.1), Vector3(0.32, 0.6, 0.02),
+								Materials.solid(CLOTH[(item + bay + floor_index) % CLOTH.size()], 0.0, 0.9))
+						_detail = false
 			_box(face, Vector3(0, y, dep * 0.5 + 0.015), Vector3(span + 0.1, 0.16, 0.16), trim)
 	_glazed_shop_bay(frame, Vector3(0, 1.3, d * 0.5 + 0.06), minf(w * 0.4, 2.3), 2.25, true)
-	_box(frame, Vector3(0, 2.55, d * 0.5 + 0.4), Vector3(w * 0.6, 0.16, 0.95), metal)
-	_sign(frame, _premise_name("apartment") + "\nAPARTMENTS", Vector3(0, 2.98, d * 0.5 + 0.13), minf(w * 0.62, 4.5), 0.43, Color("526a60"))
+	_box(frame, Vector3(0, 2.75, d * 0.5 + 0.4), Vector3(w * 0.6, 0.16, 0.95), metal)
+	_sign(frame, _premise_name("apartment") + "\nApartments", Vector3(0, 3.4, d * 0.5 + 0.13), minf(w * 0.62, 5.5), 0.7, Color("f4f1e6"))
+	_sign_count += 1
 	_flat_roof(frame, w, d, h, trim)
-	_box(frame, Vector3(0, h + 0.9, -d * 0.17), Vector3(w * 0.33, 1.8, d * 0.4), accent)
-	_water_tank(frame, Vector3(w * 0.3, h + 0.1, -d * 0.22))
-	# Roof pergola gives the silhouette a lighter finish than another solid box.
-	for x in [-w * 0.35, w * 0.35]:
-		_beam(frame, Vector3(x, h + 0.1, d * 0.27), Vector3(x, h + 1.35, d * 0.27), 0.065, metal)
-	for i in range(6):
-		_box(frame, Vector3(0, h + 1.35, d * 0.1 + i * 0.22), Vector3(w * 0.75, 0.08, 0.055), metal)
+	_box(frame, Vector3(0, h + 1.1, -d * 0.17), Vector3(w * 0.33, 2.2, d * 0.4), accent)
+	for tank in range(maxi(2, floori(w / 4.0))):
+		_water_tank(frame, Vector3(-w * 0.38 + tank * 1.7, h + 0.1, d * 0.22))
 
+## Office block in the Airport City manner: blue reflective glass between
+## white composite fins, a plant room and a mast on the roof.
 func office(center: Vector3, floors: int, w: float, d: float) -> void:
 	_building_count += 1
 	_record_use("office", center, Vector3.BACK, w, d, floors)
 	var frame := _frame(center)
-	var story: float = 2.2
+	var story: float = 3.2 if w >= 11.0 else 2.2
 	var h: float = floors * story
-	var stone := Materials.surface(0, Color("a4a18e"))
-	var metal := Materials.solid(Color("556361"), 0.65, 0.32)
+	var scheme: int = _rng.randi_range(0, 2)
+	var skin := Materials.surface(0, [Color("eceae2"), Color("d9d5c8"), Color("e6dcc4")][scheme])
+	var fin := Materials.solid([Color("f1f1ec"), Color("c9ccc9"), Color("e9e2cf")][scheme], 0.3, 0.45)
+	var glass_color: Color = [Color("2f6f9f"), Color("2c7f86"), Color("3a5f8a")][scheme]
 	_entrance_apron(frame, w, d)
-	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), stone, true)
+	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), skin, true)
 	for side in range(4):
 		var face := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
 		var span: float = w if side % 2 == 0 else d
 		var dep: float = d if side % 2 == 0 else w
-		var bays: int = maxi(2, floori(span / 1.2))
+		var bays: int = maxi(2, floori(span / (2.4 if w >= 11.0 else 1.6)))
 		for floor_index in range(floors):
 			for bay in range(bays):
 				var x: float = -span * 0.5 + (bay + 0.5) * span / bays
-				var pane: Material = _cool if _rng.randf() < 0.16 else Materials.solid(Color("354c50"), 0.48, 0.15)
-				_box(face, Vector3(x, floor_index * story + 1.2, dep * 0.5 + 0.025), Vector3(span / bays - 0.12, 1.65, 0.035), pane)
-				_box(face, Vector3(x - span / bays * 0.5, floor_index * story + 1.2, dep * 0.5 + 0.12), Vector3(0.075, story, 0.28), metal)
-			_box(face, Vector3(0, (floor_index + 1) * story, dep * 0.5 + 0.15), Vector3(span + 0.15, 0.14, 0.42), stone)
-	_box(frame, Vector3(0, h + 0.22, 0), Vector3(w + 0.2, 0.44, d + 0.2), stone)
-	_box(frame, Vector3(0, h + 0.62, -d * 0.12), Vector3(w * 0.45, 0.8, d * 0.5), Materials.surface(4, Color("6e7570")))
+				var pane: Material = _cool if _rng.randf() < 0.16 else Materials.solid(glass_color.darkened(_rng.randf() * 0.18), 0.55, 0.12)
+				_box(face, Vector3(x, floor_index * story + story * 0.55, dep * 0.5 + 0.025), Vector3(span / bays - 0.14, story * 0.72, 0.035), pane)
+			_box(face, Vector3(0, (floor_index + 1) * story, dep * 0.5 + 0.12), Vector3(span + 0.15, 0.16, 0.34), fin)
+		for bay in range(bays + 1):
+			_box(face, Vector3(-span * 0.5 + bay * span / bays, h * 0.5, dep * 0.5 + 0.12), Vector3(0.1, h, 0.3), fin)
+	_box(frame, Vector3(0, h + 0.3, 0), Vector3(w + 0.2, 0.6, d + 0.2), skin)
+	_box(frame, Vector3(0, h + 1.0, -d * 0.12), Vector3(w * 0.45, 1.2, d * 0.5), Materials.surface(4, Color("a3a8a6")))
 	if floors >= 6:
-		# Corner fins and an open crown vary the high-rise outline without enlarging its plot.
-		for x in [-w * 0.44, w * 0.44]:
-			_box(frame, Vector3(x, h * 0.5 + 0.45, d * 0.5 + 0.12), Vector3(0.19, h + 0.9, 0.3), metal)
-		for i in range(6):
-			_box(frame, Vector3(-w * 0.35 + i * w * 0.14, h + 1.15, 0), Vector3(0.08, 0.65, d * 0.68), metal)
+		# Lattice telecom mast and warning light on the tallest blocks.
+		var steel := Materials.solid(Color("c8281e"), 0.4, 0.5)
+		_beam(frame, Vector3(w * 0.3, h + 0.6, d * 0.25), Vector3(w * 0.3, h + 7.0, d * 0.25), 0.18, steel)
+		_beam(frame, Vector3(w * 0.3, h + 3.2, d * 0.25), Vector3(w * 0.3, h + 4.6, d * 0.25), 0.2, Materials.solid(Color("f1f1ec"), 0.4, 0.5))
+	_water_tank(frame, Vector3(-w * 0.3, h + 0.6, d * 0.25))
 	_door(frame, Vector3(0, 1.1, d * 0.5 + 0.08), 1.3, 2.05)
-	_box(frame, Vector3(0, 2.4, d * 0.5 + 0.55), Vector3(w * 0.75, 0.16, 1.25), metal)
+	_box(frame, Vector3(0, 2.6, d * 0.5 + 0.7), Vector3(w * 0.6, 0.16, 1.5), fin)
 
 func warehouse(center: Vector3, w: float, h: float, d: float) -> void:
 	_building_count += 1
 	_record_use("warehouse", center, Vector3.BACK, w, d, maxi(1, ceili(h / 2.55)))
 	var frame := _frame(center)
-	var render := Materials.surface(0, Color("a49c87"))
+	var render := Materials.surface(0, [Color("e9e2cf"), Color("c9c3b4"), Color("d9cfae")][_rng.randi_range(0, 2)])
 	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), render, true)
-	_hip_roof(frame, w + 0.5, d + 0.6, h, minf(w, d) * 0.18)
-	var shutter := Materials.surface(4, Color("626e67"))
-	for i in range(ceili(h * 0.65 / 0.1)):
-		_box(frame, Vector3(0, 0.1 + i * 0.1, d * 0.5 + 0.06), Vector3(w * 0.45, 0.085, 0.09), shutter)
+	_box(frame, Vector3(0, 0.6, 0), Vector3(w + 0.05, 1.2, d + 0.05), Materials.surface(0, DADOS[_rng.randi_range(0, DADOS.size() - 1)]))
+	_hip_roof(frame, w + 0.5, d + 0.6, h, minf(w, d) * 0.18, true)
+	var shutter := Materials.surface(4, DOORS[_rng.randi_range(0, DOORS.size() - 1)])
+	_box(frame, Vector3(0, h * 0.34, d * 0.5 + 0.05), Vector3(w * 0.42, h * 0.68, 0.08), shutter)
 	for x in [-w * 0.4, w * 0.4]:
 		_window(frame, Vector3(x, h * 0.65, d * 0.5 + 0.04), w * 0.13, h * 0.2, true, render)
-	_box(frame, Vector3(0, 0.09, d * 0.5 + 0.8), Vector3(w + 1.0, 0.18, 1.8), Materials.surface(2, Color("898675")))
+	_box(frame, Vector3(0, 0.09, d * 0.5 + 0.8), Vector3(w + 1.0, 0.18, 1.8), Materials.surface(2, Color("9a958a")))
 
-func tree(center: Vector3, palm: bool = false, branches: int = 9, clusters: int = 14) -> void:
+## Uncompleted storey building: bare blockwork between concrete frames, empty
+## openings, columns standing above the last slab with their starter bars, and
+## the owner's sand and blocks waiting outside.
+func uncompleted(center: Vector3, facing: Vector3, w: float, d: float, floors: int) -> void:
+	_building_count += 1
+	_record_use("uncompleted", center, facing, w, d, floors)
+	var frame := _frame(center, facing)
+	var h: float = floors * STORY
+	var block := Materials.surface(11, Color("a09d94"))
+	var concrete := Materials.surface(2, Color("7f7b72"))
+	var hollow := Materials.solid(Color("1a1917"))
+	var bays: int = maxi(1, roundi(w / 3.4))
+	_box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, d), block, true)
+	for floor_index in range(floors + 1):
+		_box(frame, Vector3(0, floor_index * STORY - 0.1, 0), Vector3(w + 0.2, 0.22, d + 0.2), concrete)
+	var rust := Materials.solid(Color("5e3524"), 0.3, 0.8)
+	for i in range(bays + 1):
+		var x: float = clampf(-w * 0.5 + i * w / bays, -w * 0.5 + 0.13, w * 0.5 - 0.13)
+		for z in [-d * 0.5 + 0.13, d * 0.5 - 0.13]:
+			_box(frame, Vector3(x, (h + 1.0) * 0.5, z), Vector3(0.3, h + 1.0, 0.3), concrete)
+			_detail = true
+			for corner in range(4):
+				var bar := Vector3(x + (0.09 if corner % 2 == 0 else -0.09), 0, z + (0.09 if corner < 2 else -0.09))
+				_beam(frame, bar + Vector3(0, h + 1.0, 0), bar + Vector3(_rng.randf_range(-0.06, 0.06), h + _rng.randf_range(1.7, 2.1), 0), 0.03, rust)
+			_detail = false
+	for floor_index in range(floors):
+		for side in range(4):
+			var face := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
+			var span: float = w if side % 2 == 0 else d
+			var dep: float = d if side % 2 == 0 else w
+			var count: int = maxi(1, floori(span / 3.0))
+			for k in range(count):
+				var x: float = -span * 0.5 + (k + 0.5) * span / count
+				if side == 0 and floor_index == 0 and k == count / 2:
+					_box(face, Vector3(x, 1.1, dep * 0.5 + 0.01), Vector3(1.1, 2.2, 0.05), hollow)
+				else:
+					_box(face, Vector3(x, floor_index * STORY + 1.6, dep * 0.5 + 0.01), Vector3(1.3, 1.2, 0.05), hollow)
+	# Sharp sand, a stack of blocks and bamboo props by the front.
+	var z_front: float = d * 0.5
+	_ball(frame, Vector3(-w * 0.28, 0.2, z_front + 0.75), Vector3(2.2, 1.1, 1.3), Materials.surface(9, Color("cdb68a")))
+	for i in range(12):
+		_box(frame, Vector3(w * 0.2 + (i % 4) * 0.47, 0.12 + (i / 4) * 0.24, z_front + 0.6), Vector3(0.45, 0.22, 0.22), Materials.surface(2, Color("9a978e")))
+	_detail = true
+	for i in range(3):
+		_beam(frame, Vector3(-w * 0.1 + i * 0.5, 0, z_front + 0.3), Vector3(-w * 0.1 + i * 0.5, STORY - 0.2, z_front + 0.12), 0.07, Materials.surface(6, Color("b09a62")))
+	_detail = false
+	if _rng.randf() < 0.6:
+		var notice := Props.label(self, "STOP WORK\nPRODUCE PERMIT", Vector3.ZERO, minf(w * 0.45, 3.4), 1.0, Color("b3221a"), "PermitNotice")
+		notice.transform = frame * Transform3D(Basis.IDENTITY, Vector3(w * 0.22, 1.5, z_front + 0.015))
+		notice.visibility_range_end = 60.0
+
+## Red-and-white lattice telecom mast in a small walled compound with its
+## equipment cabin and generator: the tallest thing on most Accra skylines.
+func telecom_mast(center: Vector3, height: float = 44.0) -> void:
+	var frame := _frame(center)
+	var red := Materials.solid(Color("c8281e"), 0.3, 0.5)
+	var white := Materials.solid(Color("f1f1ec"), 0.3, 0.5)
+	var spread: float = height * 0.075
+	var sections: int = 8
+	for i in range(sections):
+		var y0: float = height * i / sections
+		var y1: float = height * (i + 1) / sections
+		var r0: float = lerpf(spread, 0.55, float(i) / sections)
+		var r1: float = lerpf(spread, 0.55, float(i + 1) / sections)
+		var paint: Material = red if i % 2 == 0 else white
+		for face in range(4):
+			var a: float = face * PI * 0.5 + PI * 0.25
+			var b: float = a + PI * 0.5
+			var low_a := Vector3(cos(a) * r0 * 1.414, y0, sin(a) * r0 * 1.414)
+			var low_b := Vector3(cos(b) * r0 * 1.414, y0, sin(b) * r0 * 1.414)
+			var high_a := Vector3(cos(a) * r1 * 1.414, y1, sin(a) * r1 * 1.414)
+			var high_b := Vector3(cos(b) * r1 * 1.414, y1, sin(b) * r1 * 1.414)
+			_beam(frame, low_a, high_a, 0.2, paint)
+			_beam(frame, low_a, low_b, 0.09, paint)
+			_beam(frame, low_a, high_b, 0.08, paint)
+			_beam(frame, low_b, high_a, 0.08, paint)
+	var grey := Materials.solid(Color("d9dbd6"), 0.3, 0.5)
+	for k in range(3):
+		var turn := frame * Transform3D(Basis(Vector3.UP, k * TAU / 3.0), Vector3.ZERO)
+		_box(turn, Vector3(0, height - 2.6, 1.0), Vector3(0.36, 2.2, 0.16), grey)
+		_box(turn, Vector3(0, height - 6.4, 1.15), Vector3(0.36, 2.2, 0.16), grey)
+	for k in range(2):
+		var dish := frame * Transform3D(Basis(Vector3.UP, 0.8 + k * 2.3), Vector3(0, height * (0.72 - k * 0.1), 0))
+		_batch(_sphere_mesh, grey, dish * Transform3D(Basis.from_scale(Vector3(1.3, 1.3, 0.4)), Vector3(0, 0, 1.25)))
+	_ball(frame, Vector3(0, height + 0.25, 0), Vector3.ONE * 0.36, _warm)
+	_beam(frame, Vector3(0, height, 0), Vector3(0, height + 2.4, 0), 0.06, grey)
+	# Compound: block wall, steel gate, equipment cabin and a diesel generator.
+	var half: float = spread + 2.6
+	var block := Materials.surface(11, Color("a09d94"))
+	_box(frame, Vector3(0, 0.02, 0), Vector3(half * 2.0, 0.04, half * 2.0), Materials.surface(2, Color("9c978b")))
+	for side in range(4):
+		var turn := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
+		if side == 0:
+			_box(turn, Vector3(-half * 0.5 - 0.7, 1.1, half), Vector3(half - 1.4, 2.2, 0.2), block, true)
+			_box(turn, Vector3(half * 0.5 + 0.7, 1.1, half), Vector3(half - 1.4, 2.2, 0.2), block, true)
+			_box(turn, Vector3(0, 1.05, half), Vector3(2.8, 2.0, 0.07), Materials.surface(4, Color("2f5f93")))
+		else:
+			_box(turn, Vector3(0, 1.1, half), Vector3(half * 2.0, 2.2, 0.2), block, true)
+	_box(frame, Vector3(half - 2.0, 1.3, -half + 1.6), Vector3(2.6, 2.6, 2.2), Materials.surface(4, Color("d9dbd6")))
+	_box(frame, Vector3(-half + 1.6, 0.75, -half + 1.4), Vector3(2.0, 1.3, 1.1), Materials.solid(Color("2e7352"), 0.4, 0.5))
+
+## Steel pedestrian footbridge over a road that runs along Z: a deck on two
+## concrete piers, parapet trusses, and a dog-leg stair down to each apron.
+## `stairs` is +1 or -1: which way along the road the stairs descend. Only the
+## piers are solid; the deck has no collider because it crosses the carriageway.
+func footbridge(center: Vector3, span: float, stairs: float = 1.0, advert: String = "") -> void:
+	var frame := _frame(center)
+	var steel := Materials.solid(Color("1c63a8"), 0.35, 0.5)
+	var brace := Materials.solid(Color("f2c318"), 0.35, 0.5)
+	var concrete := Materials.surface(2, Color("9c978b"))
+	var deck: float = 5.7
+	var w: float = 2.8
+	_box(frame, Vector3(0, deck - 0.15, 0), Vector3(span + 1.2, 0.3, w), concrete)
+	var panels: int = maxi(4, int(span / 2.6))
+	for side in [-1.0, 1.0]:
+		var z: float = side * (w * 0.5 - 0.07)
+		_box(frame, Vector3(0, deck + 1.5, z), Vector3(span + 1.2, 0.14, 0.14), steel)
+		_box(frame, Vector3(0, deck + 0.12, z), Vector3(span + 1.2, 0.14, 0.14), steel)
+		for i in range(panels + 1):
+			var x: float = -span * 0.5 + i * span / panels
+			_box(frame, Vector3(x, deck + 0.8, z), Vector3(0.1, 1.4, 0.1), steel)
+			if i < panels:
+				var rise: float = 1.5 if i % 2 == 0 else 0.12
+				_beam(frame, Vector3(x, deck + (0.12 if i % 2 == 0 else 1.5), z), Vector3(x + span / panels, deck + rise, z), 0.07, brace)
+	for end in [-1.0, 1.0]:
+		var x: float = end * span * 0.5
+		_box(frame, Vector3(x, (deck - 0.3) * 0.5, 0), Vector3(0.8, deck - 0.3, 1.8), concrete, true)
+		_box(frame, Vector3(x, deck - 0.55, 0), Vector3(1.1, 0.5, w + 0.3), concrete)
+		# Two flights of sixteen risers with a half landing, running along the road.
+		var dir: float = stairs
+		var tread: float = 0.3
+		var riser: float = (deck - 0.15) / 32.0
+		for flight in range(2):
+			var top: float = deck - 0.15 - flight * riser * 16.0
+			var start: float = w * 0.5 + flight * (16 * tread + 1.6)
+			for i in range(16):
+				_box(frame, Vector3(x, top - (i + 0.5) * riser - 0.1, dir * (start + (i + 0.5) * tread)), Vector3(1.9, riser + 0.2, tread), concrete)
+			var foot: float = start + 16 * tread
+			for rail in [-0.9, 0.9]:
+				_beam(frame, Vector3(x + rail, top + 1.0, dir * start), Vector3(x + rail, top - 16 * riser + 1.0, dir * foot), 0.07, steel)
+				_detail = true
+				for post in range(5):
+					var t: float = post / 4.0
+					_beam(frame, Vector3(x + rail, top - t * 16 * riser, dir * lerpf(start, foot, t)),
+						Vector3(x + rail, top - t * 16 * riser + 1.0, dir * lerpf(start, foot, t)), 0.05, steel)
+				_detail = false
+			if flight == 0:
+				_box(frame, Vector3(x, top - 16 * riser - 0.12, dir * (foot + 0.8)), Vector3(1.9, 0.24, 1.6), concrete)
+				_box(frame, Vector3(x, (top - 16 * riser) * 0.5, dir * (foot + 0.8)), Vector3(0.5, top - 16 * riser, 0.5), concrete, true)
+	if not advert.is_empty():
+		for face in [0.0, PI]:
+			var turn := frame * Transform3D(Basis(Vector3.UP, face), Vector3.ZERO)
+			_sign(turn, advert, Vector3(0, deck + 0.82, w * 0.5 + 0.03), minf(span * 0.5, 9.0), 1.25, Color("1c7a45") if face == 0.0 else Color("c62f25"))
+			_sign_count += 1
+
+## Vacant plot behind a block wall with the owner's warning painted on it, a
+## foundation trench, a pile of blocks and weeds taking over.
+func walled_plot(center: Vector3, facing: Vector3, w: float, d: float) -> void:
+	var frame := _frame(center, facing)
+	var block := Materials.surface(11, Color("a6a39a"))
+	var texts: Array[String] = ["THIS LAND IS\nNOT FOR SALE", "POST NO BILL", "KEEP OFF\nBY ORDER", "PLOT 14\nNOT FOR SALE", "BEWARE OF\n419"]
+	for side in range(4):
+		var turn := frame * Transform3D(Basis(Vector3.UP, side * PI * 0.5), Vector3.ZERO)
+		var span: float = w if side % 2 == 0 else d
+		var reach: float = d if side % 2 == 0 else w
+		if side == 0:
+			for part in [-1.0, 1.0]:
+				_box(turn, Vector3(part * (span * 0.25 + 0.8), 1.0, reach * 0.5), Vector3(span * 0.5 - 1.6, 2.0, 0.2), block, true)
+			_box(turn, Vector3(0, 0.95, reach * 0.5), Vector3(3.2, 1.9, 0.07), Materials.surface(4, DOORS[_rng.randi_range(0, DOORS.size() - 1)]))
+			var notice := Props.label(self, texts[_sign_count % texts.size()], Vector3.ZERO, minf(span * 0.2, 3.0), 0.9, Color("b3221a"), "WallNotice")
+			notice.transform = turn * Transform3D(Basis.IDENTITY, Vector3(span * 0.25 + 0.8, 1.25, reach * 0.5 + 0.11))
+			notice.visibility_range_end = 60.0
+			_sign_count += 1
+		else:
+			_box(turn, Vector3(0, 1.0, reach * 0.5), Vector3(span, 2.0, 0.2), block, true)
+	for i in range(18):
+		_box(frame, Vector3(-w * 0.3 + (i % 6) * 0.47, 0.12 + (i / 6) * 0.24, -d * 0.2), Vector3(0.45, 0.22, 0.22), Materials.surface(2, Color("9a978e")))
+	_box(frame, Vector3(w * 0.12, 0.12, d * 0.05), Vector3(w * 0.45, 0.24, d * 0.4), Materials.surface(11, Color("8f8c84")))
+	_box(frame, Vector3(w * 0.12, 0.13, d * 0.05), Vector3(w * 0.45 - 0.5, 0.25, d * 0.4 - 0.5), Materials.surface(9, Color("8f6046")))
+	for i in range(6):
+		shrub(frame * Vector3(_rng.randf_range(-0.42, 0.42) * w, 0, _rng.randf_range(-0.42, 0.42) * d), _rng.randf_range(0.8, 1.5))
+	if _rng.randf() < 0.5:
+		banana(frame * Vector3(-w * 0.36, 0, d * 0.3))
+
+## Compacted earth yard with `count` metre-scale cars nosed in along its edges.
+func yard_parking(center: Vector3, w: float, d: float, count: int) -> void:
+	var frame := _frame(center)
+	if d > w:
+		frame = _frame(center, Vector3.RIGHT)
+		var swap: float = w
+		w = d
+		d = swap
+	_box(frame, Vector3(0, 0.02, 0), Vector3(w, 0.04, d), Materials.surface(9, Color("8f6046")))
+	var per_row: int = maxi(1, floori((w - 1.0) / 2.9))
+	for i in range(count):
+		var row: int = i / per_row
+		if row > 1:
+			break
+		var car := FleetActor.new()
+		car.configure("car", i * 7 + int(absf(center.x + center.z)))
+		var x: float = -w * 0.5 + 1.9 + (i % per_row) * 2.9
+		var z: float = (-d * 0.5 + 2.8) if row == 0 else (d * 0.5 - 2.8)
+		# Place first: assigning a transform would discard the metre-scale sizing.
+		car.transform = frame * Transform3D(Basis(Vector3.UP, (0.0 if row == 0 else PI) + sin(float(i) * 2.9) * 0.12), Vector3(x, 0.05, z))
+		car.set_metric_dimensions(Vector3(1.8, 1.5, 4.5))
+		car.name = "ParkedVehicle"
+		add_child(car)
+
+func tree(center: Vector3, palm: bool = false, branches: int = 9, clusters: int = 14, scale_factor: float = 1.0) -> void:
 	# Infill passes ask for fewer branches and leaf clusters to keep groves cheap.
+	# Without a palm the species is drawn at random: a dark domed mango, an open
+	# neem, a tiered tropical almond or, now and then, a flamboyant in flower.
 	_tree_count += 1
 	var frame := _frame(center, Vector3(sin(_tree_count * 2.4), 0, cos(_tree_count * 2.4)))
-	var bark := Materials.surface(6, Color("62523a"))
-	var h: float = _rng.randf_range(3.3, 5.6)
+	frame.basis = frame.basis.scaled(Vector3.ONE*scale_factor)
 	if palm:
-		_palm(frame, h + 0.8, bark)
+		_palm(frame, _rng.randf_range(6.2, 9.0), Materials.surface(6, Color("8d8068")))
 		return
+	var pick: float = _rng.randf()
+	var mango: bool = pick < 0.42
+	var flamboyant: bool = pick > 0.9
+	var bark := Materials.surface(6, Color("5b4a36") if mango else Color("6e6048"))
+	var h: float = _rng.randf_range(3.6, 5.0) if mango else _rng.randf_range(4.4, 6.4)
+	var spread: float = 1.25 if mango else (1.5 if flamboyant else 1.0)
 	var lean := Vector3(_rng.randf_range(-0.35, 0.35), 0, _rng.randf_range(-0.3, 0.3))
-	_beam(frame, Vector3.ZERO, lean + Vector3(0, h * 0.7, 0), 0.26, bark)
+	_beam(frame, Vector3.ZERO, lean + Vector3(0, h * 0.62, 0), 0.38 if mango else 0.3, bark)
 	for branch in range(branches):
-		var angle: float = branch * TAU / branches + _rng.randf_range(-0.2, 0.2)
-		var radius: float = _rng.randf_range(1.0, 1.85)
-		var tip := Vector3(cos(angle) * radius, h * _rng.randf_range(0.72, 1.12), sin(angle) * radius) + lean
-		var joint := lean + Vector3(0, h * _rng.randf_range(0.44, 0.67), 0)
-		_beam(frame, joint, tip, 0.10, bark)
+		var angle: float = branch * TAU / branches + _rng.randf_range(-0.25, 0.25)
+		var radius: float = _rng.randf_range(0.5, 2.3) * spread
+		var top: float = _rng.randf_range(0.82, 1.0) if flamboyant else _rng.randf_range(0.7, 1.18)
+		var tip := Vector3(cos(angle) * radius, h * top, sin(angle) * radius) + lean
+		var joint := lean + Vector3(0, h * _rng.randf_range(0.42, 0.62), 0)
+		_beam(frame, joint, tip, 0.13, bark)
 		for cluster in range(clusters):
-			var offset := Vector3(_rng.randf_range(-0.7, 0.7), _rng.randf_range(-0.48, 0.62), _rng.randf_range(-0.7, 0.7))
+			var offset := Vector3(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-0.6, 0.75), _rng.randf_range(-1.0, 1.0))
 			var basis := Basis.from_euler(Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(0, TAU), _rng.randf_range(-0.5, 0.5)))
-			basis = basis.scaled(Vector3.ONE * _rng.randf_range(1.05, 1.55))
-			var light: float = _rng.randf_range(0.15, 0.9)
-			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(basis, tip + offset), Color(light, light, light))
+			basis = basis.scaled(Vector3.ONE * _rng.randf_range(1.5, 2.2))
+			var light: float = _rng.randf_range(0.06, 0.6) if mango else _rng.randf_range(0.25, 0.95)
+			var shade := Color(light, light, maxf(light, 0.1))
+			if flamboyant and _rng.randf() < 0.5:
+				shade = Color(_rng.randf_range(0.35, 0.9), 1.0, 0.0)
+			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(basis, tip + offset), shade)
 
 func _make_leaf_cluster() -> ArrayMesh:
 	var st := SurfaceTool.new()
@@ -705,7 +1246,8 @@ func _make_leaf_cluster() -> ArrayMesh:
 	return st.commit()
 
 ## Low bush of leaf clusters hugging the ground: hedges, yards and verges.
-func shrub(center: Vector3, size: float) -> void:
+## `bloom` turns it into bougainvillea spilling over a wall.
+func shrub(center: Vector3, size: float, bloom: bool = false) -> void:
 	for i in range(3 + int(size * 3.0)):
 		var angle: float = i * 2.39996 + _rng.randf() * 0.6
 		var r: float = _rng.randf_range(0.0, 0.45) * size
@@ -713,7 +1255,22 @@ func shrub(center: Vector3, size: float) -> void:
 		var basis := Basis.from_euler(Vector3(_rng.randf_range(-0.4, 0.4), _rng.randf_range(0, TAU), _rng.randf_range(-0.4, 0.4)))
 		basis = basis.scaled(Vector3(1.4, 1.0, 1.4) * size * _rng.randf_range(0.9, 1.3))
 		var light: float = _rng.randf_range(0.1, 0.75)
-		_batch(_leaf_mesh, Materials.foliage(), Transform3D(basis, at), Color(light, light, light))
+		var shade := Color(light, light, maxf(light, 0.1))
+		if bloom and i % 3 != 0:
+			shade = Color(_rng.randf_range(0.3, 0.8), 0.0, 0.0)
+		_batch(_leaf_mesh, Materials.foliage(), Transform3D(basis, at), shade)
+
+## Plantain or banana clump: a few stout pseudo-stems under huge paddle leaves.
+func banana(center: Vector3) -> void:
+	var stem := Materials.solid(Color("7b8443"), 0.0, 0.8)
+	for i in range(_rng.randi_range(3, 5)):
+		var angle: float = i * 2.1 + _rng.randf()
+		var base := center + Vector3(cos(angle), 0, sin(angle)) * _rng.randf_range(0.15, 0.6)
+		var h: float = _rng.randf_range(1.6, 2.8)
+		_beam(Transform3D.IDENTITY, base, base + Vector3(0, h, 0), 0.2, stem)
+		var basis := Basis.from_euler(Vector3(0, _rng.randf_range(0, TAU), 0)).scaled(Vector3(2.6, 3.4, 2.6))
+		var light: float = _rng.randf_range(0.55, 1.0)
+		_batch(_leaf_mesh, Materials.foliage(), Transform3D(basis, base + Vector3(0, h + 0.3, 0)), Color(light, light, light))
 
 ## Smallholding on bare laterite: ridged rows of cassava or maize along local X,
 ## a stick fence on two sides and a mango tree in one corner.
@@ -736,7 +1293,7 @@ func farm_plot(center: Vector3, w: float, d: float, along_x: bool) -> void:
 			var tall: float = _rng.randf_range(0.75, 1.0) * (1.25 if maize else 0.8)
 			var basis := Basis.from_euler(Vector3(0, _rng.randf_range(0, TAU), 0)).scaled(Vector3(0.55, tall, 0.55))
 			var light: float = _rng.randf_range(0.35, 0.95) if maize else _rng.randf_range(0.1, 0.6)
-			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(basis, Vector3(x, 0.12 + tall * 0.42, z)), Color(light, light, light))
+			_batch(_leaf_mesh, Materials.foliage(), frame * Transform3D(basis, Vector3(x, 0.12 + tall * 0.42, z)), Color(light, light, maxf(light, 0.1)))
 	for i in range(floori(plot_w / 1.4) + 1):
 		var x: float = -plot_w * 0.5 + i * plot_w / floori(plot_w / 1.4)
 		_beam(frame, Vector3(x, 0, -plot_d * 0.5 - 0.2), Vector3(x, 0.85, -plot_d * 0.5 - 0.2), 0.05, wood)
@@ -758,7 +1315,7 @@ func lane(center: Vector3, size: Vector2) -> void:
 func pending_footprints() -> Array[Rect2]:
 	var rects: Array[Rect2] = []
 	for batch: Dictionary in _batches.values():
-		if batch["mesh"] == _leaf_mesh or batch["background"]:
+		if batch["mesh"] == _leaf_mesh or batch["mesh"] in _palm_crowns or batch["background"]:
 			continue
 		var bounds: AABB = (batch["mesh"] as Mesh).get_aabb()
 		for transform: Transform3D in batch["transforms"]:
@@ -768,33 +1325,50 @@ func pending_footprints() -> Array[Rect2]:
 			rects.append(Rect2(box.position.x, box.position.z, box.size.x, box.size.z))
 	return rects
 
-func _palm(frame: Transform3D, h: float, bark: Material) -> void:
-	var previous := Vector3.ZERO
-	for segment in range(8):
-		var t: float = (segment + 1) / 8.0
-		var next := Vector3(0.35 * t * t, h * t, 0.13 * sin(t * PI))
-		_beam(frame, previous, next, 0.23 - t * 0.08, bark)
-		previous = next
+## Crown of arching coconut fronds: a rachis with leaflets hanging to both sides.
+func _make_palm_crown(variant: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9100 + variant
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for frond in range(11):
-		var angle: float = frond * TAU / 11.0
+	var fronds: int = 15 + variant
+	for frond in range(fronds):
+		var angle: float = frond * TAU / fronds + rng.randf_range(-0.2, 0.2)
 		var radial := Vector3(cos(angle), 0, sin(angle))
 		var lateral := Vector3(-sin(angle), 0, cos(angle))
-		var length: float = _rng.randf_range(2.0, 2.9)
-		for i in range(16):
-			var t: float = i / 16.0
-			var spine := previous + radial * length * t + Vector3(0, sin(t * PI) * 0.65 - t * t * 0.9, 0)
-			var spread: float = sin(t * PI) * 0.53 + 0.04
-			for sign_value in [-1.0, 1.0]:
-				var tip: Vector3 = spine + lateral * spread * sign_value - radial * 0.23 - Vector3(0, 0.1, 0)
-				_triangle(st, spine, tip, spine + radial * 0.15, Color(0.55 + t * 0.25, 1, 1))
-	var leaves := MeshInstance3D.new()
-	leaves.mesh = st.commit()
-	leaves.material_override = Materials.foliage()
-	leaves.transform = frame
-	leaves.name = "PalmFronds"
-	add_child(leaves)
+		var length: float = rng.randf_range(2.7, 3.7)
+		var lift: float = rng.randf_range(-0.25, 0.95)
+		var points: Array[Vector3] = []
+		var widths: Array[float] = []
+		for i in range(13):
+			var t: float = i / 12.0
+			points.append(radial * (0.25 + length * t) + Vector3.UP * length * (lift * t - 0.95 * t * t))
+			widths.append((sin(t * PI) * 0.8 + 0.1) * 0.62)
+		for i in range(12):
+			var shade := Color(0.45 + (i % 2) * 0.25 + rng.randf() * 0.2, 1, 1)
+			for side in [-1.0, 1.0]:
+				var hang0: Vector3 = lateral * side * widths[i] - Vector3.UP * widths[i] * 0.55
+				var hang1: Vector3 = lateral * side * widths[i + 1] - Vector3.UP * widths[i + 1] * 0.55
+				_triangle(st, points[i], points[i] + hang0, points[i + 1], shade)
+				_triangle(st, points[i + 1], points[i] + hang0, points[i + 1] + hang1, shade)
+	return st.commit()
+
+func _palm(frame: Transform3D, h: float, bark: Material) -> void:
+	var previous := Vector3.ZERO
+	var bend: float = _rng.randf_range(0.5, 1.6)
+	for segment in range(8):
+		var t: float = (segment + 1) / 8.0
+		var next := Vector3(bend * t * t, h * t, 0.2 * sin(t * PI))
+		_beam(frame, previous, next, 0.4 - t * 0.14, bark)
+		previous = next
+	var light: float = _rng.randf_range(0.5, 0.9)
+	var crown: Mesh = _palm_crowns[_tree_count % _palm_crowns.size()]
+	_batch(crown, Materials.foliage(), frame * Transform3D(Basis(Vector3.UP, _rng.randf() * TAU), previous), Color(light, light, light))
+	_detail = true
+	var husk := Materials.solid(Color("6f7f2e"), 0.0, 0.7)
+	for nut in range(4):
+		_ball(frame, previous + Vector3(cos(nut * 1.7) * 0.3, -0.3, sin(nut * 1.7) * 0.3), Vector3.ONE * 0.3, husk)
+	_detail = false
 
 func parking_lot(center: Vector3, w: float, d: float, count: int) -> void:
 	var frame := _frame(center)
@@ -918,7 +1492,7 @@ func filling_station(center: Vector3, facing: Vector3, shop_side: float, apron: 
 	_sign(shop, "SANKOFA SHOP\nSNACKS • COLD DRINKS • MOMO", Vector3(0, 2.55, sd * 0.5 + 0.07), sw - 0.1, 0.5, FUEL_TEAL)
 	var side_face := shop * Transform3D(Basis(Vector3.UP, -PI * 0.5 * s), Vector3(-sw * 0.5 * s, 0, 0))
 	_glazed_shop_bay(side_face, Vector3(0.9, 1.35, 0.02), 2.4, 1.3, false)
-	_water_tank(shop, Vector3(-0.55 * s, sh + 0.1, -1.5))
+	_water_tank(shop, Vector3(-0.55 * s, sh + 0.1, -1.5), 0.7)
 	_air_conditioner(shop * Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO), Vector3(0.6, 2.2, sd * 0.5 + 0.17))
 	# Chest cooler at the shop door and the air & water point on the forecourt.
 	_box(shop, Vector3(1.0 * s, 0.45, sd * 0.5 + 0.5), Vector3(0.8, 0.6, 0.45), Materials.solid(Color("e9ebe6"), 0.2, 0.4))
@@ -1468,7 +2042,7 @@ func backdrop(corridor: bool) -> void:
 		for col in range(-7, 7):
 			var x: float = (col + 0.5) * 32.0
 			var z: float = (row + 0.5) * 32.0
-			if maxf(absf(x), absf(z)) < 100.0 or Vector2(x, z).length() > 270.0:
+			if absf(x) < 32.0 or absf(z) < 32.0 or maxf(absf(x),absf(z)) < 100.0 or Vector2(x,z).length() > 270.0:
 				continue
 			if corridor:
 				var airport_layout = preload("res://scripts/AirportLayout.gd")

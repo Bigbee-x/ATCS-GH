@@ -63,7 +63,7 @@ func _ready() -> void:
 	var shape := CollisionShape3D.new()
 	shape.shape = _hull
 	add_child(shape)
-	_home = Vector3(0, 22, 65) if corridor_mode else Vector3(0, 18, 35)
+	_home = Vector3(0, 35, 340) if corridor_mode else Vector3(0,35,40)
 	_build_rig()
 	_hud = FlightHUD.new()
 	add_child(_hud)
@@ -225,7 +225,7 @@ func _integrate_velocity(delta: float, intent: Vector3, boosting: bool, braking:
 		brake()
 		return
 	var limited := intent.limit_length(1.0)
-	var cap: float = SPEEDS[_speed_mode] * (BOOST_MULT if boosting else 1.0)
+	var cap: float = SPEEDS[_speed_mode] * (2.5 if _speed_mode > 0 else 1.0) * (BOOST_MULT if boosting else 1.0)
 	var local_velocity := limited * cap
 	local_velocity.y = limited.y * minf(cap, 12.0)
 	var target := Basis(Vector3.UP, _yaw) * local_velocity
@@ -248,8 +248,8 @@ func _step_flight(delta: float, intent: Vector3, boosting: bool = false, braking
 	_obstacle = get_slide_collision_count() > 0
 	# Ground clearance and a finite flying area prevent losing the simulation.
 	var before: Vector3 = global_position
-	var mid_z: float = 30.0 if corridor_mode else 0.0
-	global_position = Vector3(clampf(before.x, -260.0, 260.0), clampf(before.y, MIN_HEIGHT, MAX_HEIGHT), clampf(before.z, mid_z - 260.0, mid_z + 260.0))
+	var mid_z: float = 300.0 if corridor_mode else 0.0
+	global_position = Vector3(clampf(before.x, -1800.0, 1800.0), clampf(before.y, MIN_HEIGHT, MAX_HEIGHT), clampf(before.z, mid_z - (1900.0 if corridor_mode else 1800.0), mid_z + (1900.0 if corridor_mode else 1800.0)))
 	for axis in range(3):
 		if not is_equal_approx(before[axis], global_position[axis]):
 			_velocity[axis] = 0.0
@@ -257,8 +257,8 @@ func _step_flight(delta: float, intent: Vector3, boosting: bool = false, braking
 			_obstacle = true
 
 func _position_clear(at: Vector3) -> bool:
-	var mid_z: float = 30.0 if corridor_mode else 0.0
-	if at.y < MIN_HEIGHT or at.y > MAX_HEIGHT or absf(at.x) > 260.0 or absf(at.z - mid_z) > 260.0:
+	var mid_z: float = 300.0 if corridor_mode else 0.0
+	if at.y < MIN_HEIGHT or at.y > MAX_HEIGHT or absf(at.x) > (1800.0) or absf(at.z - mid_z) > (1900.0 if corridor_mode else 1800.0):
 		return false
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = _hull
@@ -340,7 +340,7 @@ func _build_rig() -> void:
 	_camera.name = "FlightCamera"
 	_camera.fov = 64.0
 	_camera.near = 0.06
-	_camera.far = 650.0
+	_camera.far = 4500.0
 	_camera.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
 	_spring_arm.add_child(_camera)
 

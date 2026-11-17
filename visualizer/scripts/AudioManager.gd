@@ -1,5 +1,5 @@
 extends Node
-## Procedural audio manager for the ATCS-GH traffic visualizer.
+## Procedural audio manager for the TrafIQ traffic visualizer.
 ##
 ## Three sound layers, all generated in real-time (no audio files):
 ##
@@ -32,7 +32,7 @@ var _beep_playback: AudioStreamGeneratorPlayback
 # ── Synthesis state ──────────────────────────────────────────────────────────
 ## Ambient
 var _ambient_phase: float = 0.0
-var _ambient_volume: float = 0.15   ## 0.0 - 0.6, scales with vehicle count
+var _ambient_volume: float = 0.0    ## Retired hum; kept at zero (see update_audio)
 
 ## Siren
 var _siren_active: bool = false
@@ -43,8 +43,8 @@ var _siren_sweep_phase: float = 0.0  ## Controls the frequency sweep oscillation
 var _beep_remaining: float = 0.0    ## Seconds left of beep tone
 var _beep_phase: float = 0.0
 const BEEP_DURATION: float = 0.15   ## 150ms
-const BEEP_FREQ: float = 660.0      ## Hz (E5 note)
-const BEEP_VOLUME: float = 0.25
+const BEEP_FREQ: float = 440.0      ## Hz: a soft low tick, not an alert tone
+const BEEP_VOLUME: float = 0.035
 
 ## Phase tracking (to detect changes)
 var _last_phase: int = -1
@@ -93,8 +93,9 @@ func update_audio(data: Dictionary) -> void:
 	var queues: Dictionary = data.get("queues", {})
 	for approach in queues:
 		total_q += int(queues[approach])
-	# Range: quiet (0.08) at 0 vehicles -> loud (0.5) at 100+
-	_ambient_volume = clampf(0.08 + float(total_q) * 0.004, 0.08, 0.5)
+	# The 110 Hz hum this used to drive is retired: it read as mains buzz, not
+	# traffic. TrafficAudio's engines and city bed carry the street now.
+	_ambient_volume = 0.0
 
 	# --- Siren on/off ---
 	var emergency: Dictionary = data.get("emergency", {})
@@ -141,7 +142,7 @@ func _setup_player(layer_name: String) -> void:
 			player.volume_db = -3.0
 			_siren_player = player
 		"beep":
-			player.volume_db = -2.0
+			player.volume_db = -10.0
 			_beep_player = player
 
 	player.play()

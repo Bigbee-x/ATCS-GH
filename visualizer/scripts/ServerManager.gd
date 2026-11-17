@@ -27,17 +27,17 @@ const PYTHON_CANDIDATES: Array = [
 	"/usr/bin/python3",
 ]
 var PYTHON_PATH: String = ""   # resolved in _ready from PYTHON_CANDIDATES
-const LOG_FILE := "/tmp/atcs_gh_server.log"
-const DASHBOARD_LOG := "/tmp/atcs_gh_dashboard.log"
+const LOG_FILE := "/tmp/trafiq_server.log"
+# Override for isolated integration tests; normal sessions retain the familiar log.
+var log_file_path: String = LOG_FILE
+const DASHBOARD_LOG := "/tmp/trafiq_dashboard.log"
 const POLL_INTERVAL := 1.0        # Seconds between health checks / log reads
 const PORT := 8765
 const DASHBOARD_PORT := 5050
 const DASHBOARD_SCRIPT := "dashboard/app.py"
 
-## Default sim pace. 1.0 = strict real-time, which reads slow on the visually
-## compressed roads (SUMO metres squeeze onto far fewer Godot units) — 1.5×
-## keeps honest SUMO dynamics but a livelier screen pace. SnapClock's
-## production-rate estimator adapts automatically, so motion stays smooth.
+## Default playback pace. Geometry is metric; playback speed is independent
+## of road dimensions and never changes the policy's simulation-time cadence.
 const DEFAULT_SIM_SPEED: float = 1.5
 
 const SERVER_SCRIPTS: Dictionary = {
@@ -62,7 +62,7 @@ var last_error: String = ""
 var _poll_timer: Timer
 
 # ── Computed paths ──────────────────────────────────────────────────────────
-var _project_root: String = ""     # e.g. /Users/osborn/BIG PROJECT/ATCS-GH
+var _project_root: String = ""     # Parent directory of the visualizer project
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -112,8 +112,8 @@ func _on_tree_exiting() -> void:
 
 
 func _resolve_project_root() -> void:
-	## Compute the ATCS-GH project root from Godot's res:// path.
-	## res:// resolves to .../ATCS-GH/visualizer/  → go up one level.
+	## Compute the TrafIQ project root from Godot's res:// path.
+	## res:// resolves to the visualizer directory; go up one level.
 	var godot_dir: String = ProjectSettings.globalize_path("res://")
 	# Remove trailing slash if present
 	if godot_dir.ends_with("/"):
@@ -154,7 +154,7 @@ func start_server(type: ServerType, args: Dictionary = {}) -> bool:
 	_log_file_pos = 0
 
 	# Clear old log file
-	var f := FileAccess.open(LOG_FILE, FileAccess.WRITE)
+	var f := FileAccess.open(log_file_path, FileAccess.WRITE)
 	if f:
 		f.store_string("[ServerManager] Starting %s server...\n" % get_server_type_name())
 		f.close()
@@ -193,7 +193,7 @@ func start_server(type: ServerType, args: Dictionary = {}) -> bool:
 	# Build bash command with exec (replaces bash with Python so PID is correct)
 	# Shell-quote paths, including spaces and apostrophes.
 	var bash_cmd: String = 'cd %s && exec %s -u %s%s > %s 2>&1' % [
-		_shell_quote(_project_root), _shell_quote(PYTHON_PATH), _shell_quote(script_path), py_args, _shell_quote(LOG_FILE)
+		_shell_quote(_project_root), _shell_quote(PYTHON_PATH), _shell_quote(script_path), py_args, _shell_quote(log_file_path)
 	]
 
 	print("[ServerManager] Running: %s" % bash_cmd)
@@ -254,9 +254,9 @@ func get_server_type_name() -> String:
 
 func get_log_contents() -> String:
 	## Read the entire log file (for when the log panel is first opened).
-	if not FileAccess.file_exists(LOG_FILE):
+	if not FileAccess.file_exists(log_file_path):
 		return ""
-	var f := FileAccess.open(LOG_FILE, FileAccess.READ)
+	var f := FileAccess.open(log_file_path, FileAccess.READ)
 	if not f:
 		return ""
 	var contents: String = f.get_as_text()
@@ -295,9 +295,9 @@ func _poll_server() -> void:
 
 func _read_new_log_lines() -> String:
 	## Read new content from the log file since last read.
-	if not FileAccess.file_exists(LOG_FILE):
+	if not FileAccess.file_exists(log_file_path):
 		return ""
-	var f := FileAccess.open(LOG_FILE, FileAccess.READ)
+	var f := FileAccess.open(log_file_path, FileAccess.READ)
 	if not f:
 		return ""
 	var length: int = f.get_length()
@@ -315,6 +315,12 @@ func _read_new_log_lines() -> String:
 # DASHBOARD
 # ═════════════════════════════════════════════════════════════════════════════
 
+func open_dashboard() -> void:
+	## The launcher may open the dashboard when resuming an existing corridor.
+	if is_running() and current_server == ServerType.CORRIDOR:
+		_start_dashboard()
+
+
 func _start_dashboard() -> void:
 	## Launch the Flask dashboard and open the Live Simulation tab in the browser.
 	if _dashboard_pid > 0 and OS.is_process_running(_dashboard_pid):
@@ -330,7 +336,7 @@ func _start_dashboard() -> void:
 		push_warning("[ServerManager] Dashboard script not found: %s" % dash_script)
 		return
 
-	var dash_cmd: String = 'cd %s && exec env ATCS_WS_PORT=%d %s -u %s > %s 2>&1' % [
+	var dash_cmd: String = 'cd %s && exec env TRAFIQ_WS_PORT=%d %s -u %s > %s 2>&1' % [
 		_shell_quote(_project_root), active_port, _shell_quote(PYTHON_PATH), _shell_quote(dash_script), _shell_quote(DASHBOARD_LOG)
 	]
 

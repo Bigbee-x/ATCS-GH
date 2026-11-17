@@ -1,6 +1,6 @@
 extends Node3D
 var signal_playback: Node
-## Main controller for the ATCS-GH 3D Corridor Visualizer.
+## Main controller for the TrafIQ 3D Corridor Visualizer.
 ##
 ## Three-junction corridor along N6 Nsawam Road (J0, J1, J2).
 ## Identical to Main.gd but with corridor-specific camera and mode setup.
@@ -37,9 +37,9 @@ var _camera_default_size: float = 50.0  # Orthographic camera size
 var _zoom_level: float = 1.0
 
 const ZOOM_MIN: float = 0.3
-const ZOOM_MAX: float = 4.0
+const ZOOM_MAX: float = 12.0
 const ZOOM_STEP: float = 0.08
-const PAN_SPEED: float = 0.3
+const PAN_SPEED: float = 25.0
 
 var _is_panning: bool = false
 var _is_rotating: bool = false
@@ -54,7 +54,7 @@ const PITCH_MIN: float = -0.4    # Don't go below ground
 const PITCH_MAX: float = 0.8     # Don't go too overhead
 
 # Camera pivot — center of the corridor
-var _camera_pivot: Vector3 = Vector3(0, 0, 30.0)  # Center on J1
+var _camera_pivot: Vector3 = Vector3(0, 0, 300.0)  # Center on J1 in metres
 
 # ── Packet counter ────────────────────────────────────────────────────────────
 var _packets_received: int = 0
@@ -76,13 +76,14 @@ func _ready() -> void:
 	add_child(signal_playback)
 	pedestrian_manager.playback_clock = vehicle_manager._clock
 	call_deferred("_ensure_live_traffic")
-	print("[CorridorMain] ATCS-GH Corridor Visualizer starting...")
+	print("[CorridorMain] TrafIQ Corridor Visualizer starting...")
 
 	# Store default camera transform
 	# Perspective gives the rebuilt streetscape depth; P restores plan view.
 	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.fov = 58.0
-	camera.position = Vector3(9, 44, 53)
+	camera.position = Vector3(24, 72, 86)
+	camera.far = 4500.0
 	_camera_default_position = camera.position
 	camera.position += _camera_pivot
 	camera.look_at(_camera_pivot)
@@ -100,6 +101,7 @@ func _ready() -> void:
 	ui.override_requested.connect(_on_override_requested)
 	ui.mode_switch_requested.connect(_on_mode_switch_requested)
 	ui.pedestrian_toggled.connect(_on_pedestrian_toggled)
+	ui.focus_requested.connect(_on_junction_focus_requested)
 
 	# ── Connect server mode-change signal ───────────────────────────────
 	ws_client.mode_changed.connect(_on_mode_changed)
@@ -131,6 +133,10 @@ func _ready() -> void:
 	cloud_manager.weather_manager = weather_manager
 	if cloud_manager.has_method("initialize"):
 		cloud_manager.initialize()
+		# The corridor looks north to a distant ridge, as Accra does to Akuapem.
+		var sky_material: ShaderMaterial = cloud_manager.get("_material")
+		if sky_material:
+			sky_material.set_shader_parameter("ridge", 1.0)
 
 	# ── Attach CCTV / radar / cabinet sensors to each of the 12 signal poles ──
 	if sensor_builder and sensor_builder.has_method("attach_to_intersection"):
@@ -141,7 +147,7 @@ func _ready() -> void:
 		drone.mode_changed.connect(_on_drone_mode_changed)
 
 	print("[CorridorMain] All signals connected. Corridor mode active.")
-	print("[CorridorMain] Tip: press H to fly the drone (mouse look + WASD).")
+	print("[CorridorMain] Tip: 1/2/3 focus junctions, 0 overview, H drone (mouse look + WASD).")
 	print("[CorridorMain] Waiting for corridor_visualizer_server.py data...")
 
 
@@ -212,9 +218,18 @@ func _on_connection_changed(connected: bool) -> void:
 		print("[CorridorMain] Server disconnected — waiting for reconnect...")
 
 
-func _on_override_requested(approach: String) -> void:
-	print("[CorridorMain] Manual override: force green for %s" % approach)
-	ws_client.send_override(approach)
+func _on_override_requested(junction: String, approach: String) -> void:
+	print("[CorridorMain] Manual request: %s / %s" % [junction, approach])
+	ws_client.send_override(approach, junction)
+
+
+func _on_junction_focus_requested(junction: String) -> void:
+	var index: int = ["J0", "J1", "J2"].find(junction)
+	if index < 0: return
+	if _drone_mode_active: _toggle_drone_mode()
+	_camera_pivot = Vector3(0, 0, index * 300.0)
+	_zoom_level = 1.0
+	_apply_camera()
 
 
 func _on_pedestrian_toggled(enabled: bool) -> void:
@@ -272,7 +287,7 @@ func _on_ui_weather_changed(weather_idx: int) -> void:
 	var lights_mode: int = 0
 	match weather_idx:
 		1: lights_mode = 1
-		3: lights_mode = 2
+		2: lights_mode = 2
 	if vehicle_manager.has_method("set_weather_lights_mode"):
 		vehicle_manager.set_weather_lights_mode(lights_mode)
 
@@ -308,7 +323,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# ── Escape: exit drone first, else return to launcher menu ──────────
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		if _drone_mode_active:
+		if ui.dismiss_panel():
+			get_viewport().set_input_as_handled()
+		elif _drone_mode_active:
 			_toggle_drone_mode()
 		else:
 			get_tree().change_scene_to_file("res://scenes/LauncherMenu.tscn")
@@ -317,6 +334,29 @@ func _unhandled_input(event: InputEvent) -> void:
 	# ── While flying, the drone owns input — skip the top-down camera controls ─
 	if _drone_mode_active:
 		return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode in [KEY_1, KEY_2, KEY_3]:
+			_camera_pivot = Vector3(0, 0, (event.keycode - KEY_1) * 300.0)
+			_zoom_level = 1.0
+			_apply_camera()
+			return
+		if event.keycode == KEY_4:
+			_camera_pivot = Vector3(207,0,155)
+			_zoom_level = 2.3
+			_apply_camera()
+			return
+		if event.keycode == KEY_0:
+			_camera_pivot = Vector3(0, 0, 300)
+			_zoom_level = 6.5
+			_apply_camera()
+			return
+		if event.keycode in [KEY_5,KEY_6,KEY_7,KEY_8]:
+			var section: Dictionary = preload("res://scripts/CityDistrictBuilder.gd").sections()[event.keycode-KEY_5]
+			_camera_pivot = Vector3(0,0,section.z)
+			_zoom_level = 2.9
+			_apply_camera()
+			return
 
 	# ── Trackpad pinch-to-zoom ─────────────────────────────────────────
 	if event is InputEventMagnifyGesture:
@@ -480,7 +520,7 @@ func _apply_camera() -> void:
 
 
 func _reset_camera() -> void:
-	_camera_pivot = Vector3(0, 0, 30.0)  # Center on J1
+	_camera_pivot = Vector3(0, 0, 300.0)  # Center on J1 in metres
 	_orbit_yaw = 0.0
 	_orbit_pitch = 0.0
 	_zoom_level = 1.0

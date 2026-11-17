@@ -32,24 +32,24 @@ func _check_flight() -> void:
 	drone.set_cursor_released(false)
 	drone.set("_focus_lost", false)
 	drone.set("_yaw", 0.0)
-	var caps: Array[float] = [4.0, 12.0, 26.0]
+	var caps: Array[float] = [4.0,30.0,65.0]
 	for preset in range(3):
 		drone.set_speed_mode(preset)
 		drone.set("_velocity", Vector3.ZERO)
-		for i in range(240):
+		for i in range(600):
 			drone.call("_integrate_velocity", 1.0 / 60.0, Vector3.FORWARD, false, false)
 		var forward: Vector3 = drone.get("_velocity")
 		_check(forward.z < -caps[preset] * 0.95 and absf(forward.x) < 0.01,
 			"Drone forward input does not follow its heading or selected speed")
 		_check(forward.length() <= caps[preset] + 0.05, "Flight preset exceeds its speed cap")
 		drone.set("_velocity", Vector3.ZERO)
-		for i in range(240):
+		for i in range(600):
 			drone.call("_integrate_velocity", 1.0 / 60.0, Vector3(1, 0, -1), false, false)
 		var diagonal: Vector3 = drone.get("_velocity")
 		_check(diagonal.length() <= caps[preset] + 0.05, "Diagonal movement increases flight speed")
 		_check(diagonal.x > 0.0 and diagonal.z < 0.0, "Diagonal input loses an axis")
 	drone.set("_velocity", Vector3.ZERO)
-	for i in range(240):
+	for i in range(600):
 		drone.call("_integrate_velocity", 1.0 / 60.0, Vector3.FORWARD, true, false)
 	_check(Vector3(drone.get("_velocity")).length() > caps[2] * 1.2, "Shift boost does not increase speed")
 	drone.set("_yaw", PI * 0.5)

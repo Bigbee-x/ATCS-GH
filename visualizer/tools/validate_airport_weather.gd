@@ -28,7 +28,7 @@ func _run() -> void:
 		_check(weather._sky_material is ShaderMaterial, "Continuous sky missing")
 		_check(weather._sky_material == clock._sky_material and weather._sky_material == clouds._material, "Clock and weather use different skies")
 		clock.set_time(13.0)
-		weather.set_weather(3)
+		weather.set_weather(2)
 		for i in range(200):
 			weather._lerp_mods_toward_target(0.2)
 			weather._update_surface_water(0.2)
@@ -41,15 +41,14 @@ func _run() -> void:
 		_check(float(clouds._material.get_shader_parameter("cloud_cover")) > 0.95, "Storm clouds not applied")
 		if corridor:
 			_airport_checks(scene, weather, clock)
-		weather.set_weather(2)
+		weather.set_weather(1)
 		for i in range(200):
 			weather._lerp_mods_toward_target(0.2)
 		weather._process(0.016)
 		clouds._process(0.016)
-		_check(not weather._rain_particles.emitting, "Rain does not stop for Harmattan")
+		_check(not weather._rain_particles.emitting, "Rain does not stop when the weather turns overcast")
 		_check(not weather._rain_collision.visible, "Dry weather still captures a rain heightfield")
-		_check(float(clouds._material.get_shader_parameter("dust")) > 0.95, "Harmattan haze not applied")
-		_check(weather.get_wind().x < 0, "Harmattan wind does not change direction")
+		_check(weather.WEATHER_NAMES == ["Clear", "Overcast", "Rain"], "Weather modes must be Clear, Overcast and Rain only")
 		var wet_after: float = weather.surface_wetness
 		weather._update_surface_water(1.0)
 		_check(weather.surface_wetness > wet_after * 0.98, "Roads dry instantly when weather changes")
@@ -64,8 +63,8 @@ func _run() -> void:
 func _transition_checks() -> void:
 	var fine = WeatherSystem.new()
 	var coarse = WeatherSystem.new()
-	fine.set_weather(3)
-	coarse.set_weather(3)
+	fine.set_weather(2)
+	coarse.set_weather(2)
 	for i in range(100):
 		fine._lerp_mods_toward_target(0.05)
 	for i in range(10):
@@ -73,7 +72,10 @@ func _transition_checks() -> void:
 	_check(is_equal_approx(fine._current_mods.rain_intensity, coarse._current_mods.rain_intensity), "Weather transition depends on frame rate")
 	_check(fine._current_mods.wind.is_equal_approx(coarse._current_mods.wind), "Wind transition depends on frame rate")
 	fine.set_weather(-1)
-	_check(fine.get_weather() == 3, "Invalid preset changes the weather")
+	_check(fine.get_weather() == 2, "Invalid preset changes the weather")
+	# Index 3 was rain while Harmattan existed; it is out of range now.
+	fine.set_weather(3)
+	_check(fine.get_weather() == 2, "A removed weather index must be rejected")
 	fine.free()
 	coarse.free()
 
@@ -117,7 +119,7 @@ func _airport_checks(scene: Node3D, weather: Node, clock: Node) -> void:
 	airport._process(0.016)
 	_check(airport._lit and airport._lamps[0].light_energy > 0, "Airport does not light at night")
 	clock.set_time(13.0)
-	weather.set_weather(3)
+	weather.set_weather(2)
 	weather._lerp_mods_toward_target(100.0)
 	airport._process(0.016)
 	_check(airport._lit, "Airport lights do not respond to storm visibility")
