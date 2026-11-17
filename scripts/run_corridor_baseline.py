@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ATCS-GH | Corridor Fixed-Timer Baseline
+TrafIQ | Corridor Fixed-Timer Baseline
 ═════════════════════════════════════════
 Runs the 3-junction corridor with fixed-timing signals (no AI).
 Provides the performance baseline for comparing against multi-agent DQN.
@@ -252,7 +252,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 65)
-    print("  ATCS-GH Corridor Baseline (Fixed Timer)")
+    print("  TrafIQ Corridor Baseline (Fixed Timer)")
     print(f"  Offset: {args.offset}s | Seeds: {args.seeds}")
     print("=" * 65)
 

@@ -1,5 +1,5 @@
 extends Control
-## HUD overlay for the ATCS-GH 3D Visualizer.
+## HUD overlay for the TrafIQ 3D Visualizer.
 ##
 ## Displays real-time simulation metrics, connection status, manual override
 ## controls, and emergency alerts. All UI elements are built programmatically
@@ -23,7 +23,7 @@ extends Control
 # ── Signals ──────────────────────────────────────────────────────────────────
 ## Emitted when the user clicks a manual override button
 signal override_requested(approach: String)
-## Emitted when the user toggles between ATCS and Fixed Timer modes
+## Emitted when the user toggles between TrafIQ and Fixed Timer modes
 signal mode_switch_requested(mode: String)
 ## Emitted when the user toggles pedestrians on/off
 signal pedestrian_toggled(enabled: bool)
@@ -31,7 +31,7 @@ signal pedestrian_toggled(enabled: bool)
 signal time_of_day_changed(hour: float)
 ## Emitted when the user changes the TOD mode (0=Manual, 1=Auto, 2=SimLinked)
 signal tod_mode_changed(mode_idx: int)
-## Emitted when the user picks a weather mode (0=Clear, 1=Overcast, 2=Harmattan, 3=Rain)
+## Emitted when the user picks a weather mode (0=Clear, 1=Overcast, 2=Rain)
 signal weather_changed(weather_idx: int)
 
 # ── Corridor mode ──────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ var _right_panel_single: PanelContainer     # Reference to single-junction right
 
 # Bottom bar
 var _lbl_mode: Label
-var _btn_mode_toggle: Button                # ATCS ↔ Fixed Timer toggle
+var _btn_mode_toggle: Button                # TrafIQ ↔ Fixed Timer toggle
 var _current_control_mode: String = "ai"    # Tracks active control mode
 var _btn_force_north: Button
 var _btn_force_south: Button
@@ -87,9 +87,9 @@ const TOD_MODE_NAMES: Array = ["Manual", "Auto", "Sim"]
 
 # Weather controls (sits inside the TOD panel)
 var _btn_weather: Button
-var _weather_idx: int = 0                    # 0=Clear, 1=Overcast, 2=Harmattan, 3=Rain
-const WEATHER_NAMES: Array = ["Clear", "Overcast", "Harmattan", "Rain"]
-const WEATHER_ICONS: Array = ["☀", "☁", "🌤", "🌧"]
+var _weather_idx: int = 0                    # 0=Clear, 1=Overcast, 2=Rain
+const WEATHER_NAMES: Array = ["Clear", "Overcast", "Rain"]
+const WEATHER_ICONS: Array = ["☀", "☁", "🌧"]
 
 # Emergency banner
 var _emergency_banner: PanelContainer
@@ -148,13 +148,14 @@ func set_corridor_mode(enabled: bool) -> void:
 	if enabled:
 		_chart_queue = _corridor_chart_queue
 		_chart_wait = _corridor_chart_wait
-		_lbl_title.text = "ATCS-GH  |  N6 Nsawam Corridor  |  Valiborn Technologies"
+		_lbl_title.text = "TrafIQ  |  N6 Nsawam Corridor  |  Valiborn Technologies"
 		_lbl_mode.text = "CORRIDOR AI"
+		_lbl_title.tooltip_text = "1 / 2 / 3: junctions · 0: overview · 4: airport · 5–8: town sections · H: fly drone"
 		_lbl_mode.add_theme_color_override("font_color", ACCENT_GREEN)
 	else:
 		_chart_queue = _single_chart_queue
 		_chart_wait = _single_chart_wait
-		_lbl_title.text = "ATCS-GH  |  Powered by Valiborn Technologies"
+		_lbl_title.text = "TrafIQ  |  Powered by Valiborn Technologies"
 
 
 func _process(delta: float) -> void:
@@ -183,7 +184,7 @@ func _build_top_bar() -> void:
 	panel.add_child(hbox)
 
 	# Title
-	_lbl_title = _make_label("ATCS-GH  |  Powered by Valiborn Technologies", 14)
+	_lbl_title = _make_label("TrafIQ  |  Powered by Valiborn Technologies", 14)
 	_lbl_title.add_theme_color_override("font_color", ACCENT_GREEN)
 	hbox.add_child(_lbl_title)
 
@@ -351,7 +352,7 @@ func _build_corridor_right_panel() -> void:
 			_wave_links.append(link)
 
 	# ── Corridor aggregate stats ──────────────────────────────────────────
-	_lbl_corridor_avg_wait = _make_label("Corridor Wait: 0.0s", 13)
+	_lbl_corridor_avg_wait = _make_label("Current Mean Wait: 0.0s", 13)
 	_lbl_corridor_avg_wait.add_theme_color_override("font_color", ACCENT_GREEN)
 	vbox.add_child(_lbl_corridor_avg_wait)
 
@@ -402,7 +403,7 @@ func _build_corridor_right_panel() -> void:
 	# Wait time chart for corridor (series = J0, J1, J2 mapped to north, south, east keys)
 	var MetricsChartScript = load("res://scripts/MetricsChart.gd")
 	_corridor_chart_wait = MetricsChartScript.new()
-	_corridor_chart_wait.chart_title = "Avg Wait (s)"
+	_corridor_chart_wait.chart_title = "Current Mean Wait (s)"
 	_corridor_chart_wait.max_value = 100.0
 	_corridor_chart_wait.custom_minimum_size = Vector2(215, 110)
 	# Override series colors with junction colors
@@ -460,6 +461,11 @@ func _build_junction_panel(_jid: String, name_text: String, color: Color) -> Dic
 	var lbl_ai := _make_label("AI: HOLD", 11)
 	lbl_ai.add_theme_color_override("font_color", TEXT_DIM)
 	container.add_child(lbl_ai)
+	var lbl_reason := _make_label("Live detectors: waiting", 10)
+	lbl_reason.name = "ControlReason"
+	lbl_reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_reason.add_theme_color_override("font_color", TEXT_DIM)
+	container.add_child(lbl_reason)
 
 	# Per-approach queue mini-bars (N/E/S/W in a 2×2 grid) — shows WHERE the
 	# traffic is stacked, not just how much. Fed from jdata["queues"] +
@@ -573,7 +579,7 @@ func _build_bottom_bar() -> void:
 	_lbl_mode.add_theme_color_override("font_color", ACCENT_GREEN)
 	hbox.add_child(_lbl_mode)
 
-	# ── ATCS / Fixed Timer toggle button ──────────────────────────────
+	# ── TrafIQ / Fixed Timer toggle button ──────────────────────────────
 	_btn_mode_toggle = Button.new()
 	_btn_mode_toggle.text = "⚡ Switch to Fixed Timer"
 	_btn_mode_toggle.custom_minimum_size = Vector2(190, 34)
@@ -783,7 +789,7 @@ func _on_tod_slider_changed(value: float) -> void:
 
 
 func _on_weather_pressed() -> void:
-	## Cycle through weather modes: Clear → Overcast → Harmattan → Rain → Clear.
+	## Cycle through weather modes: Clear → Overcast → Rain → Clear.
 	_weather_idx = (_weather_idx + 1) % WEATHER_NAMES.size()
 	_btn_weather.text = "%s  %s" % [WEATHER_ICONS[_weather_idx], WEATHER_NAMES[_weather_idx]]
 	weather_changed.emit(_weather_idx)
@@ -881,7 +887,7 @@ func _style_panel(panel: PanelContainer) -> void:
 
 
 func _on_mode_toggle_pressed() -> void:
-	## Handle the ATCS / Fixed Timer toggle button press.
+	## Handle the TrafIQ / Fixed Timer toggle button press.
 	if _current_control_mode == "ai":
 		mode_switch_requested.emit("baseline")
 	else:
@@ -916,7 +922,7 @@ func update_control_mode(new_mode: String) -> void:
 	if new_mode == "baseline":
 		_lbl_mode.text = "FIXED TIMER"
 		_lbl_mode.add_theme_color_override("font_color", ACCENT_ORANGE)
-		_btn_mode_toggle.text = "⚡ Switch to ATCS"
+		_btn_mode_toggle.text = "⚡ Switch to TrafIQ"
 		# Restyle button to green (switch TO ai)
 		var style := StyleBoxFlat.new()
 		style.bg_color = Color(0.1, 0.5, 0.2, 0.95)
@@ -1069,7 +1075,7 @@ func _update_corridor_display(data: Dictionary) -> void:
 	var corridor_total_reward: float = data.get("total_reward", 0.0)
 
 	if _lbl_corridor_avg_wait:
-		_lbl_corridor_avg_wait.text = "Corridor Wait: %.1fs" % corridor_avg_wait
+		_lbl_corridor_avg_wait.text = "Current Mean Wait: %.1fs" % corridor_avg_wait
 		# Color-code: green < 20, orange < 50, red >= 50
 		if corridor_avg_wait < 20.0:
 			_lbl_corridor_avg_wait.add_theme_color_override("font_color", ACCENT_GREEN)
@@ -1182,6 +1188,16 @@ func _update_corridor_display(data: Dictionary) -> void:
 			else:
 				lbl_ai.add_theme_color_override("font_color", ACCENT_GREEN)
 
+		var control: Dictionary = jdata.get("control", {})
+		var reason_label: Label = lbl_ai.get_parent().get_node_or_null("ControlReason")
+		if reason_label:
+			var reasons := {"dqn": "DQN decision", "balance_queue_pressure": "Balancing competing queues", "maintain_green_flow": "Keeping traffic flowing", "minimum_green": "Finishing minimum green", "serve_waiting_approach": "Serving waiting traffic", "maximum_green": "Sharing green time", "empty_or_blocked_movement": "Serving an open route", "no_serviceable_demand": "Waiting for demand / exit space", "manual_override": "Manual override"}
+			reason_label.text = reasons.get(str(control.get("reason", "")), "Fixed signal schedule" if _current_control_mode == "baseline" else "Live detectors")
+			var blocked: Array = control.get("blocked_exits", [])
+			if not blocked.is_empty():
+				reason_label.text += " · %d blocked exits" % blocked.size()
+			reason_label.tooltip_text = "DQN proposal: %s\nApplied: %s\nOldest detected demand: %.0fs\nDetector sample: %.0fs" % [str(control.get("proposed_action", "—")), ai_decision, float(control.get("oldest_demand_seconds", 0)), float(control.get("sample_time", 0))]
+
 		# Preempted override
 		if jdata.get("preempted", false):
 			lbl_ai.text = "AI: PREEMPTED"
@@ -1197,7 +1213,7 @@ func _update_corridor_display(data: Dictionary) -> void:
 			total_q += float(queues[approach])
 			total_w += float(wait_times.get(approach, 0))
 			n_approaches += 1
-		var avg_w: float = total_w / maxf(n_approaches, 1.0)
+		var avg_w: float = float(jdata.get("avg_wait", total_w / maxf(n_approaches, 1.0)))
 
 		# Per-approach queue mini-bars: value + severity color + wait tooltip
 		var approach_bars: Dictionary = jp["approach_bars"]
@@ -1259,7 +1275,7 @@ func set_connection_status(connected: bool) -> void:
 		_lbl_connection.text = "CONNECTED"
 		_lbl_connection.add_theme_color_override("font_color", ACCENT_GREEN)
 	else:
-		_lbl_connection.text = "RECONNECTING..."
+		_lbl_connection.text = "NO LIVE TRAFFIC — CONNECTING…"
 		_lbl_connection.add_theme_color_override("font_color", ACCENT_RED)
 
 
@@ -1312,7 +1328,7 @@ func reset_display() -> void:
 	if corridor_mode:
 		# Reset corridor panels
 		if _lbl_corridor_avg_wait:
-			_lbl_corridor_avg_wait.text = "Corridor Wait: 0.0s"
+			_lbl_corridor_avg_wait.text = "Current Mean Wait: 0.0s"
 			_lbl_corridor_avg_wait.add_theme_color_override("font_color", ACCENT_GREEN)
 		if _lbl_corridor_reward:
 			_lbl_corridor_reward.text = "Total Reward: 0"
@@ -1351,3 +1367,15 @@ func reset_display() -> void:
 		_chart_queue.clear_data()
 	if _chart_wait:
 		_chart_wait.clear_data()
+
+
+func set_traffic_status(message: String) -> void:
+	_lbl_connection.text = message
+	_lbl_connection.add_theme_color_override("font_color", ACCENT_ORANGE)
+
+func show_simulation_error(message: String) -> void:
+	_lbl_connection.text = "TRAFFIC STARTUP FAILED"
+	_lbl_connection.add_theme_color_override("font_color", ACCENT_RED)
+	_emergency_banner.visible = true
+	_lbl_emergency.text = "Live traffic could not start. Press Escape to return to the launcher and view the server log."
+	_lbl_emergency.tooltip_text = message

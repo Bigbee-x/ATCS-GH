@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH Dashboard — Live Training & Performance Analytics
+TrafIQ Dashboard — Live Training & Performance Analytics
 ══════════════════════════════════════════════════════════
 Flask web app serving real-time training progress, scenario
 comparisons, and AI vs baseline performance metrics.
@@ -9,16 +9,21 @@ comparisons, and AI vs baseline performance metrics.
 
 import csv
 import os
+import sys
 from pathlib import Path
 from flask import Flask, jsonify, render_template
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+from live_dashboard import current_endpoint, TELEMETRY_SCHEMA
 DATA_DIR     = PROJECT_ROOT / "data"
 LOG_FILE     = DATA_DIR / "training_log.csv"
 SCENARIO_EVAL = DATA_DIR / "scenario_eval_results.csv"
 
 app = Flask(__name__)
+SIM_WS_PORT = int(os.environ.get("TRAFIQ_WS_PORT", os.environ.get("ATCS_WS_PORT", "8765")))
+SIM_WS_URL = f"ws://127.0.0.1:{SIM_WS_PORT}"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -42,7 +47,35 @@ def _safe_float(val, default=0.0):
 
 @app.route("/")
 def index():
-    return render_template("dashboard.html")
+    return render_template("live.html", simulation_ws_url=SIM_WS_URL)
+
+
+@app.route("/analytics")
+def analytics():
+    """Historical training/evaluation data is separate from live telemetry."""
+    return render_template("dashboard.html", simulation_ws_url=SIM_WS_URL)
+
+
+@app.route("/api/live-config")
+def api_live_config():
+    """Discover the latest live server for this project, not a generic port."""
+    endpoint = current_endpoint()
+    response = jsonify({
+        "available": endpoint is not None,
+        "ws_url": f"ws://127.0.0.1:{endpoint['port']}" if endpoint else SIM_WS_URL,
+        "session_id": endpoint["session_id"] if endpoint else None,
+        "mode": endpoint["mode"] if endpoint else None,
+        "telemetry_schema": endpoint["telemetry_schema"] if endpoint else TELEMETRY_SCHEMA,
+        "source": "SUMO / TraCI",
+        "metrics": {
+            "current_mean_wait_seconds": "Sum of current SUMO vehicle waiting times divided by vehicles on all incoming edges; not completed-trip delay.",
+            "current_stopped_vehicles": "Vehicles on incoming edges moving below 0.1 m/s, reported by SUMO.",
+            "active_vehicles": "All active SUMO vehicles in the network, including junctions and parking bays.",
+            "vehicles_completed": "Cumulative vehicles that reached their destination during this simulation run.",
+        },
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/api/training-log")
@@ -162,21 +195,17 @@ def api_scenario_detail(scenario, mode):
 
 @app.route("/api/sim-status")
 def api_sim_status():
-    """Check if the simulation WebSocket server is reachable."""
-    import socket
-    try:
-        s = socket.create_connection(("localhost", 8765), timeout=1)
-        s.close()
-        return jsonify({"running": True, "ws_url": "ws://localhost:8765"})
-    except (ConnectionRefusedError, OSError):
-        return jsonify({"running": False, "ws_url": "ws://localhost:8765"})
+    """Compatibility endpoint; a random open TCP port is not a simulator."""
+    endpoint = current_endpoint()
+    return jsonify({"running": endpoint is not None,
+                    "ws_url": f"ws://127.0.0.1:{endpoint['port']}" if endpoint else SIM_WS_URL})
 
 
 # ── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("\n  ATCS-GH Dashboard")
+    print("\n  TrafIQ Dashboard")
     # 127.0.0.1, not localhost: we bind IPv4 (0.0.0.0) and Safari resolves
     # "localhost" to IPv6 (::1) first, which then fails to connect.
     print(f"  http://127.0.0.1:5050\n")
-    app.run(host="0.0.0.0", port=5050, debug=True)
+    app.run(host="127.0.0.1", port=5050, debug=False)

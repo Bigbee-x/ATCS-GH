@@ -1,10 +1,16 @@
 extends Node
+
+const SurfaceMaterials = preload("res://scripts/StreetscapeMaterials.gd")
+var surface_wetness: float = 0.0
+var _wind_time: float = 0.0
+var _rain_material: ShaderMaterial
+var _rain_collision: GPUParticlesCollisionHeightField3D
+var _rain_audio: AudioStreamPlayer
 ## Weather system layered on top of TimeOfDayManager.
 ##
-## Supports four modes:
+## Supports three modes:
 ##   CLEAR     — default, no modifiers
 ##   OVERCAST  — grey sky, dim sun, light haze
-##   HARMATTAN — Accra's Dec–Feb dry-season dust (warm yellow-brown haze)
 ##   RAIN      — dark sky, heavy fog, GPU-particle rain falling over the scene
 ##
 ## Each frame:
@@ -22,8 +28,10 @@ extends Node
 signal weather_changed(weather_idx: int)
 
 # ── Weather modes ───────────────────────────────────────────────────────────
-enum Weather { CLEAR, OVERCAST, HARMATTAN, RAIN }
-const WEATHER_NAMES: Array = ["Clear", "Overcast", "Harmattan", "Rain"]
+# Harmattan haze was removed at the owner's request: the indices are now
+# 0 Clear, 1 Overcast, 2 Rain everywhere (UI, HUD, tools and validators).
+enum Weather { CLEAR, OVERCAST, RAIN }
+const WEATHER_NAMES: Array = ["Clear", "Overcast", "Rain"]
 
 var weather: Weather = Weather.CLEAR
 
@@ -35,7 +43,7 @@ var camera_follow: Camera3D        # rain emitter tracks this
 
 # ── Cached env refs ─────────────────────────────────────────────────────────
 var _environment: Environment
-var _sky_material: ProceduralSkyMaterial
+var _sky_material: Material
 
 # ── Modifier state (lerps smoothly between weather presets) ─────────────────
 # All fields default to CLEAR (identity) so startup causes no visual change.
@@ -48,20 +56,23 @@ class WeatherMods:
 	var fog_density_add: float = 0.0
 	var fog_color_tint: Color = Color(0, 0, 0)
 	var fog_tint_strength: float = 0.0
-	var rain_intensity: float = 0.0   # 0.0 = off, 1.0 = full downpour
+	var rain_intensity: float = 0.0
+	var cloud_cover: float = 0.30
+	var dust: float = 0.0
+	var wind: Vector3 = Vector3(1.6, 0, 0.5)
 
 
 var _current_mods: WeatherMods = WeatherMods.new()
 var _target_mods: WeatherMods = WeatherMods.new()
 
-const MOD_LERP_SPEED: float = 0.8   # ~1.25 sec to finish a weather change
+const MOD_LERP_SPEED: float = 0.65   # exponential response, ~5 seconds to settle
 
 # ── Rain particle system ────────────────────────────────────────────────────
 var _rain_particles: GPUParticles3D
-const RAIN_BOX_HALF_XZ: float = 60.0       # covers visible area
+const RAIN_BOX_HALF_XZ: float = 36.0       # covers visible area
 const RAIN_BOX_HEIGHT:  float = 25.0       # above camera
-const RAIN_PARTICLE_COUNT: int = 3500
-const RAIN_LIFETIME: float = 1.6
+const RAIN_PARTICLE_COUNT: int = 9000
+const RAIN_LIFETIME: float = 5.5
 
 # ── Lightning + thunder ─────────────────────────────────────────────────────
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
@@ -73,8 +84,8 @@ var _thunder_volume_db: float = -4.0
 var _thunder_player: AudioStreamPlayer
 var _thunder_stream: AudioStreamWAV
 
-const LIGHTNING_MIN_INTERVAL: float = 7.0
-const LIGHTNING_MAX_INTERVAL: float = 22.0
+const LIGHTNING_MIN_INTERVAL: float = 20.0
+const LIGHTNING_MAX_INTERVAL: float = 55.0
 const LIGHTNING_FLASH_DURATION: float = 0.28
 const LIGHTNING_PEAK_ENERGY: float = 2.6
 
@@ -87,9 +98,10 @@ func _ready() -> void:
 	# Process AFTER TimeOfDayManager so our modifiers land on fresh base values.
 	process_priority = 10
 	_rng.randomize()
-	_lightning_timer = _rng.randf_range(6.0, 14.0)
+	_lightning_timer = _rng.randf_range(20.0, 40.0)
 	_build_rain_particles()
 	_build_thunder()
+	_build_rain_audio()
 
 
 func _process(delta: float) -> void:
@@ -107,13 +119,16 @@ func _process(delta: float) -> void:
 	if _environment == null:
 		_environment = world_env.environment
 	if _sky_material == null and _environment and _environment.sky:
-		_sky_material = _environment.sky.sky_material as ProceduralSkyMaterial
+		_sky_material = _environment.sky.sky_material
 
 	# 4. Apply the weather layer
 	_apply_weather_layer()
 
 	# 5. Rain emitter follows the camera; fade particles in/out with intensity
 	_update_rain(delta)
+	_update_surface_water(delta)
+	_wind_time += delta
+	SurfaceMaterials.set_wind(get_wind())
 
 	# 6. Lightning + thunder — only during heavy rain
 	_process_lightning(delta)
@@ -150,6 +165,8 @@ func _preset_for(w: Weather) -> WeatherMods:
 		Weather.CLEAR:
 			pass   # identity — no modifiers
 		Weather.OVERCAST:
+			m.cloud_cover = 0.94
+			m.wind = Vector3(3.2, 0, 1.2)
 			m.sun_energy_mul = 0.40
 			m.ambient_energy_mul = 0.90
 			m.sky_top_tint = Color(0.58, 0.60, 0.66)
@@ -159,18 +176,9 @@ func _preset_for(w: Weather) -> WeatherMods:
 			m.fog_color_tint = Color(0.65, 0.68, 0.72)
 			m.fog_tint_strength = 0.55
 			m.rain_intensity = 0.0
-		Weather.HARMATTAN:
-			# Accra dry-season dust haze — warm yellow-brown, low visibility.
-			m.sun_energy_mul = 0.60
-			m.ambient_energy_mul = 0.85
-			m.sky_top_tint = Color(0.72, 0.65, 0.48)
-			m.sky_horizon_tint = Color(0.82, 0.72, 0.52)
-			m.sky_tint_strength = 0.65
-			m.fog_density_add = 0.006
-			m.fog_color_tint = Color(0.78, 0.68, 0.50)
-			m.fog_tint_strength = 0.65
-			m.rain_intensity = 0.0
 		Weather.RAIN:
+			m.cloud_cover = 1.0
+			m.wind = Vector3(6.0, 0, 2.3)
 			m.sun_energy_mul = 0.28
 			m.ambient_energy_mul = 0.65
 			m.sky_top_tint = Color(0.32, 0.36, 0.42)
@@ -188,7 +196,10 @@ func _preset_for(w: Weather) -> WeatherMods:
 # ═════════════════════════════════════════════════════════════════════════════
 
 func _lerp_mods_toward_target(delta: float) -> void:
-	var t: float = clampf(delta * MOD_LERP_SPEED * 4.0, 0.0, 1.0)
+	var t: float = 1.0 - exp(-maxf(delta, 0.0) * MOD_LERP_SPEED)
+	_current_mods.cloud_cover = lerpf(_current_mods.cloud_cover, _target_mods.cloud_cover, t)
+	_current_mods.dust = lerpf(_current_mods.dust, _target_mods.dust, t)
+	_current_mods.wind = _current_mods.wind.lerp(_target_mods.wind, t)
 	_current_mods.sun_energy_mul      = lerpf(_current_mods.sun_energy_mul,      _target_mods.sun_energy_mul,      t)
 	_current_mods.ambient_energy_mul  = lerpf(_current_mods.ambient_energy_mul,  _target_mods.ambient_energy_mul,  t)
 	_current_mods.sky_top_tint        = _current_mods.sky_top_tint.lerp(_target_mods.sky_top_tint, t)
@@ -217,6 +228,7 @@ func _apply_weather_layer() -> void:
 
 	# Sun — multiplicative on top of TOD energy
 	sun.light_energy = sun.light_energy * m.sun_energy_mul
+	sun.light_angular_distance = lerpf(0.7, 6.0, m.cloud_cover)
 
 	# Ambient — multiplicative
 	if _environment:
@@ -225,16 +237,14 @@ func _apply_weather_layer() -> void:
 	# Sky — tint toward weather color by strength (scaled by brightness)
 	if _sky_material and m.sky_tint_strength > 0.001:
 		var sky_strength: float = m.sky_tint_strength * tint_scale
-		_sky_material.sky_top_color = _sky_material.sky_top_color.lerp(
-			m.sky_top_tint, sky_strength)
-		_sky_material.sky_horizon_color = _sky_material.sky_horizon_color.lerp(
-			m.sky_horizon_tint, sky_strength)
+		_tint_sky("sky_top_color", m.sky_top_tint, sky_strength)
+		_tint_sky("sky_horizon_color", m.sky_horizon_tint, sky_strength)
 
 	# Fog — add density (capped), tint color (scaled)
 	if _environment:
-		var density_add: float = m.fog_density_add * fog_scale
+		var density_add: float = m.fog_density_add * fog_scale * 0.12
 		var new_density: float = minf(_environment.fog_density + density_add, FOG_DENSITY_MAX)
-		if new_density > 0.0005:
+		if new_density > 0.00005:
 			_environment.fog_enabled = true
 			_environment.fog_density = new_density
 			if m.fog_tint_strength > 0.001:
@@ -254,11 +264,10 @@ func _build_rain_particles() -> void:
 	_rain_particles.lifetime = RAIN_LIFETIME
 	_rain_particles.explosiveness = 0.0
 	_rain_particles.visibility_aabb = AABB(
-		Vector3(-RAIN_BOX_HALF_XZ, -RAIN_BOX_HEIGHT, -RAIN_BOX_HALF_XZ),
-		Vector3(RAIN_BOX_HALF_XZ * 2, RAIN_BOX_HEIGHT + 10.0, RAIN_BOX_HALF_XZ * 2)
+		Vector3(-70, -135, -70), Vector3(140, 140, 140)
 	)
 	_rain_particles.emitting = false   # hidden until RAIN selected
-	_rain_particles.preprocess = 0.5   # start mid-flight so scene isn't empty
+	_rain_particles.preprocess = 2.0   # start mid-flight so scene isn't empty
 
 	# Process material — defines how each particle behaves
 	var proc := ParticleProcessMaterial.new()
@@ -266,9 +275,10 @@ func _build_rain_particles() -> void:
 	proc.emission_box_extents = Vector3(RAIN_BOX_HALF_XZ, 0.1, RAIN_BOX_HALF_XZ)
 	proc.direction = Vector3(0.05, -1.0, 0.0)   # slight wind angle
 	proc.spread = 2.0
-	proc.initial_velocity_min = 14.0
-	proc.initial_velocity_max = 17.0
+	proc.initial_velocity_min = 19.0
+	proc.initial_velocity_max = 23.0
 	proc.gravity = Vector3.ZERO
+	proc.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
 	proc.scale_min = 1.0
 	proc.scale_max = 1.0
 	# Subtle color variation for depth — bluish white
@@ -277,21 +287,24 @@ func _build_rain_particles() -> void:
 
 	# Draw mesh — thin vertical streak, stretched in velocity direction
 	var streak := QuadMesh.new()
-	streak.size = Vector2(0.015, 0.55)
-	var streak_mat := StandardMaterial3D.new()
-	streak_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	streak_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	streak_mat.albedo_color = Color(0.80, 0.88, 1.00, 0.55)
-	streak_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	streak_mat.billboard_keep_scale = true
-	streak_mat.disable_receive_shadows = true
-	streak.material = streak_mat
+	streak.size = Vector2(0.035, 0.85)
+	_rain_material = ShaderMaterial.new()
+	_rain_material.shader = preload("res://shaders/rain_streak.gdshader")
+	streak.material = _rain_material
 	_rain_particles.draw_pass_1 = streak
 
 	# Emitter sits at the scene root; _update_rain() moves it each frame so
 	# it hovers above whatever the camera is looking at.
 	_rain_particles.position = Vector3(0, RAIN_BOX_HEIGHT, 0)
 	add_child(_rain_particles)
+	# Roofs and ground stop streaks; snap the capture to avoid rebuilding every frame.
+	_rain_collision = GPUParticlesCollisionHeightField3D.new()
+	_rain_collision.name = "RainRoofCollision"
+	_rain_collision.size = Vector3(120, 180, 120)
+	_rain_collision.resolution = GPUParticlesCollisionHeightField3D.RESOLUTION_512
+	_rain_collision.position.y = 65.0
+	_rain_collision.visible = false
+	add_child(_rain_collision)
 
 
 func _update_rain(_delta: float) -> void:
@@ -301,18 +314,39 @@ func _update_rain(_delta: float) -> void:
 	var should_emit: bool = intensity > 0.02
 	if _rain_particles.emitting != should_emit:
 		_rain_particles.emitting = should_emit
+		_rain_collision.visible = should_emit
 
-	# Scale particle count by intensity (cheap — material property only)
+	if _rain_audio:
+		_rain_audio.volume_db = linear_to_db(maxf(intensity * 0.32, 0.0001))
+		if should_emit and not _rain_audio.playing:
+			_rain_audio.play()
+		elif not should_emit and _rain_audio.playing:
+			_rain_audio.stop()
+	_rain_particles.amount_ratio = maxf(0.05, intensity)
+	_rain_material.set_shader_parameter("intensity", intensity)
+	var fall := Vector3(get_wind().x * 0.45, -21.0, get_wind().z * 0.45).normalized()
+	_rain_material.set_shader_parameter("fall_direction", fall)
+	# Wind drives both the flight path and the visible streak direction.
 	var proc := _rain_particles.process_material as ParticleProcessMaterial
 	if proc:
+		proc.direction = fall
 		var col: Color = proc.color
 		col.a = 0.55 * intensity
 		proc.color = col
 
-	# Follow the camera in XZ so rain fills the visible frustum
+	# Follow the active overview, ground or flight camera, including its altitude.
+	var active_camera: Camera3D = get_viewport().get_camera_3d()
+	if active_camera:
+		camera_follow = active_camera
 	if camera_follow and should_emit:
 		var cp: Vector3 = camera_follow.global_position
-		_rain_particles.global_position = Vector3(cp.x, RAIN_BOX_HEIGHT, cp.z)
+		_rain_particles.global_position = Vector3(cp.x, cp.y + RAIN_BOX_HEIGHT, cp.z)
+		var collision_at := Vector3(snappedf(cp.x, 16.0), 65.0, snappedf(cp.z, 16.0))
+		if not _rain_collision.global_position.is_equal_approx(collision_at):
+			_rain_collision.global_position = collision_at
+		var lifetime: float = maxf(1.8, (cp.y + RAIN_BOX_HEIGHT + 1.0) / 19.0)
+		if absf(_rain_particles.lifetime - lifetime) > 0.5:
+			_rain_particles.lifetime = lifetime
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -347,8 +381,8 @@ func _process_lightning(delta: float) -> void:
 		# Wash the sky briefly white — strongest at flash peak
 		if _sky_material:
 			var w: float = clampf(shape * 0.55, 0.0, 0.55)
-			_sky_material.sky_top_color = _sky_material.sky_top_color.lerp(Color.WHITE, w)
-			_sky_material.sky_horizon_color = _sky_material.sky_horizon_color.lerp(Color.WHITE, w)
+			_tint_sky("sky_top_color", Color.WHITE, w)
+			_tint_sky("sky_horizon_color", Color.WHITE, w)
 		_flash_remaining -= delta
 
 	# ── Delayed thunder ───────────────────────────────────────────────
@@ -429,3 +463,51 @@ func _generate_thunder_sample(duration_sec: float, sample_rate: int) -> AudioStr
 	wav.stereo = false
 	wav.data = bytes
 	return wav
+
+
+func get_wind() -> Vector3:
+	var gust: float = 1.0 + sin(_wind_time * 0.73) * 0.16 + sin(_wind_time * 1.71) * 0.06
+	return _current_mods.wind * gust
+
+func _update_surface_water(delta: float) -> void:
+	# Roads soak rapidly; evaporation takes a few minutes after the shower passes.
+	var rain: float = _current_mods.rain_intensity
+	var rate: float = 0.12 if rain > surface_wetness else 0.006
+	surface_wetness = lerpf(surface_wetness, rain, 1.0 - exp(-maxf(delta, 0.0) * rate))
+	SurfaceMaterials.set_wetness(surface_wetness, rain)
+	if _environment:
+		_environment.ssr_enabled = surface_wetness > 0.05
+
+func _tint_sky(key: String, color: Color, weight: float) -> void:
+	if _sky_material is ShaderMaterial:
+		var current: Color = _sky_material.get_shader_parameter(key)
+		_sky_material.set_shader_parameter(key, current.lerp(color, weight))
+	elif _sky_material:
+		var current: Color = _sky_material.get(key)
+		_sky_material.set(key, current.lerp(color, weight))
+
+func _build_rain_audio() -> void:
+	# Deterministic, filtered rainfall bed; a seamless two-second PCM loop.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9017
+	var bytes := PackedByteArray()
+	var count: int = 44100
+	bytes.resize(count * 2)
+	var low: float = 0.0
+	for i in range(count):
+		var white: float = rng.randf_range(-1.0, 1.0)
+		low = lerpf(low, white, 0.14)
+		var sample: int = int(clampf(white * 0.16 + low * 0.7, -1.0, 1.0) * 32767)
+		bytes[i * 2] = sample & 0xff
+		bytes[i * 2 + 1] = (sample >> 8) & 0xff
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = 22050
+	stream.data = bytes
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_end = count
+	_rain_audio = AudioStreamPlayer.new()
+	_rain_audio.name = "RainAmbience"
+	_rain_audio.stream = stream
+	_rain_audio.volume_db = -80.0
+	add_child(_rain_audio)

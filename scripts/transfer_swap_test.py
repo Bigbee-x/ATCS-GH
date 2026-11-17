@@ -70,7 +70,7 @@ def main() -> None:
     rows: list[dict] = []
     summary: dict[str, dict] = {}
 
-    with tempfile.TemporaryDirectory(prefix="atcs_swap_") as tmp:
+    with tempfile.TemporaryDirectory(prefix="trafiq_swap_") as tmp:
         tmp_root = Path(tmp)
         for name, mapping in CONFIGS.items():
             mdir = build_config_dir(tmp_root, name, mapping)

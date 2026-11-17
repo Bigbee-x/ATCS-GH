@@ -1,16 +1,27 @@
-# ATCS-GH — Adaptive Traffic Control System Ghana
+# TrafIQ — Traffic Intelligence & Coordination
 
-> **AI traffic signals for Accra.** Double-DQN agents control the
-> Achimota/Neoplan Junction and a 3-junction stretch of the N6 Nsawam corridor
-> in a calibrated SUMO microsimulation — cutting average waits by **40–98%**
-> versus a realistic fixed-timer across every demand scenario, verified across
-> seeds. Rendered live in a fully procedural Godot 4 3D world.
+Previously named ATCS-GH. The existing checkout folder can remain `ATCS-GH`;
+the launcher resolves it relative to the app. Versioned TSH-1 schema IDs,
+recorded experiment files and simulation inputs retain their original identifiers
+to preserve compatibility and validation hashes. New dashboard launches use
+`TRAFIQ_WS_PORT`; `ATCS_WS_PORT` remains a supported fallback.
+Restart the simulator and dashboard together after updating to the new branding.
+
+> **Traffic intelligence for Accra.** TrafIQ now focuses on the three-junction
+> N6 corridor. Double-DQN agents and a supervisor control SUMO traffic; Godot
+> renders the city independently. The launcher opens this corridor only.
+> See [current control findings](docs/corridor-handoff-review-20261116.md) and
+> the [traffic observation contract](docs/traffic-observation-contract.md).
 >
-> *Valiborn Technologies — "Relax, it works."*
+> *Valiborn Tech. Build Beyond.*
 
 ---
 
-## Results (greedy policy, full 2-hour scenarios, 5 seeds)
+## Historical results (greedy policy, full 2-hour scenarios, 5 seeds)
+
+These retained results predate the current deployment audit. They are not a claim
+that today's supervised corridor passes every case. The single-junction product
+is retired; its results and checkpoints remain for reference.
 
 The deployable models are evaluated frozen (ε = 0) against protected-left
 fixed-timer baselines. **Mean ± std across 5 seeds — the AI beats the timer on
@@ -89,30 +100,35 @@ a model for a new junction in hours on a laptop (full corridor training:
 | AI agents | PyTorch Double-DQN | 41-dim state (single) / 46-dim per junction (corridor), 5 actions |
 | Training | Python | Expert warm-start, ε-greedy, scenario rotation, maximin model selection |
 | Bridge | Python asyncio websockets | Streams sim state to the 3D client every sim-second |
-| Visualiser | Godot 4.6 (GDScript, all procedural) | 3D world, HUD, launcher, drone, audio |
-| Dashboard | Flask + Chart.js | Live + historical metrics at `http://127.0.0.1:5050` |
+| Visualiser | Godot 4.6 (GDScript, procedural architecture) | 3D world, HUD, launcher, drone, audio |
+| Dashboard | Flask + native SVG (live), Chart.js (archive) | Measured live telemetry at `http://127.0.0.1:5050`; historical reports at `/analytics` |
 
 ---
 
 ## Quick start
 
 ```bash
-# 1. Install Python deps (Python 3.11 recommended; SUMO comes with eclipse-sumo)
-python -m pip install -r requirements.txt
+# 1. Install Python deps into a project-local virtualenv (Python 3.11 recommended;
+#    SUMO comes with eclipse-sumo). The Godot launcher looks for .venv/ first.
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 
-# 2. Open visualizer/project.godot in Godot 4.6+ (Standard, NOT .NET) and press F5
-#    → pick Single Junction or N6 Corridor in the launcher. It spawns the
-#    Python server + dashboard and opens the dashboard in a browser for you.
+# 2. Confirm the existing corridor network and routes are present in simulation/.
+#    Preserve these calibrated inputs; do not regenerate them over an existing study.
+
+# 3. Open visualizer/project.godot in Godot 4.6+ (Standard, NOT .NET) and press F5
+#    → Launch corridor. It starts the traffic server and optionally opens
+#    the live dashboard. Resume and session logs are available in the lobby.
 ```
 
 Manual workflow (no launcher):
 
 ```bash
-python scripts/visualizer_server.py            # single junction, AI control
 python scripts/corridor_visualizer_server.py   # corridor, AI control
 python scripts/corridor_visualizer_server.py --route simulation/corridor_routes_evening.rou.xml
 python dashboard/app.py                        # dashboard → http://127.0.0.1:5050
-# then open the Godot project and press F5
+# for an externally managed server, run CorridorMain.tscn with F6,
+# WebSocketClient.auto_start_server=false, and a matching server URL
 ```
 
 In the 3D scene: drag the time-of-day slider (night = headlights, billboards,
@@ -122,16 +138,18 @@ sightlines.
 ### Training & evaluation
 
 ```bash
-python scripts/train_agent.py --episodes 200      # single junction
-python scripts/train_corridor.py --episodes 240   # corridor (3 agents, rotation)
+python scripts/train_corridor.py --output ai/checkpoints/corridor/my-run --seed 101 --episodes 18
 
-python scripts/_eval_best.py                      # official single-junction eval
 python scripts/eval_corridor.py --compare         # official corridor eval
-python scripts/multi_seed_eval.py                 # 5-seed robustness (both systems)
+python scripts/validate_corridor_candidates.py --help  # current supervised evaluation tooling
 ```
 
-Training uses Apple-Silicon MPS automatically (~9 s per greedy 2-h episode,
-~30 s per training episode). Baselines: `scripts/_per_scenario_baselines.py`
+Single-junction training uses Apple-Silicon MPS automatically. Corridor training
+uses deterministic CPU runs, crossing clearance, boarding and the live supervisor;
+it writes isolated, resumable model bundles and never installs a candidate.
+See [the corridor deployment audit](docs/corridor-deployment-validation.md) for
+matched evaluation, model/input contracts and the optional fast libsumo backend.
+Baselines: `scripts/_per_scenario_baselines.py`
 (protected-left timer preset, writes `data/scenario_baselines.csv`) and
 `run_corridor_baseline.py --route … --label …` (writes
 `data/corridor_baselines.csv`).
@@ -174,8 +192,13 @@ training: `corridor_morning` (S→N heavy), `corridor_evening` (the N→S flip),
 
 ## The visualiser
 
-Fully procedural (CSG + generated audio — zero external assets):
+Procedural architecture, surface shaders and generated audio, with bundled vehicle models:
 
+- **Detailed Accra streetscape** in both scenes: hipped metal roofs, balconies,
+  shop shutters and signs, framed windows, compound gates, rooftop tanks,
+  branching trees and palms, weathered road/plaster materials, and wet surfaces
+  in rain. Perspective overview with **P** for plan view. See
+  [`docs/streetscape.md`](docs/streetscape.md).
 - **Zoned township** around the corridor: residential compounds, glass office
   towers, industrial yard, school + football pitch, hospital campus + GOIL
   filling station, market, and a KOTOKA-style airport with lit runway.
@@ -189,8 +212,9 @@ Fully procedural (CSG + generated audio — zero external assets):
 - **Traffic soundscape**: per-vehicle engine audio (petrol + trotro diesel)
   that follows SUMO speeds with doppler, congestion-driven horns, and a
   moving-traffic wash — all synthesised at startup.
-- **Camera drone**: press **H** — a DJI-style quadcopter with FPS controls
-  and a chase camera. Fly-bys bend engine pitch.
+- **Camera drone**: press **H** — smooth assisted flight, three speed presets,
+  building collisions, chase/gimbal views, lens zoom, compass and minimap.
+  **Tab** hovers for dashboard access; flight position resumes across toggles.
 - **Corridor overview panel**: per-approach queue bars, a green-wave strip,
   live *"Beating fixed timer by N%"* badge, phase timers, throughput.
 
@@ -201,7 +225,7 @@ See [`visualizer/README.md`](visualizer/README.md) for controls and protocol.
 ## Repository map
 
 ```
-ATCS-GH/
+TrafIQ/
 ├── ai/                     # envs + agent + deployable models
 │   ├── traffic_env.py         # single junction (41-dim, 5 actions)
 │   ├── corridor_env.py        # corridor (46-dim/junction, 5 actions)
@@ -235,3 +259,10 @@ engineering brief and always reflects the current state.
 - macOS/Linux. The launcher auto-detects the Python interpreter; it opens the
   dashboard in Chrome/Brave/Edge/Firefox because Safari's HTTPS-Only mode
   refuses local HTTP servers.
+
+
+## Corridor control validation (November 2026)
+
+The corridor deployment combines its trained DQN policies with live movement detectors, queue-pressure and starvation checks, downstream-capacity checks, and pedestrian clearance. Trotro boarding now uses off-road bays beyond the short inter-junction links. The live server and current evaluation share the same control runtime. See the [corridor control audit](docs/corridor-control-audit.md) for measured comparisons, limitations, and reproduction commands.
+
+The redesigned live dashboard includes junction signals, measured approach queues, current vehicle waits, AI decision explanations, and CSV export. See [live dashboard data definitions and validation](docs/live-dashboard.md) for exact metric scopes and checks against SUMO.

@@ -1,0 +1,5 @@
+# Optional, version-matched in-process backend for reproducible local training.
+# Run independent simulations in separate processes; keep live viewer on TraCI.
+-r requirements.txt
+eclipse-sumo==1.27.1
+libsumo==1.27.1

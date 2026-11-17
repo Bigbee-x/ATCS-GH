@@ -20,8 +20,8 @@ extends RefCounted
 ##     straddle `render_t`. Always between KNOWN snapshots, never extrapolating,
 ##     so neither of the April failure modes can occur.
 ##
-## The ~1.5 s render delay is invisible in practice: signals apply instantly
-## while traffic responds a beat later, which reads as driver reaction time.
+## Traffic signals use this same ~1.5 s playback delay so red/green changes
+## remain aligned with the rendered vehicles and crossing pedestrians.
 ## Sim restarts (sim_time jumping backwards) hard-resync the clock.
 
 const TARGET_DELAY: float = 1.5      # sim-seconds to stay behind the newest packet

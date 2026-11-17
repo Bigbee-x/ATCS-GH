@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Multi-Seed AI Evaluation (Achimota/Neoplan Junction)
+TrafIQ | Multi-Seed AI Evaluation (Achimota/Neoplan Junction)
 ==============================================================
 Runs the trained DQN agent across multiple SUMO seeds to produce
 confidence intervals for the research paper.
@@ -244,7 +244,7 @@ def main():
     seed_list = [42, 271, 503, 719, 997, 1231, 1567, 1811, 2039, 2281][:args.seeds]
 
     print("\n" + "=" * 62)
-    print("  ATCS-GH -- Multi-Seed AI Evaluation (Achimota Junction)")
+    print("  TrafIQ -- Multi-Seed AI Evaluation (Achimota Junction)")
     print("=" * 62)
     print(f"  Model : {model_path.name}")
     print(f"  Seeds : {args.seeds}  ->  {seed_list}")

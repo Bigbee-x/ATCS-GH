@@ -1,6 +1,6 @@
 extends Node
 class_name WebSocketClient
-## WebSocket client for the ATCS-GH visualizer server.
+## WebSocket client for the TrafIQ visualizer server.
 ##
 ## Connects to the Python WebSocket server, receives JSON state packets,
 ## and emits signals that other nodes (Intersection, VehicleManager, UI)
@@ -26,7 +26,7 @@ signal vehicle_updated(data: Dictionary)
 signal sim_completed(data: Dictionary)
 ## Emitted when the server restarts a simulation run
 signal sim_restarted(data: Dictionary)
-## Emitted when connection status changes (true = connected, false = lost)
+## Emitted when simulation data is received on a connection (false = lost).
 signal connection_changed(is_connected: bool)
 ## Emitted when the server confirms a control mode change (ai/baseline)
 signal mode_changed(data: Dictionary)
@@ -38,10 +38,28 @@ signal mode_changed(data: Dictionary)
 @export var reconnect_delay: float = 3.0
 ## Maximum reconnect attempts before giving up (-1 = infinite)
 @export var max_reconnect_attempts: int = -1
+## Offline art previews can instantiate the real scene without opening sockets.
+@export var auto_connect: bool = true
+## Disable when an external traffic server owns the default endpoint.
+@export var auto_start_server: bool = true
+
+# Full corridor snapshots include every vehicle, pedestrian and live detector.
+# The default 64 KiB receive buffer closes healthy connections with code 1009
+# once traffic builds up. Leave room for large snapshots AND a short backlog
+# while the renderer is busy. Keep the allocation bounded on every reconnect.
+const RECEIVE_BUFFER_BYTES: int = 16 * 1024 * 1024
+const MAX_QUEUED_PACKETS: int = 256
+
+static func create_traffic_socket() -> WebSocketPeer:
+	var peer := WebSocketPeer.new()
+	peer.inbound_buffer_size = RECEIVE_BUFFER_BYTES
+	peer.max_queued_packets = MAX_QUEUED_PACKETS
+	return peer
 
 # ── Internal state ───────────────────────────────────────────────────────────
-var _socket: WebSocketPeer = WebSocketPeer.new()
+var _socket: WebSocketPeer = create_traffic_socket()
 var _is_connected: bool = false
+var _suspended: bool = false
 var _was_ever_connected: bool = false
 var _reconnect_timer: float = 0.0
 var _reconnect_attempts: int = 0
@@ -53,10 +71,18 @@ var _last_packet_time: float = 0.0  # Time of last received packet
 func _ready() -> void:
 	print("[WS] WebSocket client initialising...")
 	print("[WS] Target server: %s" % server_url)
-	_attempt_connection()
+	if auto_connect:
+		var manager := get_node_or_null("/root/ServerManager")
+		if auto_start_server and manager and server_url in ["ws://localhost:8765", "ws://127.0.0.1:8765", manager.get_websocket_url()]:
+			# Parent scene wires the selected managed port after startup.
+			_suspended = true
+		else:
+			_attempt_connection()
 
 
 func _process(delta: float) -> void:
+	if not auto_connect or _suspended:
+		return
 	# Poll the socket to process incoming data
 	_socket.poll()
 	var state: WebSocketPeer.State = _socket.get_ready_state()
@@ -79,14 +105,6 @@ func _process(delta: float) -> void:
 
 func _handle_open_state() -> void:
 	## Process packets while connection is open.
-	# Detect fresh connection
-	if not _is_connected:
-		_is_connected = true
-		_was_ever_connected = true
-		_reconnect_attempts = 0
-		print("[WS] Connected to server!")
-		connection_changed.emit(true)
-
 	# Read all available packets (there may be multiple queued)
 	while _socket.get_available_packet_count() > 0:
 		var raw_data: PackedByteArray = _socket.get_packet()
@@ -97,13 +115,14 @@ func _handle_open_state() -> void:
 
 func _handle_closed_state(delta: float) -> void:
 	## Handle disconnection and auto-reconnect.
+	if _last_state != WebSocketPeer.STATE_CLOSED:
+		print("[WS] Disconnected (code=%d, reason='%s')" % [
+			_socket.get_close_code(), _socket.get_close_reason()])
 	if _is_connected:
 		# We just lost the connection
 		_is_connected = false
-		var code: int = _socket.get_close_code()
-		var reason: String = _socket.get_close_reason()
-		print("[WS] Disconnected (code=%d, reason='%s')" % [code, reason])
 		connection_changed.emit(false)
+		_reconnect_timer = reconnect_delay
 
 	# Auto-reconnect with delay
 	_reconnect_timer -= delta
@@ -132,7 +151,8 @@ func _attempt_connection() -> void:
 
 	# Create a fresh socket for each connection attempt
 	# (WebSocketPeer cannot be reused after close in Godot 4)
-	_socket = WebSocketPeer.new()
+	_socket = create_traffic_socket()
+	_last_packet_time = 0.0
 	var err: int = _socket.connect_to_url(server_url)
 	if err != OK:
 		push_warning("[WS] connect_to_url() failed with error %d" % err)
@@ -149,17 +169,19 @@ func _parse_and_dispatch(text: String) -> void:
 			json.get_error_line(), json.get_error_message()])
 		return
 
-	var data: Dictionary = json.data
-	if not data is Dictionary:
+	if not json.data is Dictionary:
 		push_warning("[WS] Received non-dict JSON, ignoring")
 		return
 
+	var data: Dictionary = json.data
 	var packet_type: String = data.get("type", "")
 
 	match packet_type:
 		"state_update":
+			_mark_traffic_connected()
 			state_updated.emit(data)
 		"vehicle_update":
+			_mark_traffic_connected()
 			vehicle_updated.emit(data)
 		"sim_complete":
 			sim_completed.emit(data)
@@ -171,9 +193,21 @@ func _parse_and_dispatch(text: String) -> void:
 			push_warning("[WS] Unknown packet type: '%s'" % packet_type)
 
 
+func _mark_traffic_connected() -> void:
+	# A successful handshake (or a mode_changed acknowledgement) doesn't prove
+	# the traffic stream fits in the receive buffer. Report live only once an
+	# actual simulation snapshot has been decoded on this connection.
+	if not _is_connected:
+		_is_connected = true
+		_was_ever_connected = true
+		_reconnect_attempts = 0
+		print("[WS] Connected — receiving live traffic")
+		connection_changed.emit(true)
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
-func send_override(approach: String) -> void:
+func send_override(approach: String, junction: String = "J0") -> void:
 	## Send a manual override command to the Python server.
 	## approach: One of "north", "south", "east", "west"
 	if not _is_connected:
@@ -183,6 +217,7 @@ func send_override(approach: String) -> void:
 	var msg: String = JSON.stringify({
 		"action": "force_green",
 		"approach": approach,
+		"junction": junction,
 	})
 	_socket.send_text(msg)
 	print("[WS] Sent override: force green for %s" % approach)
@@ -190,7 +225,7 @@ func send_override(approach: String) -> void:
 
 func send_mode_switch(target_mode: String) -> void:
 	## Switch traffic control mode on the server.
-	## target_mode: "ai" for ATCS (DQN adaptive), "baseline" for fixed timer
+	## target_mode: "ai" for TrafIQ (DQN adaptive), "baseline" for fixed timer
 	if not _is_connected:
 		push_warning("[WS] Cannot switch mode — not connected")
 		return
@@ -213,3 +248,16 @@ func get_seconds_since_last_packet() -> float:
 	if _last_packet_time <= 0.0:
 		return -1.0  # Never received a packet
 	return (Time.get_ticks_msec() / 1000.0) - _last_packet_time
+
+
+func suspend_connection() -> void:
+	_suspended = true
+	_socket.close()
+	_is_connected = false
+
+func connect_to_server(url: String) -> void:
+	suspend_connection()
+	server_url = url
+	_reconnect_attempts = 0
+	_suspended = false
+	_attempt_connection()

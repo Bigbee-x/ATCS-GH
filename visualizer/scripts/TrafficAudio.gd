@@ -1,100 +1,121 @@
 extends Node3D
-## Realistic road-traffic soundscape for the ATCS-GH visualizer.
+## Sparse street sound for the TrafIQ visualizer.
 ##
-## Three layers, all procedurally generated at startup (no audio asset files —
-## same pattern as DroneController's prop-buzz and AudioManager's layers):
+## There is deliberately NO continuous engine or traffic-roar layer. Two attempts
+## at synthesised engine loops were both heard as a fake drone that starts with
+## the sim and never stops, so nothing here plays constantly by day. What is
+## left is occasional and quiet:
 ##
-##   • ENGINE POOL — a pool of positional AudioStreamPlayer3D emitters assigned
-##     to the vehicles nearest the current camera. Two engine voices: a petrol
-##     car hum and a rougher, lower diesel (trotro/truck). Pitch and volume
-##     track each vehicle's SUMO-reported speed (idle chug when queued, rising
-##     note as they pull away). Doppler-tracked, so drone flybys bend pitch.
+##   • HORNS — short taps and double taps from vehicles near the listener,
+##     more often in a jam, with long gaps between them.
+##   • CRICKETS at night and a few BIRDS by day, both low and fading with
+##     height, rain and (for crickets) the town.
+##   • LISTENER — an AudioListener3D near what the camera is looking at, so
+##     horns are heard from the overview as well as from the street.
 ##
-##   • HORNS — stochastic one-shot horns fired from stopped vehicles when a
-##     junction is congested (the Accra soundtrack). Two voices: a dual-tone
-##     car horn and a blarier trotro klaxon. Globally rate-limited.
-##
-##   • WASH — a non-positional distant-traffic bed (filtered noise) whose
-##     volume follows how many vehicles are MOVING near the camera. Complements
-##     AudioManager's queue-driven idle rumble rather than duplicating it.
-##
-## Created as a child by VehicleManager (no scene wiring needed — works in both
-## the single-junction and corridor scenes). Reads vehicle poses/speeds via
-## VehicleManager.audio_snapshot().
+## Press M to mute or unmute all sim sound. The WAV files are synthesised by
+## scripts/build_soundscape.py and read from assets/audio at startup.
+## Created as a child by VehicleManager in both scenes.
 
-const MIX_RATE: int = 22050
-
-# ── Engine pool tuning ───────────────────────────────────────────────────────
-const ENGINE_POOL_SIZE: int = 10
-const ENGINE_MAX_DIST: float = 45.0     # emitters only for vehicles this close
-const ENGINE_KEEP_DIST: float = 54.0    # hysteresis: keep assignment till here
-const RETUNE_INTERVAL: float = 0.25     # seconds between assignment passes
-const MAX_SPEED: float = 19.44          # SUMO car maxSpeed (m/s) for normalising
-
-# ── Horn tuning ──────────────────────────────────────────────────────────────
+const AUDIO_DIR := "res://assets/audio/"
 const HORN_POOL_SIZE: int = 3
 const HORN_CHECK_INTERVAL: float = 0.5
-const HORN_COOLDOWN: float = 2.5        # min seconds between any two horns
-const HORN_MIN_JAM: int = 4             # stopped vehicles needed before honking
+const BED_INTERVAL: float = 0.5
+const EAR_REACH: float = 60.0
 
-# ── State ────────────────────────────────────────────────────────────────────
-var _vm: Node3D                          # VehicleManager (parent)
-var _engine_players: Array = []          # AudioStreamPlayer3D pool
-var _assignments: Dictionary = {}        # vid -> player index
-var _engine_speeds: Dictionary = {}      # vid -> smoothed speed (for pitch)
-var _horn_players: Array = []
-var _wash_player: AudioStreamPlayer
-var _retune_t: float = 0.0
+var _vm: Node3D
+var _tod: Node
+var _weather: Node
+var _ear: AudioListener3D
+var _streams: Dictionary = {}
+var _missing: Array[String] = []
+var _horn_players: Array[AudioStreamPlayer3D] = []
+var _beds: Dictionary = {}               # name -> AudioStreamPlayer
+var _bed_targets: Dictionary = {}        # name -> target volume_db
+var _bed_t: float = 0.0
 var _horn_t: float = 0.0
-var _horn_cooldown: float = 0.0
-var _wash_target_db: float = -60.0
-
-var _petrol_loop: AudioStreamWAV
-var _diesel_loop: AudioStreamWAV
-var _horn_car: AudioStreamWAV
-var _horn_klaxon: AudioStreamWAV
+var _horn_cooldown: float = 6.0          # nothing sounds in the first seconds
+var _ear_position := Vector3.ZERO
 
 
 func _ready() -> void:
 	_vm = get_parent() as Node3D
+	var scene: Node = _vm.get_parent() if _vm else null
+	if scene:
+		_tod = scene.get_node_or_null("TimeOfDayManager")
+		_weather = scene.get_node_or_null("WeatherManager")
+	for loop_name in ["night_crickets", "day_birds"]:
+		_streams[loop_name] = _load(loop_name, true)
+	for shot_name in ["horn_car_tap", "horn_car_double", "horn_taxi_pips", "horn_trotro_double"]:
+		_streams[shot_name] = _load(shot_name, false)
+	_ensure_limiter()
 
-	_petrol_loop = _gen_engine_loop(90.0, 0.18, 30.0, 0.10)
-	_diesel_loop = _gen_engine_loop(55.0, 0.30, 12.0, 0.16)
-	_horn_car = _gen_horn([400.0, 505.0], 0.7)
-	_horn_klaxon = _gen_horn([310.0, 415.0, 466.0], 0.9)
-
-	for i in range(ENGINE_POOL_SIZE):
-		var p := AudioStreamPlayer3D.new()
-		p.name = "Engine_%d" % i
-		p.max_distance = ENGINE_MAX_DIST + 10.0
-		p.unit_size = 6.0
-		p.volume_db = -60.0
-		p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
-		p.bus = "Master"
-		add_child(p)
-		_engine_players.append(p)
+	_ear = AudioListener3D.new()
+	_ear.name = "StreetListener"
+	add_child(_ear)
+	_ear.make_current()
 
 	for i in range(HORN_POOL_SIZE):
-		var h := AudioStreamPlayer3D.new()
-		h.name = "Horn_%d" % i
-		h.max_distance = 80.0
-		h.unit_size = 9.0
-		h.volume_db = -4.0
-		h.bus = "Master"
-		add_child(h)
-		_horn_players.append(h)
+		var horn := AudioStreamPlayer3D.new()
+		horn.name = "Horn_%d" % i
+		horn.unit_size = 17.0
+		horn.max_distance = 280.0
+		# Distance dulls a horn before it silences it.
+		horn.attenuation_filter_cutoff_hz = 3800.0
+		horn.attenuation_filter_db = -18.0
+		horn.bus = "Master"
+		add_child(horn)
+		_horn_players.append(horn)
+	for bed_name in ["night_crickets", "day_birds"]:
+		var bed := AudioStreamPlayer.new()
+		bed.name = bed_name.to_pascal_case()
+		bed.stream = _streams[bed_name]
+		bed.volume_db = -70.0
+		bed.bus = "Master"
+		add_child(bed)
+		_beds[bed_name] = bed
+		_bed_targets[bed_name] = -70.0
 
-	_wash_player = AudioStreamPlayer.new()
-	_wash_player.name = "TrafficWash"
-	var wash := _gen_wash_loop()
-	_wash_player.stream = wash
-	_wash_player.volume_db = -60.0
-	_wash_player.bus = "Master"
-	add_child(_wash_player)
-	_wash_player.play()
+	if _missing.is_empty():
+		print("[TrafficAudio] Ready — horns, night crickets, day birds; no engine loops. M mutes.")
+	else:
+		push_warning("[TrafficAudio] Missing sound files %s; run scripts/build_soundscape.py" % str(_missing))
 
-	print("[TrafficAudio] Ready — %d engine emitters, %d horns, wash bed" % [
-		ENGINE_POOL_SIZE, HORN_POOL_SIZE])
+
+func _load(sound: String, loop: bool) -> AudioStreamWAV:
+	## Read the WAV straight from disk. The folder is not imported by Godot.
+	var path: String = AUDIO_DIR + sound + ".wav"
+	if not FileAccess.file_exists(path):
+		_missing.append(sound)
+		return null
+	var wav: AudioStreamWAV = AudioStreamWAV.load_from_file(ProjectSettings.globalize_path(path))
+	if wav == null:
+		_missing.append(sound)
+		return null
+	if loop:
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		wav.loop_end = wav.data.size() / (4 if wav.stereo else 2)
+	return wav
+
+
+func _ensure_limiter() -> void:
+	## Hold the sum of everything under full scale on the master bus.
+	if not ClassDB.class_exists("AudioEffectHardLimiter"):
+		return
+	for i in range(AudioServer.get_bus_effect_count(0)):
+		if AudioServer.get_bus_effect(0, i).is_class("AudioEffectHardLimiter"):
+			return
+	var limiter: AudioEffect = ClassDB.instantiate("AudioEffectHardLimiter")
+	limiter.set("ceiling_db", -1.0)
+	AudioServer.add_bus_effect(0, limiter)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
+		var muted: bool = not AudioServer.is_bus_mute(0)
+		AudioServer.set_bus_mute(0, muted)
+		print("[TrafficAudio] Sound ", "muted" if muted else "on")
 
 
 func _process(delta: float) -> void:
@@ -103,226 +124,105 @@ func _process(delta: float) -> void:
 	var cam: Camera3D = get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var cam_pos: Vector3 = cam.global_position
-
-	_retune_t -= delta
-	if _retune_t <= 0.0:
-		_retune_t = RETUNE_INTERVAL
-		_retune_engines(cam_pos)
-
-	_update_engines(delta)
+	_ear_position = _place_ear(cam)
 
 	_horn_cooldown = maxf(_horn_cooldown - delta, 0.0)
 	_horn_t -= delta
 	if _horn_t <= 0.0:
 		_horn_t = HORN_CHECK_INTERVAL
-		_maybe_honk(cam_pos)
+		_maybe_honk(_ear_position)
 
-	# Smooth the wash volume toward its target
-	_wash_player.volume_db = lerpf(_wash_player.volume_db, _wash_target_db, delta * 2.0)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# ENGINE POOL
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _retune_engines(cam_pos: Vector3) -> void:
-	## Reassign pool emitters to the nearest vehicles (with hysteresis so a
-	## borderline car doesn't flap on/off), and refresh the wash target from
-	## how much traffic is MOVING nearby.
-	var cands: Array = _vm.audio_snapshot(cam_pos, ENGINE_KEEP_DIST)
-	# cands: [{vid, node, speed, type, dist}] sorted by dist (nearest first)
-
-	var moving_near: int = 0
-	for c in cands:
-		if c["speed"] > 1.0:
-			moving_near += 1
-	# Wash: -46 dB when empty → about -14 dB with 18+ movers
-	_wash_target_db = clampf(-46.0 + float(moving_near) * 1.8, -46.0, -14.0)
-
-	# Drop assignments whose vehicle vanished or drifted out of keep-range
-	var cand_by_vid: Dictionary = {}
-	for c in cands:
-		cand_by_vid[c["vid"]] = c
-	var stale: Array = []
-	for vid in _assignments:
-		if not cand_by_vid.has(vid):
-			stale.append(vid)
-	for vid in stale:
-		var idx: int = _assignments[vid]
-		(_engine_players[idx] as AudioStreamPlayer3D).stop()
-		_assignments.erase(vid)
-		_engine_speeds.erase(vid)
-
-	# Assign free players to the nearest unassigned vehicles (within MAX_DIST)
-	var used: Dictionary = {}
-	for vid in _assignments:
-		used[_assignments[vid]] = true
-	for c in cands:
-		if _assignments.size() >= ENGINE_POOL_SIZE:
-			break
-		if c["dist"] > ENGINE_MAX_DIST or _assignments.has(c["vid"]):
-			continue
-		for i in range(ENGINE_POOL_SIZE):
-			if used.has(i):
-				continue
-			var p: AudioStreamPlayer3D = _engine_players[i]
-			p.stream = _diesel_loop if str(c["type"]) == "trotro" else _petrol_loop
-			p.play(randf() * 0.5)   # random loop offset so engines don't phase-lock
-			_assignments[c["vid"]] = i
-			_engine_speeds[c["vid"]] = c["speed"]
-			used[i] = true
-			break
-
-	# Refresh node refs + reported speeds for every assigned vehicle
-	for vid in _assignments:
-		if cand_by_vid.has(vid):
-			var c: Dictionary = cand_by_vid[vid]
-			_engine_speeds[vid] = lerpf(float(_engine_speeds.get(vid, 0.0)),
-					float(c["speed"]), 0.6)
-			var p2: AudioStreamPlayer3D = _engine_players[_assignments[vid]]
-			p2.set_meta("node", c["node"])
+	_bed_t -= delta
+	if _bed_t <= 0.0:
+		_bed_t = BED_INTERVAL
+		_set_bed_targets(_ear_position)
+	for bed_name in _beds:
+		var bed: AudioStreamPlayer = _beds[bed_name]
+		bed.volume_db = lerpf(bed.volume_db, _bed_targets[bed_name], 1.0 - exp(-delta * 1.5))
+		# A silent layer is stopped, not left running at a low level.
+		var wanted: bool = _bed_targets[bed_name] > -55.0 and bed.stream != null
+		if wanted and not bed.playing:
+			bed.play()
+		elif not wanted and bed.playing and bed.volume_db < -58.0:
+			bed.stop()
 
 
-func _update_engines(delta: float) -> void:
-	## Per-frame: follow each assigned vehicle and glide pitch/volume with its
-	## smoothed speed. Idle = low chug; full speed = higher, louder note.
-	for vid in _assignments:
-		var p: AudioStreamPlayer3D = _engine_players[_assignments[vid]]
-		var node: Node3D = p.get_meta("node", null)
-		if node == null or not is_instance_valid(node):
-			continue
-		p.global_position = node.global_position
-		var s: float = clampf(float(_engine_speeds.get(vid, 0.0)) / MAX_SPEED, 0.0, 1.0)
-		var target_pitch: float = 0.75 + s * 0.55
-		var target_db: float = -16.0 + s * 10.0
-		p.pitch_scale = lerpf(p.pitch_scale, target_pitch, delta * 3.0)
-		p.volume_db = lerpf(p.volume_db, target_db, delta * 3.0)
+func _place_ear(cam: Camera3D) -> Vector3:
+	## The listener rides between the camera and the ground it is looking at.
+	var origin: Vector3 = cam.global_position
+	var forward: Vector3 = -cam.global_basis.z
+	var target: Vector3 = origin
+	if forward.y < -0.05:
+		target = origin + forward * (origin.y / -forward.y)
+	var ear: Vector3 = target + (origin - target).limit_length(EAR_REACH)
+	ear.y = maxf(ear.y, 1.6)
+	_ear.global_transform = Transform3D(cam.global_basis.orthonormalized(), ear)
+	return ear
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# HORNS
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _maybe_honk(cam_pos: Vector3) -> void:
-	## Occasionally fire a horn from a stopped vehicle when traffic is jammed
-	## nearby — probability scales with how many vehicles are sitting still.
+func _maybe_honk(ear: Vector3) -> void:
+	## A horn now and then: taxis touting, trotros pulling out, a stuck queue.
 	if _horn_cooldown > 0.0:
 		return
-	var cands: Array = _vm.audio_snapshot(cam_pos, 60.0)
-	var stopped: Array = []
+	var cands: Array = _vm.audio_snapshot(ear, 170.0)
+	if cands.is_empty():
+		return
+	var stopped: int = 0
 	for c in cands:
 		if c["speed"] < 0.5:
-			stopped.append(c)
-	if stopped.size() < HORN_MIN_JAM:
+			stopped += 1
+	var chance: float = clampf(0.02 + cands.size() * 0.002 + stopped * 0.004, 0.0, 0.18)
+	if randf() > chance:
 		return
-	var p_honk: float = clampf(0.02 + float(stopped.size()) * 0.004, 0.0, 0.15)
-	if randf() > p_honk:
+	var victim: Dictionary = cands[randi() % cands.size()]
+	var roll: float = randf()
+	var sound: String
+	if str(victim["type"]) == "trotro":
+		sound = "horn_trotro_double"
+	elif roll < 0.55:
+		sound = "horn_car_tap"
+	elif roll < 0.85:
+		sound = "horn_car_double"
+	else:
+		sound = "horn_taxi_pips"
+	if _streams[sound] == null:
 		return
-
-	var victim: Dictionary = stopped[randi() % stopped.size()]
-	for h in _horn_players:
-		var player := h as AudioStreamPlayer3D
+	for player in _horn_players:
 		if player.playing:
 			continue
-		player.stream = _horn_klaxon if str(victim["type"]) == "trotro" else _horn_car
+		player.stream = _streams[sound]
 		var node: Node3D = victim["node"]
 		if node != null and is_instance_valid(node):
 			player.global_position = node.global_position
-		player.pitch_scale = randf_range(0.9, 1.15)
+		player.pitch_scale = randf_range(0.93, 1.09)
+		player.volume_db = randf_range(-13.0, -8.0)
 		player.play()
-		_horn_cooldown = HORN_COOLDOWN
+		_horn_cooldown = randf_range(2.5, 7.0)
 		return
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# PROCEDURAL SOUND GENERATION (startup, 16-bit PCM — DroneController pattern)
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _gen_engine_loop(f0: float, chug_depth: float, chug_hz: float,
-		noise_amp: float) -> AudioStreamWAV:
-	## Looping engine voice: harmonic stack on f0, amplitude "chug" (slow AM),
-	## and low-passed noise for the mechanical wash. 1-second seamless loop —
-	## all partials are integer Hz, chug_hz divides evenly.
-	var n: int = MIX_RATE
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	var lp: float = 0.0
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(f0) * 7919
-	for i in range(n):
-		var t: float = float(i) / MIX_RATE
-		var chug: float = 1.0 - chug_depth * (0.5 + 0.5 * sin(TAU * chug_hz * t))
-		var s: float = sin(TAU * f0 * t) * 0.30
-		s += sin(TAU * f0 * 2.0 * t) * 0.18
-		s += sin(TAU * f0 * 3.0 * t) * 0.10
-		s += sin(TAU * f0 * 4.5 * t) * 0.05
-		s *= chug
-		var white: float = rng.randf() * 2.0 - 1.0
-		lp = lp * 0.85 + white * 0.15
-		s += lp * noise_amp
-		var s16: int = int(clampf(s, -1.0, 1.0) * 30000.0)
-		bytes[i * 2] = s16 & 0xFF
-		bytes[i * 2 + 1] = (s16 >> 8) & 0xFF
-	return _wav(bytes, true)
+func _set_bed_targets(ear: Vector3) -> void:
+	var hour: float = float(_tod.get("time_of_day")) if is_instance_valid(_tod) else 12.0
+	var day: float = smoothstep(5.3, 7.0, hour) * (1.0 - smoothstep(18.5, 20.0, hour))
+	var dawn: float = smoothstep(5.0, 6.0, hour) * (1.0 - smoothstep(8.0, 10.0, hour))
+	var rain: float = 0.0
+	if is_instance_valid(_weather):
+		rain = float(_weather.get("_current_mods").rain_intensity)
+	var near_ground: float = 1.0 - smoothstep(25.0, 130.0, ear.y)
+	var town: float = _town_amount(ear)
+	_bed_targets["night_crickets"] = _level((1.0 - day) * (1.0 - smoothstep(60.0, 260.0, ear.y)) * (1.0 - town * 0.5) * (1.0 - rain), -26.0)
+	_bed_targets["day_birds"] = _level(day * (0.3 + 0.7 * dawn) * near_ground * (1.0 - town * 0.4) * (1.0 - rain), -27.0)
 
 
-func _gen_horn(freqs: Array, dur: float) -> AudioStreamWAV:
-	## One-shot horn: stacked tones with square-ish harmonics, fast attack,
-	## held body, quick release.
-	var n: int = int(MIX_RATE * dur)
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	for i in range(n):
-		var t: float = float(i) / MIX_RATE
-		var env: float = 1.0
-		if t < 0.02:
-			env = t / 0.02                          # attack
-		elif t > dur - 0.12:
-			env = maxf((dur - t) / 0.12, 0.0)       # release
-		var s: float = 0.0
-		for f in freqs:
-			var ff: float = float(f)
-			s += sin(TAU * ff * t) * 0.28
-			s += sin(TAU * ff * 2.0 * t) * 0.10     # square-ish bite
-			s += sin(TAU * ff * 3.0 * t) * 0.05
-		var s16: int = int(clampf(s * env, -1.0, 1.0) * 30000.0)
-		bytes[i * 2] = s16 & 0xFF
-		bytes[i * 2 + 1] = (s16 >> 8) & 0xFF
-	return _wav(bytes, false)
+func _level(amount: float, full_db: float) -> float:
+	return full_db + linear_to_db(clampf(amount, 0.001, 1.0))
 
 
-func _gen_wash_loop() -> AudioStreamWAV:
-	## Distant-traffic bed: heavily low-passed noise with a slow undulation —
-	## the generic city "shhh" that moving traffic makes. 2-second loop.
-	var n: int = MIX_RATE * 2
-	var bytes := PackedByteArray()
-	bytes.resize(n * 2)
-	var lp1: float = 0.0
-	var lp2: float = 0.0
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 0x7EAFF1C
-	for i in range(n):
-		var t: float = float(i) / MIX_RATE
-		var white: float = rng.randf() * 2.0 - 1.0
-		lp1 = lp1 * 0.92 + white * 0.08
-		lp2 = lp2 * 0.97 + lp1 * 0.03
-		var undulate: float = 0.75 + 0.25 * sin(TAU * 0.5 * t)
-		var s: float = (lp1 * 0.35 + lp2 * 0.65) * undulate
-		var s16: int = int(clampf(s, -1.0, 1.0) * 30000.0)
-		bytes[i * 2] = s16 & 0xFF
-		bytes[i * 2 + 1] = (s16 >> 8) & 0xFF
-	return _wav(bytes, true)
-
-
-func _wav(bytes: PackedByteArray, loop: bool) -> AudioStreamWAV:
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = MIX_RATE
-	wav.stereo = false
-	wav.data = bytes
-	if loop:
-		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		wav.loop_begin = 0
-		wav.loop_end = bytes.size() / 2
-	return wav
+func _town_amount(ear: Vector3) -> float:
+	## 1 inside the built-up area, falling away over the first hundred metres of bush.
+	if _vm.get("corridor_mode"):
+		var town: Rect2 = preload("res://scripts/CityDistrictBuilder.gd").TOWN
+		var dx: float = maxf(maxf(town.position.x - ear.x, ear.x - town.end.x), 0.0)
+		var dz: float = maxf(maxf(town.position.y - ear.z, ear.z - town.end.y), 0.0)
+		return 1.0 - smoothstep(0.0, 120.0, Vector2(dx, dz).length())
+	return 1.0 - smoothstep(90.0, 260.0, Vector2(ear.x, ear.z).length())

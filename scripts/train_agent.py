@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH Phase 2 | DQN Training Script
+TrafIQ Phase 2 | DQN Training Script
 ═══════════════════════════════════════
 Trains the DQN agent for N_EPISODES using the SUMO simulation.
 
@@ -188,7 +188,7 @@ def train(n_episodes:   int  = DEFAULT_EPISODES,
     _csv_header_written: bool  = False      # track incremental CSV state
 
     print("\n" + "═" * 72)
-    print("  ATCS-GH Phase 2 — DQN Multi-Scenario Training")
+    print("  TrafIQ Phase 2 — DQN Multi-Scenario Training")
     print("═" * 72)
     print(f"  Device       : {agent.device}")
     print(f"  Episodes     : {n_episodes}")
@@ -355,7 +355,7 @@ def _print_summary(rows: list[dict],
     last_avg  = sum(r["avg_wait_s"] for r in rows[-n_last:])  / n_last
     improvement = (first_avg - last_avg) / first_avg * 100 if first_avg > 0 else 0.0
     print("\n" + "═" * 62)
-    print("  ATCS-GH — TRAINING COMPLETE")
+    print("  TrafIQ — TRAINING COMPLETE")
     print("═" * 62)
     print(f"  Finished at   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Episodes      : {n}")
@@ -405,7 +405,7 @@ def _print_summary(rows: list[dict],
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH Phase 2: Train the DQN traffic signal controller"
+        description="TrafIQ Phase 2: Train the DQN traffic signal controller"
     )
     parser.add_argument(
         "--episodes", type=int, default=DEFAULT_EPISODES,

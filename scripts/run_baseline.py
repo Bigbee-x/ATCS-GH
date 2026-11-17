@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH Phase 1 | Baseline Fixed-Timer Simulation
+TrafIQ Phase 1 | Baseline Fixed-Timer Simulation
 ══════════════════════════════════════════════════
 Runs a 2-hour morning rush hour simulation of an Accra 4-way junction
 using a standard fixed-timer traffic light (our baseline to beat in Phase 2).
@@ -321,7 +321,7 @@ def run_simulation(gui: bool = False,
         sumo_cmd += ["--route-files", str(route_file)]
 
     print("\n" + "═" * 60)
-    print(f"  ATCS-GH Phase 1 — Baseline Fixed-Timer Simulation ({preset})")
+    print(f"  TrafIQ Phase 1 — Baseline Fixed-Timer Simulation ({preset})")
     print("═" * 60)
     print(f"  Mode    : {'GUI (visual)' if gui else 'Headless (fast)'}")
     print(f"  Duration: {SIM_DURATION}s ({SIM_DURATION/3600:.0f} hours)")
@@ -433,7 +433,7 @@ def print_report(sim_time: int, stats: dict, *,
     cycle       = ns_green + YELLOW_DURATION + ew_green + YELLOW_DURATION
 
     print("\n" + "═" * 62)
-    print(f"  ATCS-GH  |  BASELINE REPORT ({preset.upper()})  |  Phase 1")
+    print(f"  TrafIQ  |  BASELINE REPORT ({preset.upper()})  |  Phase 1")
     print("═" * 62)
     print(f"  Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Simulated : {sim_time}s  ({sim_time / 3600:.2f} hours)")
@@ -471,7 +471,7 @@ def print_report(sim_time: int, stats: dict, *,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH Phase 1: Baseline fixed-timer simulation"
+        description="TrafIQ Phase 1: Baseline fixed-timer simulation"
     )
     parser.add_argument(
         "--gui",

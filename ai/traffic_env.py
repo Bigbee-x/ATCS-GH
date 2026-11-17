@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Traffic Environment — Achimota/Neoplan Junction
+TrafIQ | Traffic Environment — Achimota/Neoplan Junction
 ══════════════════════════════════════════════════════════
 Gym-style SUMO environment for training the DQN agent.
 Calibrated to the Achimota/Neoplan Junction on the N6 Nsawam Road, Accra.

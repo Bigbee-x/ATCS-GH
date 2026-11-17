@@ -1,268 +1,115 @@
 extends Node3D
-## Big roadside advertising billboards for the corridor township.
-##
-## A curated set of brand-themed panels (recognizable Ghanaian companies +
-## Valiborn Technologies) standing in the road frontage, facing the corridor,
-## that light up brightly at night. Each sign is posts + a dark frame + an
-## emissive ad face + Label3D headline/tagline. By day the faces are flat-lit;
-## at night their emission ramps up and the scene's glow/bloom makes them pop.
-##
-## Self-wires to the sibling TimeOfDayManager (same pattern as
-## EnvironmentBuilder) so day/night just works — purely cosmetic, no gameplay.
-##
-## PLACEMENT NOTE: the world coords in BILLBOARDS assume the corridor layout in
-## CorridorBuilder.gd — road along Z at x∈[-3,3]; junctions J0=0, J1=30, J2=60;
-## flanking districts centred at x=±38. Signs sit in the open frontage at
-## x≈±12 (clear of both the road furniture and the district buildings) and face
-## the road. If that layout moves, nudge this table to match.
-##
-## Each sign's local FRONT (ad face + readable text) is local +Z, so a sign on
-## the +X side faces the road with yaw = -PI/2, and one on the -X side uses
-## yaw = +PI/2.
-
-# ── Emission energy for the ad faces (driven by day/night) ──────────────────
-const DAY_EMISSION:   float = 0.0    # flat-lit printed panel
-const DUSK_EMISSION:  float = 1.4    # warming up
-const NIGHT_EMISSION: float = 3.6    # bright glow
-
-# ── Shared structural colours ───────────────────────────────────────────────
-const POST_COLOR:  Color = Color(0.20, 0.20, 0.23)
-const FRAME_COLOR: Color = Color(0.09, 0.09, 0.11)
-
-var _is_night: bool = false
-var _is_dusk: bool  = false
-
-var _mat_post: StandardMaterial3D
-var _mat_frame: StandardMaterial3D
-var _panel_mats: Array[StandardMaterial3D] = []   # one per ad face, ramped at night
-
-# ── The curated line-up ─────────────────────────────────────────────────────
-# pos/yaw place + aim the sign; w/h = panel size; post = how high it sits;
-# bg = panel colour, fg = text colour; name = headline, tag = small tagline.
-const YAW_FACE_WEST:  float = -PI / 2.0   # +X-side sign facing the road (-X)
-const YAW_FACE_EAST:  float =  PI / 2.0   # -X-side sign facing the road (+X)
-
-var BILLBOARDS: Array = [
-	# ── Valiborn Technology — flagship, tall, on the J0–J1 approach (clear of
-	#    the cross-streets at the junctions). Long name → smaller head_ps. ──
-	{
-		"pos": Vector3(13.0, 0, 18.0), "yaw": YAW_FACE_WEST,
-		"w": 13.0, "h": 6.0, "post": 7.0, "head_ps": 0.020,
-		"bg": Color(0.05, 0.07, 0.15), "fg": Color(0.30, 0.92, 1.00),
-		"name": "Valiborn Technology", "tag": "Relax, it works.",
-	},
-	# ── MTN — the yellow is unmistakable ──
-	{
-		"pos": Vector3(12.0, 0, 46.0), "yaw": YAW_FACE_WEST,
-		"w": 9.0, "h": 4.5, "post": 6.0,
-		"bg": Color(1.00, 0.80, 0.00), "fg": Color(0.05, 0.05, 0.05),
-		"name": "MTN", "tag": "everywhere you go",
-	},
-	# ── Telecel (the former Vodafone red) ──
-	{
-		"pos": Vector3(-12.0, 0, 40.0), "yaw": YAW_FACE_EAST,
-		"w": 9.0, "h": 4.5, "post": 6.0,
-		"bg": Color(0.86, 0.05, 0.10), "fg": Color(1.00, 1.00, 1.00),
-		"name": "TELECEL", "tag": "the future is here",
-	},
-	# ── GCB Bank ──
-	{
-		"pos": Vector3(12.0, 0, 70.0), "yaw": YAW_FACE_WEST,
-		"w": 8.5, "h": 4.5, "post": 6.0,
-		"bg": Color(0.06, 0.18, 0.45), "fg": Color(1.00, 0.82, 0.25),
-		"name": "GCB BANK", "tag": "your bank for life",
-	},
-	# ── Voltic water ──
-	{
-		"pos": Vector3(-12.0, 0, 52.0), "yaw": YAW_FACE_EAST,
-		"w": 8.0, "h": 4.0, "post": 5.5,
-		"bg": Color(0.10, 0.45, 0.80), "fg": Color(1.00, 1.00, 1.00),
-		"name": "VOLTIC", "tag": "pure natural water",
-	},
-	# ── Guinness — iconic in Ghana ──
-	{
-		"pos": Vector3(12.0, 0, 82.0), "yaw": YAW_FACE_WEST,
-		"w": 9.0, "h": 4.5, "post": 6.0,
-		"bg": Color(0.08, 0.07, 0.05), "fg": Color(1.00, 0.80, 0.30),
-		"name": "GUINNESS", "tag": "Black shines",
-	},
-	# ── Fan Milk / Fan Ice ──
-	{
-		"pos": Vector3(-12.0, 0, -18.0), "yaw": YAW_FACE_EAST,
-		"w": 8.5, "h": 4.5, "post": 5.5,
-		"bg": Color(0.12, 0.55, 0.88), "fg": Color(1.00, 1.00, 1.00),
-		"name": "FAN ICE", "tag": "stay cool, Ghana",
-	},
-	# ── GOIL — at the hospital-block filling station (−X side, faces the road) ──
-	{
-		"pos": Vector3(-12.0, 0, 8.0), "yaw": YAW_FACE_EAST,
-		"w": 8.5, "h": 4.5, "post": 6.0,
-		"bg": Color(0.95, 0.45, 0.05), "fg": Color(1.00, 1.00, 1.00),
-		"name": "GOIL", "tag": "go with GOIL",
-	},
-	# ── MELCOM — the big-box retailer ──
-	{
-		"pos": Vector3(-13.0, 0, -38.0), "yaw": YAW_FACE_EAST,
-		"w": 9.0, "h": 4.5, "post": 6.0,
-		"bg": Color(0.78, 0.10, 0.10), "fg": Color(1.00, 0.85, 0.10),
-		"name": "MELCOM", "tag": "you shop, we care",
-	},
-]
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# LIFECYCLE
-# ═════════════════════════════════════════════════════════════════════════════
+## Printed roadside advertising on reserved plots, plus legible wayfinding.
+const G = preload("res://scripts/PropGeometry.gd")
+const Layout = preload("res://scripts/StreetSignLayout.gd")
+const ART = [preload("res://assets/signs/valiborn.svg"), preload("res://assets/signs/akwaaba.svg"), preload("res://assets/signs/connect.svg")]
+const COPY = [
+	["VALIBORN", "Smarter streets.\nBetter journeys.", "TECHNOLOGY FOR EVERYDAY LIFE"],
+	["AKWAABA", "Made for\neveryday Accra.", "LOCAL SHOPS  /  LOCAL STORIES"],
+	["ACCRA CONNECT", "Your city.\nConnected.", "PEOPLE  /  PLACES  /  POSSIBILITIES"]]
+@export var corridor_mode: bool = true
+var _print_materials: Array[StandardMaterial3D] = []
+var _floodlights: Array[SpotLight3D] = []
+var _lettering: Array[Label3D] = []
+var _direction_count: int = 0
 
 func _ready() -> void:
-	_build_materials()
-	for spec in BILLBOARDS:
-		_build_one(spec)
-	_wire_day_night()
-	print("[BillboardBuilder] Built %d billboards" % BILLBOARDS.size())
+	for spec in Layout.billboards(corridor_mode):
+		_billboard(spec)
+	var centers: Array = [0.0, 300.0, 600.0] if corridor_mode else [0.0]
+	var streets: Array = ["AGGREY ST", "ASYLUM DOWN", "NIMA ROAD"] if corridor_mode else ["AGGREY ST"]
+	for i in range(centers.size()):
+		var offset: float = 10.2
+		_wayfinding(Vector3(offset, 0, centers[i] + 10.0), 0.0, streets[i], "NSAWAM RD")
+		_wayfinding(Vector3(-offset, 0, centers[i] - 10.0), PI, "ACHIMOTA", "ACCRA")
+	var clock: Node = get_parent().get_node_or_null("TimeOfDayManager")
+	if clock:
+		clock.time_changed.connect(_time_changed)
+		_time_changed(clock.time_of_day)
+	print("[StreetSigns] ", Layout.billboards(corridor_mode).size(), " reserved billboard plots; ", centers.size() * 2, " direction signs")
 
-
-func _build_materials() -> void:
-	_mat_post = StandardMaterial3D.new()
-	_mat_post.albedo_color = POST_COLOR
-	_mat_post.metallic = 0.4
-	_mat_post.roughness = 0.5
-
-	_mat_frame = StandardMaterial3D.new()
-	_mat_frame.albedo_color = FRAME_COLOR
-	_mat_frame.metallic = 0.3
-	_mat_frame.roughness = 0.6
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONSTRUCTION
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _build_one(spec: Dictionary) -> void:
+func _billboard(spec: Dictionary) -> void:
 	var root := Node3D.new()
-	root.name = "Billboard_%s" % String(spec["name"]).replace(" ", "_")
-	root.position = spec["pos"]
+	root.name = "Billboard_" + str(spec["design"])
+	root.position = spec["position"]
 	root.rotation.y = spec["yaw"]
+	root.set_meta("reserved_plot", Layout.plot(spec))
 	add_child(root)
+	var steel := G.solid(Color("656b62"), 0.7, 0.48)
+	var dark := G.solid(Color("303d37"), 0.5, 0.6)
+	var w: float = 4.8
+	var h: float = 2.25
+	var cy: float = 3.775
+	G.box(root, Vector3(0, -0.005, 0), Vector3(4.9, 0.075, 2.3), G.solid(Color("8d8877")), "ServiceApron")
+	G.box(root, Vector3(0, 0.15, -0.16), Vector3(0.7, 0.32, 0.65), G.solid(Color("9c9786")), "Foundation")
+	G.segment(root, Vector3(0, 0.3, -0.16), Vector3(0, cy + h * 0.38, -0.16), 0.13, steel, "Monopole", 0.85)
+	for x in [-w * 0.4, w * 0.4]:
+		G.segment(root, Vector3(0, 2.2, -0.16), Vector3(x, cy + 0.35, -0.16), 0.035, steel, "BackBrace")
+	G.rounded_box(root, Vector3(0, cy, 0), Vector3(w + 0.15, h + 0.15, 0.16), 0.055, dark, "PanelFrame")
+	var print_material := StandardMaterial3D.new()
+	print_material.albedo_texture = ART[spec["design"]]
+	print_material.roughness = 0.85
+	print_material.emission_enabled = true
+	print_material.emission_texture = ART[spec["design"]]
+	print_material.emission = Color.WHITE
+	print_material.emission_energy_multiplier = 0.0
+	_print_materials.append(print_material)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(w, h)
+	G.instance(root, quad, Vector3(0, cy, 0.086), print_material, "PrintedArtwork")
+	var ink: Color = Color("f2e8ce") if spec["design"] != 1 else Color("253f37")
+	var content: Array = COPY[spec["design"]]
+	_lettering.append(G.label(root, content[0], Vector3(-0.68, cy + 0.67, 0.094), 2.85, 0.24, ink, "Brand"))
+	_lettering.append(G.label(root, content[1], Vector3(-0.68, cy - 0.02, 0.094), 2.9, 0.85, ink, "Headline"))
+	_lettering.append(G.label(root, content[2], Vector3(-0.68, cy - 0.81, 0.094), 2.65, 0.12, ink, "Footer"))
+	# Rear rails and a service ledge make the back of the panel a real structure.
+	for y in [cy - h * 0.33, cy + h * 0.33]:
+		G.box(root, Vector3(0, y, -0.14), Vector3(w, 0.09, 0.09), steel, "RearRail")
+	G.box(root, Vector3(0, cy - h * 0.5 - 0.14, -0.3), Vector3(w * 0.85, 0.04, 0.4), steel, "ServiceLedge")
+	for x in [-1.5, 1.5]:
+		G.segment(root, Vector3(x, cy + h * 0.5, 0), Vector3(x, cy + h * 0.5 + 0.22, 0.65), 0.022, dark, "FloodlightArm")
+		var fixture := G.rounded_box(root, Vector3(x, cy + h * 0.5 + 0.18, 0.68), Vector3(0.22, 0.065, 0.15), 0.02, dark, "Floodlight")
+		fixture.rotation.x = -0.65
+		var light := SpotLight3D.new()
+		light.position = Vector3(x, cy + h * 0.5 + 0.16, 0.72)
+		light.rotation.x = -atan2(h * 0.5, 0.72)
+		light.spot_range = 4.0
+		light.spot_angle = 55.0
+		light.light_color = Color("ffe7bc")
+		light.light_energy = 0.0
+		root.add_child(light)
+		_floodlights.append(light)
+	for x in [-0.24, 0.24]:
+		for z in [-0.37, 0.05]:
+			G.segment(root, Vector3(x, 0.31, z), Vector3(x, 0.35, z), 0.025, dark, "FoundationBolt")
 
-	var w: float = spec["w"]
-	var h: float = spec["h"]
-	var post_h: float = spec["post"]
-	var cy: float = post_h + h / 2.0   # panel vertical centre
+func _wayfinding(at: Vector3, yaw: float, street: String, through: String) -> void:
+	var root := Node3D.new()
+	root.position = at
+	root.rotation.y = yaw
+	root.name = "DirectionSign_%d" % _direction_count
+	_direction_count += 1
+	add_child(root)
+	var steel := G.solid(Color("8b9388"), 0.7, 0.4)
+	var green := G.solid(Color("214b3f"), 0.1, 0.7)
+	var white := G.solid(Color("e4e2cf"), 0.15, 0.64)
+	G.segment(root, Vector3(0, 0, 0), Vector3(0, 2.72, 0), 0.043, steel, "Signpost")
+	G.rounded_box(root, Vector3(0, 2.17, 0.025), Vector3(2.15, 0.89, 0.07), 0.065, white, "ReflectiveBorder")
+	G.rounded_box(root, Vector3(0, 2.17, 0.068), Vector3(2.08, 0.82, 0.025), 0.05, green, "DirectionPanel")
+	G.label(root, "←", Vector3(-0.78, 2.37, 0.088), 0.32, 0.25, Color("efefdb"))
+	G.label(root, street, Vector3(0.16, 2.37, 0.088), 1.43, 0.19, Color("efefdb"))
+	G.label(root, "↑", Vector3(-0.78, 1.99, 0.088), 0.27, 0.27, Color("efefdb"))
+	G.label(root, through, Vector3(0.16, 1.99, 0.088), 1.43, 0.19, Color("efefdb"))
+	G.box(root, Vector3(0, 2.18, 0.09), Vector3(1.9, 0.009, 0.005), white)
+	# Street-name blade sits above, physically attached rather than floating over lanes.
+	G.rounded_box(root, Vector3(0, 2.83, 0), Vector3(1.6, 0.22, 0.05), 0.025, green, "StreetBlade")
+	G.label(root, "ACHIMOTA · ACCRA", Vector3(0, 2.83, 0.032), 1.46, 0.12, Color("efefdb"))
+	for y in [1.92, 2.45, 2.82]:
+		G.segment(root, Vector3(-0.09, y, -0.035), Vector3(0.09, y, -0.035), 0.015, steel, "RearClamp")
 
-	# ── Two support posts (front = +Z, so posts sit a touch behind the face) ──
-	var gap: float = w * 0.32
-	for sx in [-1.0, 1.0]:
-		var post := CSGCylinder3D.new()
-		post.radius = 0.22
-		post.height = cy
-		post.sides = 10
-		post.position = Vector3(sx * gap, cy / 2.0, -0.12)
-		post.material = _mat_post
-		root.add_child(post)
-
-	# ── Dark backboard / frame ──
-	var frame := CSGBox3D.new()
-	frame.size = Vector3(w + 0.5, h + 0.5, 0.30)
-	frame.position = Vector3(0, cy, -0.05)
-	frame.material = _mat_frame
-	root.add_child(frame)
-
-	# ── Emissive ad face (brand colour), on the front (+Z) ──
-	var face_mat := StandardMaterial3D.new()
-	face_mat.albedo_color = spec["bg"]
-	face_mat.roughness = 0.4
-	face_mat.metallic = 0.0
-	face_mat.emission_enabled = true
-	face_mat.emission = spec["bg"]
-	face_mat.emission_energy_multiplier = _current_emission()
-	_panel_mats.append(face_mat)
-
-	var face := CSGBox3D.new()
-	face.size = Vector3(w, h, 0.12)
-	face.position = Vector3(0, cy, 0.12)
-	face.material = face_mat
-	root.add_child(face)
-
-	# ── Headline + tagline (Label3D faces +Z by default → toward the road) ──
-	var headline := Label3D.new()
-	headline.text = String(spec["name"])
-	headline.font_size = 64
-	headline.pixel_size = spec.get("head_ps", h * 0.0060)   # per-sign override for long names
-	headline.modulate = spec["fg"]
-	headline.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	headline.outline_size = 10
-	headline.outline_modulate = Color(0, 0, 0, 0.55)
-	headline.position = Vector3(0, cy + h * 0.13, 0.20)
-	headline.name = "Headline"
-	root.add_child(headline)
-
-	var tag := Label3D.new()
-	tag.text = String(spec["tag"])
-	tag.font_size = 40
-	tag.pixel_size = h * 0.0030
-	tag.modulate = spec["fg"]
-	tag.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	tag.outline_size = 6
-	tag.outline_modulate = Color(0, 0, 0, 0.45)
-	tag.position = Vector3(0, cy - h * 0.24, 0.20)
-	tag.name = "Tagline"
-	root.add_child(tag)
-
-	# ── Floodlight gantry across the top (cosmetic) ──
-	var bar := CSGBox3D.new()
-	bar.size = Vector3(w * 0.9, 0.10, 0.10)
-	bar.position = Vector3(0, cy + h / 2.0 + 0.55, 0.55)
-	bar.material = _mat_frame
-	root.add_child(bar)
-	for i in range(3):
-		var fx: float = -w * 0.30 + i * (w * 0.30)
-		var flood := CSGBox3D.new()
-		flood.size = Vector3(0.50, 0.22, 0.30)
-		flood.position = Vector3(fx, cy + h / 2.0 + 0.52, 0.58)
-		flood.rotation.x = deg_to_rad(35.0)   # tilt down toward the panel
-		flood.material = _mat_frame
-		root.add_child(flood)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# DAY / NIGHT (self-wired, mirrors EnvironmentBuilder)
-# ═════════════════════════════════════════════════════════════════════════════
-
-func _wire_day_night() -> void:
-	var tod: Node = get_parent().get_node_or_null("TimeOfDayManager")
-	if tod == null:
-		return   # no day/night manager — leave panels in the day state
-	if tod.has_signal("night_mode_changed"):
-		tod.night_mode_changed.connect(_on_night_mode_changed)
-	if tod.has_signal("dusk_mode_changed"):
-		tod.dusk_mode_changed.connect(_on_dusk_mode_changed)
-	if tod.has_method("is_night"):
-		_is_night = tod.is_night()
-	if tod.has_method("is_dusk"):
-		_is_dusk = tod.is_dusk()
-	_apply_glow()
-
-
-func _on_night_mode_changed(is_night: bool) -> void:
-	_is_night = is_night
-	_apply_glow()
-
-
-func _on_dusk_mode_changed(is_dusk: bool) -> void:
-	_is_dusk = is_dusk
-	_apply_glow()
-
-
-func _current_emission() -> float:
-	if _is_night:
-		return NIGHT_EMISSION
-	if _is_dusk:
-		return DUSK_EMISSION
-	return DAY_EMISSION
-
-
-func _apply_glow() -> void:
-	var e: float = _current_emission()
-	for m in _panel_mats:
-		m.emission_energy_multiplier = e
+func _time_changed(hour: float) -> void:
+	var strength: float = smoothstep(17.3, 19.0, hour) if hour >= 12.0 else 1.0 - smoothstep(5.7, 7.0, hour)
+	for material in _print_materials:
+		material.emission_energy_multiplier = strength * 0.16
+	for light in _floodlights:
+		light.light_energy = strength * 1.4

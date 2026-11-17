@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | Network Builder
+TrafIQ | Network Builder
 ══════════════════════════
 Generates SUMO network files from hand-crafted node + edge definitions
 using SUMO's `netconvert` tool.
@@ -32,6 +32,10 @@ SIM_DIR      = PROJECT_ROOT / "simulation"
 NODES_FILE       = SIM_DIR / "nodes.nod.xml"
 EDGES_FILE       = SIM_DIR / "edges.edg.xml"
 OUTPUT_NET       = SIM_DIR / "intersection.net.xml"
+# Lane-to-movement map: inner lane = left + u-turn only, outer lane = through + right.
+# REQUIRED — without it netconvert also lets the inner lane go straight, which gives
+# 24 signal links instead of the 20 that PHASE_SIGNALS in ai/traffic_env.py expects.
+CONNECTIONS_FILE = SIM_DIR / "connections.con.xml"
 
 # Corridor files
 CORR_NODES_FILE  = SIM_DIR / "corridor_nodes.nod.xml"
@@ -121,13 +125,17 @@ def print_install_instructions():
 # ── Build Functions ──────────────────────────────────────────────────────────
 
 def _run_netconvert(netconvert: str, nodes: Path, edges: Path, output: Path,
-                    label: str) -> None:
-    """Run netconvert with given input files and produce output network."""
-    for f in [nodes, edges]:
+                    label: str, connections: Path | None = None) -> None:
+    """Run netconvert with given input files and produce output network.
+
+    `connections` (optional) is a netconvert --connection-files lane map.
+    """
+    inputs = [nodes, edges] + ([connections] if connections else [])
+    for f in inputs:
         if not f.exists():
             print(f"\n[ERROR] Missing input file: {f}")
             sys.exit(1)
-    print(f"[OK] Input files : {nodes.name}, {edges.name}")
+    print(f"[OK] Input files : {', '.join(f.name for f in inputs)}")
 
     cmd = [
         netconvert,
@@ -139,6 +147,8 @@ def _run_netconvert(netconvert: str, nodes: Path, edges: Path, output: Path,
         "--crossings.guess.speed-threshold", "13.89",
         "--no-warnings",
     ]
+    if connections:
+        cmd += ["--connection-files", str(connections)]
 
     print(f"\n[RUN] netconvert ({label}) ...")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -167,7 +177,7 @@ def _run_netconvert(netconvert: str, nodes: Path, edges: Path, output: Path,
 def build_network(corridor: bool = False):
     mode = "Corridor (3 Junctions)" if corridor else "Single Junction"
     print("=" * 60)
-    print(f"  ATCS-GH Network Builder — {mode}")
+    print(f"  TrafIQ Network Builder — {mode}")
     print("=" * 60)
 
     # 1. Verify SUMO
@@ -189,6 +199,7 @@ def build_network(corridor: bool = False):
     if corridor:
         _run_netconvert(netconvert, CORR_NODES_FILE, CORR_EDGES_FILE,
                         CORR_OUTPUT_NET, "corridor")
+        subprocess.run([sys.executable, str(Path(__file__).with_name("export_corridor_geometry.py"))], check=True)
         print("\n" + "=" * 60)
         print("  Corridor network ready. Next steps:")
         print("  1.  python scripts/train_corridor.py")
@@ -196,7 +207,9 @@ def build_network(corridor: bool = False):
         print("=" * 60 + "\n")
     else:
         _run_netconvert(netconvert, NODES_FILE, EDGES_FILE,
-                        OUTPUT_NET, "single junction")
+                        OUTPUT_NET, "single junction",
+                        connections=CONNECTIONS_FILE)
+        subprocess.run([sys.executable, str(Path(__file__).with_name("export_corridor_geometry.py")), "--single"], check=True)
         print("\n" + "=" * 60)
         print("  Network ready. Next steps:")
         print("  1.  python scripts/run_baseline.py")
@@ -205,7 +218,7 @@ def build_network(corridor: bool = False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ATCS-GH Network Builder")
+    parser = argparse.ArgumentParser(description="TrafIQ Network Builder")
     parser.add_argument("--corridor", action="store_true",
                         help="Build 3-junction corridor network instead of single junction")
     parser.add_argument("--all", action="store_true",

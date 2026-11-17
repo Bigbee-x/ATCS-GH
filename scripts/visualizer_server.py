@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-ATCS-GH | WebSocket Visualizer Server
+TrafIQ | WebSocket Visualizer Server
 ═══════════════════════════════════════
 Runs the SUMO simulation with the DQN agent and broadcasts
 real-time state to a Godot 4 3D visualizer over WebSocket.
@@ -80,6 +80,14 @@ except ImportError as e:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "ai"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from trotro_service import TrotroService
+from crossing_safety import CrossingSafety
+from live_dashboard import incoming_metrics, register_endpoint, unregister_endpoint, TELEMETRY_SCHEMA
+
+_transit_service = None
+_stream_metadata = {}
+_crossing_safety = CrossingSafety(traci, PROJECT_ROOT / "simulation" / "intersection.net.xml")
 
 import websockets
 
@@ -243,7 +251,7 @@ async def broadcast(packet: dict):
     """
     if not connected_clients:
         return
-    message = json.dumps(packet)
+    message = json.dumps({**_stream_metadata, "control_mode": active_control_mode, **packet})
     websockets.broadcast(connected_clients, message)
 
 
@@ -273,6 +281,8 @@ def _collect_vehicle_data() -> list[dict]:
                     "speed": round(traci.vehicle.getSpeed(vid), 2),
                     "angle": round(traci.vehicle.getAngle(vid), 1),
                     "type":  traci.vehicle.getTypeID(vid),
+                    "lane": traci.vehicle.getLaneID(vid),
+                    "lane_position": traci.vehicle.getLanePosition(vid),
                     "edge":  edge,
                 })
         except traci.exceptions.TraCIException:
@@ -294,11 +304,19 @@ def _collect_vehicle_data() -> list[dict]:
                     "speed": round(traci.vehicle.getSpeed(vid), 2),
                     "angle": round(traci.vehicle.getAngle(vid), 1),
                     "type":  traci.vehicle.getTypeID(vid),
+                    "lane": traci.vehicle.getLaneID(vid),
+                    "lane_position": traci.vehicle.getLanePosition(vid),
                     "edge":  road,
                 })
     except traci.exceptions.TraCIException:
         pass
 
+    if _transit_service is not None:
+        for vehicle in vehicles:
+            vehicle.update(_transit_service.vehicle_state(vehicle["id"]))
+
+    for vehicle in vehicles:
+        vehicle.update(_crossing_safety.vehicle_geometry(vehicle))
     return vehicles
 
 
@@ -312,6 +330,8 @@ def _collect_pedestrian_data() -> list[dict]:
     pedestrians: list[dict] = []
     try:
         for pid in traci.person.getIDList():
+            if pid.startswith("station:"):
+                continue
             x, y = traci.person.getPosition(pid)
             # Only include pedestrians near the junction (within ~300m)
             if 1200 < x < 1800 and 1200 < y < 1800:
@@ -325,12 +345,14 @@ def _collect_pedestrian_data() -> list[dict]:
                 })
     except traci.exceptions.TraCIException:
         pass
+    for pedestrian in pedestrians:
+        pedestrian.update(_crossing_safety.pedestrian_geometry(pedestrian))
     return pedestrians
 
 
 # ── Simulation loop ─────────────────────────────────────────────────────────
 
-async def simulation_loop(mode: str, model_path: Path, speed: float):
+async def simulation_loop(mode: str, model_path: Path, speed: float, transit_enabled: bool = True):
     """
     Main simulation loop: run SUMO, make decisions, broadcast state.
 
@@ -395,7 +417,11 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
             # Reset the simulation
             seed = 42 + run_count * 137
             state = env.reset(seed=seed)
+            global _transit_service
+            _transit_service = TrotroService(traci, enabled=transit_enabled)
             run_count += 1
+            _stream_metadata.update(run=run_count, seed=seed,
+                                    run_id=f"{_stream_metadata.get('session_id', 'local')}:{run_count}")
             print(f"\n[SIM] Run #{run_count} started (seed={seed})")
 
             await broadcast({
@@ -482,6 +508,8 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                         if env._yellow_countdown <= 0:
                             env._complete_switch()
 
+                    _crossing_safety.apply({TL_ID: PHASE_SIGNALS[env._phase]})
+                    _transit_service.tick()
                     traci.simulationStep()
                     env._sim_step += 1
                     env._phase_timer += 1
@@ -491,8 +519,27 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                     # Broadcast vehicle positions every sim-second
                     vehicle_data = _collect_vehicle_data()
                     ped_data = _collect_pedestrian_data()
+                    live_metrics = incoming_metrics(traci, {
+                        "north": "ACH_N2J", "east": "AGG_E2J",
+                        "south": "ACH_S2J", "west": "GUG_W2J",
+                    })
+                    live_metrics.update(sample_time=env._sim_step,
+                                        active_vehicles=len(traci.vehicle.getIDList()),
+                                        vehicles_completed=env.total_arrived + block_arrived)
                     await broadcast({
                         "type": "vehicle_update",
+                        "mode": "single",
+                        "phase": env._phase,
+                        "phase_name": PHASE_NAMES.get(env._phase, "UNKNOWN"),
+                        "phase_timer": env._phase_timer,
+                        "in_yellow": env._in_yellow,
+                        "traffic_metrics": live_metrics,
+                        "queues": {arm: values["stopped"] for arm, values in live_metrics["approaches"].items()},
+                        "wait_times": {arm: values["mean_wait_seconds"] for arm, values in live_metrics["approaches"].items()},
+                        "incoming_vehicles": live_metrics["incoming_vehicles"],
+                        "vehicles_completed": env.total_arrived + block_arrived,
+                        **_crossing_safety.snapshot(TL_ID),
+                        "transit": _transit_service.snapshot(),
                         "vehicles": vehicle_data,
                         "pedestrians": ped_data,
                         "sim_time": env._sim_step,
@@ -571,6 +618,8 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
                 # ── Build full state broadcast packet ─────────────────────
                 packet = {
                     "type": "state_update",
+                    "transit": _transit_service.snapshot(),
+                    "traffic_metrics": live_metrics,
                     "control_mode": active_control_mode,
 
                     # Timing
@@ -593,15 +642,15 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Per-approach wait times
                     "wait_times": {
-                        "north": round(edge_metrics["ACH_N2J"]["wait"], 1),
-                        "south": round(edge_metrics["ACH_S2J"]["wait"], 1),
-                        "east":  round(edge_metrics["AGG_E2J"]["wait"], 1),
-                        "west":  round(edge_metrics["GUG_W2J"]["wait"], 1),
+                        arm: values["mean_wait_seconds"]
+                        for arm, values in live_metrics["approaches"].items()
                     },
 
                     # Aggregate stats
                     "vehicles_completed": env.total_arrived,
-                    "avg_wait": round(env.episode_avg_wait, 1),
+                    "avg_wait": round(live_metrics["current_mean_wait_seconds"], 1),
+                    "legacy_episode_wait_score": round(env.episode_avg_wait, 1),
+                    "incoming_vehicles": live_metrics["incoming_vehicles"],
 
                     # AI decision
                     "ai_decision": ACTION_NAMES[action] if action < len(ACTION_NAMES) else "UNKNOWN",
@@ -616,17 +665,13 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
                     # Pedestrian data
                     "pedestrians": _collect_pedestrian_data(),
+                    **_crossing_safety.snapshot(TL_ID),
 
                     # Crossing signal states (for visualizer crosswalk lights).
                     # After the lane-restricted rebuild, the TL signal string is
                     # 20 chars (16 vehicle links + 4 crossings). Crossings occupy
                     # positions 16-19 in order: c0=N, c1=E, c2=S, c3=W.
-                    "crossing_green": {
-                        "north": PHASE_SIGNALS.get(env._phase, "r" * 20)[16] in "Gg",
-                        "east":  PHASE_SIGNALS.get(env._phase, "r" * 20)[17] in "Gg",
-                        "south": PHASE_SIGNALS.get(env._phase, "r" * 20)[18] in "Gg",
-                        "west":  PHASE_SIGNALS.get(env._phase, "r" * 20)[19] in "Gg",
-                    },
+                    "crossing_green": _crossing_safety.snapshot(TL_ID)["crossing_green"],
 
                     # Meta
                     "mode": mode,
@@ -645,8 +690,13 @@ async def simulation_loop(mode: str, model_path: Path, speed: float):
 
             await broadcast({
                 "type": "sim_complete",
+                "mode": "single",
+                "sim_time": env._sim_step,
+                "traffic_metrics": live_metrics,
+                "vehicles_completed": env.total_arrived,
                 "total_arrived": env.total_arrived,
-                "avg_wait": round(env.episode_avg_wait, 1),
+                "avg_wait": round(live_metrics["current_mean_wait_seconds"], 1),
+                "legacy_episode_wait_score": round(env.episode_avg_wait, 1),
                 "total_reward": round(env.episode_total_reward, 1),
             })
 
@@ -681,7 +731,7 @@ async def main(args):
 
     print()
     print("═" * 58)
-    print("  ATCS-GH  |  3D Visualizer Server")
+    print("  TrafIQ  |  3D Visualizer Server")
     print("═" * 58)
     print(f"  Mode       : {mode.upper()}")
     print(f"  Model      : {model_path}")
@@ -696,12 +746,18 @@ async def main(args):
 
     # Start WebSocket server, then run simulation loop
     async with websockets.serve(ws_handler, "localhost", args.port):
-        await simulation_loop(mode, model_path, args.speed)
+        endpoint = register_endpoint(args.port, "single")
+        _stream_metadata.update(session_id=endpoint["session_id"], telemetry_schema=TELEMETRY_SCHEMA,
+                                source="SUMO / TraCI", simulation_speed=args.speed)
+        try:
+            await simulation_loop(mode, model_path, args.speed, not args.no_transit)
+        finally:
+            unregister_endpoint(endpoint)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="ATCS-GH WebSocket Visualizer Server — "
+        description="TrafIQ WebSocket Visualizer Server — "
                     "bridges SUMO + DQN to Godot 4 3D client"
     )
     parser.add_argument(
@@ -729,6 +785,8 @@ if __name__ == "__main__":
         "--port", type=int, default=8765,
         help="WebSocket server port (default: 8765)"
     )
+
+    parser.add_argument("--no-transit", action="store_true", help="Disable visualizer trotro stops and riders for benchmark-equivalent demand")
 
     args = parser.parse_args()
     try:

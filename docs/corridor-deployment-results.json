@@ -1,0 +1,3237 @@
+{
+  "date": "2026-11-14",
+  "decision": "No new policy promoted; shipped hashes and legacy model input retained; graded capacity stays off.",
+  "environment": {
+    "python": "3.11.16",
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "packages": {
+      "eclipse-sumo": "1.27.1",
+      "libsumo": "1.27.1",
+      "torch": "2.14.1",
+      "numpy": "2.4.6"
+    }
+  },
+  "shipped_model_hashes": {
+    "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+    "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+    "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+  },
+  "calibrated_identical_traffic_cases": [
+    "evening-179",
+    "evening-20261114",
+    "evening-20261115",
+    "evening-20261116",
+    "evening-20261121",
+    "evening-20261122",
+    "evening-20261123",
+    "morning-20261114",
+    "morning-20261115",
+    "morning-20261116",
+    "morning-20261121",
+    "morning-20261122",
+    "morning-20261123",
+    "morning-42",
+    "morning-997",
+    "offpeak-20261114",
+    "offpeak-20261115",
+    "offpeak-20261116",
+    "offpeak-20261121",
+    "offpeak-20261122",
+    "offpeak-20261123",
+    "offpeak-316"
+  ],
+  "suites": {
+    "audit": {
+      "suite": "audit",
+      "duration": 7200,
+      "wall_seconds": 41.23,
+      "scope": "Screening only; deployment also requires the full audit and an independent holdout, all at 7200 seconds.",
+      "criteria": "Zero collisions/teleports; no stopped-vehicle regression in any case; arrivals >=99.5% shipped; beat matched fixed timer when included.",
+      "summary": {
+        "shipped": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.627775889684792,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": []
+        },
+        "fixed": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.668049049818436,
+          "worst_ratio_to_shipped": 2.1973088593742225,
+          "mean_ratio_to_fixed": 1.0,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "evening-179: stopped vehicles 1.7859x shipped",
+            "evening-179: completed trips fell by more than 0.5%",
+            "evening-179: does not beat matched fixed timer",
+            "morning-42: stopped vehicles 1.2430x shipped",
+            "morning-42: does not beat matched fixed timer",
+            "offpeak-316: stopped vehicles 2.1973x shipped",
+            "offpeak-316: completed trips fell by more than 0.5%",
+            "offpeak-316: does not beat matched fixed timer",
+            "morning-997: stopped vehicles 1.4460x shipped",
+            "morning-997: completed trips fell by more than 0.5%",
+            "morning-997: does not beat matched fixed timer"
+          ]
+        },
+        "graded": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.0469815254537758,
+          "worst_ratio_to_shipped": 1.2198665149765557,
+          "mean_ratio_to_fixed": 0.6649791233594633,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-42: stopped vehicles 1.0531x shipped",
+            "morning-997: stopped vehicles 1.2199x shipped",
+            "morning-997: completed trips fell by more than 0.5%"
+          ]
+        },
+        "calibrated": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.627775889684792,
+          "passes_comparisons": true,
+          "eligible": true,
+          "violations": []
+        },
+        "c101-6": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.0243168269282055,
+          "worst_ratio_to_shipped": 1.271275135045703,
+          "mean_ratio_to_fixed": 0.6510322914379925,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-997: 2 colliding vehicles / 0 teleports",
+            "morning-997: stopped vehicles 1.2713x shipped",
+            "morning-997: completed trips fell by more than 0.5%"
+          ]
+        },
+        "c303-3": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 0.9985254393876666,
+          "worst_ratio_to_shipped": 1.1249226056358448,
+          "mean_ratio_to_fixed": 0.6288995370982671,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-997: stopped vehicles 1.1249x shipped"
+          ]
+        },
+        "c202-15": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 1.0465924168527065,
+          "worst_ratio_to_shipped": 1.2961180863166764,
+          "mean_ratio_to_fixed": 0.6629050140645089,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-997: 2 colliding vehicles / 0 teleports",
+            "morning-997: stopped vehicles 1.2961x shipped",
+            "morning-997: completed trips fell by more than 0.5%"
+          ]
+        },
+        "c303-12": {
+          "cases": 4,
+          "mean_ratio_to_shipped": 0.9913863524705324,
+          "worst_ratio_to_shipped": 1.121093396874888,
+          "mean_ratio_to_fixed": 0.623172012050201,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-997: 2 colliding vehicles / 0 teleports",
+            "morning-997: stopped vehicles 1.1211x shipped",
+            "morning-997: completed trips fell by more than 0.5%"
+          ]
+        }
+      },
+      "cases": {
+        "shipped": {
+          "evening-179": {
+            "mean_stopped_vehicles": 47.315928343285655,
+            "arrived": 4106,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 404.52577571463473,
+            "unfinished_mean_age_seconds": 223.2608695652174,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-42": {
+            "mean_stopped_vehicles": 91.85738091931677,
+            "arrived": 3884,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 515.9940583828468,
+            "unfinished_mean_age_seconds": 616.4735682819384,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.583391195667269,
+            "arrived": 2021,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.148406374502,
+            "unfinished_mean_age_seconds": 161.12222222222223,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 81.41688654353563,
+            "arrived": 3919,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 500.65924219150025,
+            "unfinished_mean_age_seconds": 475.5,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "fixed": {
+          "evening-179": {
+            "mean_stopped_vehicles": 84.49923621719206,
+            "arrived": 3977,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 454.5542381432896,
+            "unfinished_mean_age_seconds": 705.8531855955679,
+            "model_hashes": {}
+          },
+          "morning-42": {
+            "mean_stopped_vehicles": 114.18233578669629,
+            "arrived": 3888,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 527.5388387096774,
+            "unfinished_mean_age_seconds": 696.7305122494432,
+            "model_hashes": {}
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 12.268434939591723,
+            "arrived": 2008,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 340.84310776942357,
+            "unfinished_mean_age_seconds": 184.54368932038835,
+            "model_hashes": {}
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 117.7285099291765,
+            "arrived": 3866,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 534.3869711912795,
+            "unfinished_mean_age_seconds": 700.6439232409382,
+            "model_hashes": {}
+          }
+        },
+        "graded": {
+          "morning-42": {
+            "mean_stopped_vehicles": 96.73434245243716,
+            "arrived": 3873,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 530.0556994818653,
+            "unfinished_mean_age_seconds": 651.6279569892473,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-179": {
+            "mean_stopped_vehicles": 44.04332731565061,
+            "arrived": 4098,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 397.3833537331701,
+            "unfinished_mean_age_seconds": 230.35833333333332,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.494792389945841,
+            "arrived": 2020,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.06576980568013,
+            "unfinished_mean_age_seconds": 160.6813186813187,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 99.31773364810444,
+            "arrived": 3859,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 542.9797191887676,
+            "unfinished_mean_age_seconds": 594.6025104602511,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "calibrated": {
+          "evening-179": {
+            "mean_stopped_vehicles": 47.315928343285655,
+            "arrived": 4106,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 404.52577571463473,
+            "unfinished_mean_age_seconds": 223.2608695652174,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-42": {
+            "mean_stopped_vehicles": 91.85738091931677,
+            "arrived": 3884,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 515.9940583828468,
+            "unfinished_mean_age_seconds": 616.4735682819384,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.583391195667269,
+            "arrived": 2021,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.148406374502,
+            "unfinished_mean_age_seconds": 161.12222222222223,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 81.41688654353563,
+            "arrived": 3919,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 500.65924219150025,
+            "unfinished_mean_age_seconds": 475.5,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          }
+        },
+        "c101-6": {
+          "morning-42": {
+            "mean_stopped_vehicles": 90.96972642688516,
+            "arrived": 3892,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 518.5088940448569,
+            "unfinished_mean_age_seconds": 599.6591928251121,
+            "model_hashes": {
+              "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+              "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+              "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+            }
+          },
+          "evening-179": {
+            "mean_stopped_vehicles": 41.89584779891682,
+            "arrived": 4113,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 392.75878048780487,
+            "unfinished_mean_age_seconds": 216.82222222222222,
+            "model_hashes": {
+              "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+              "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+              "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.305374253575892,
+            "arrived": 2019,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.02243270189433,
+            "unfinished_mean_age_seconds": 164.6086956521739,
+            "model_hashes": {
+              "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+              "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+              "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 103.50326343563394,
+            "arrived": 3865,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 562.4626168224299,
+            "unfinished_mean_age_seconds": 630.0338983050848,
+            "model_hashes": {
+              "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+              "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+              "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+            }
+          }
+        },
+        "c303-3": {
+          "morning-42": {
+            "mean_stopped_vehicles": 87.69143174559089,
+            "arrived": 3906,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 509.43436938094015,
+            "unfinished_mean_age_seconds": 575.9116279069767,
+            "model_hashes": {
+              "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+              "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+              "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+            }
+          },
+          "evening-179": {
+            "mean_stopped_vehicles": 44.37578114150812,
+            "arrived": 4105,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 397.896871945259,
+            "unfinished_mean_age_seconds": 224.63090128755366,
+            "model_hashes": {
+              "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+              "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+              "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.453131509512568,
+            "arrived": 2021,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.5771912350598,
+            "unfinished_mean_age_seconds": 161.13333333333333,
+            "model_hashes": {
+              "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+              "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+              "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 91.58769615331204,
+            "arrived": 3907,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 537.6959424756035,
+            "unfinished_mean_age_seconds": 535.853488372093,
+            "model_hashes": {
+              "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+              "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+              "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+            }
+          }
+        },
+        "c202-15": {
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.56839327871129,
+            "arrived": 2021,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.0343625498008,
+            "unfinished_mean_age_seconds": 162.35555555555555,
+            "model_hashes": {
+              "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+              "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+              "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+            }
+          },
+          "evening-179": {
+            "mean_stopped_vehicles": 42.84918761283155,
+            "arrived": 4094,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 394.59789267336436,
+            "unfinished_mean_age_seconds": 234.63524590163934,
+            "model_hashes": {
+              "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+              "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+              "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+            }
+          },
+          "morning-42": {
+            "mean_stopped_vehicles": 90.69448687682267,
+            "arrived": 3888,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 513.2129032258065,
+            "unfinished_mean_age_seconds": 602.4977777777777,
+            "model_hashes": {
+              "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+              "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+              "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 105.52589918066936,
+            "arrived": 3846,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 568.935820506131,
+            "unfinished_mean_age_seconds": 650.9877800407332,
+            "model_hashes": {
+              "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+              "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+              "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+            }
+          }
+        },
+        "c303-12": {
+          "morning-42": {
+            "mean_stopped_vehicles": 84.79141785863075,
+            "arrived": 3918,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 500.1349551856594,
+            "unfinished_mean_age_seconds": 546.4547619047619,
+            "model_hashes": {
+              "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+              "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+              "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+            }
+          },
+          "evening-179": {
+            "mean_stopped_vehicles": 45.28801555339536,
+            "arrived": 4104,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 400.596431190418,
+            "unfinished_mean_age_seconds": 222.85042735042734,
+            "model_hashes": {
+              "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+              "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+              "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+            }
+          },
+          "offpeak-316": {
+            "mean_stopped_vehicles": 5.3836967087904455,
+            "arrived": 2020,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.28051818634776,
+            "unfinished_mean_age_seconds": 163.0,
+            "model_hashes": {
+              "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+              "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+              "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+            }
+          },
+          "morning-997": {
+            "mean_stopped_vehicles": 91.27593389806971,
+            "arrived": 3878,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 523.2636481241915,
+            "unfinished_mean_age_seconds": 564.1677559912854,
+            "model_hashes": {
+              "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+              "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+              "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+            }
+          }
+        }
+      }
+    },
+    "regression": {
+      "suite": "regression",
+      "duration": 7200,
+      "wall_seconds": 272.12,
+      "scope": "Screening only; deployment also requires the full audit and an independent holdout, all at 7200 seconds.",
+      "criteria": "Zero collisions/teleports; no stopped-vehicle regression in any case; arrivals >=99.5% shipped; beat matched fixed timer when included.",
+      "summary": {
+        "shipped": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.5711595558718536,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": []
+        },
+        "fixed": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.8540177552017516,
+          "worst_ratio_to_shipped": 2.2985207401382675,
+          "mean_ratio_to_fixed": 1.0,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261114: stopped vehicles 1.3247x shipped",
+            "morning-20261114: completed trips fell by more than 0.5%",
+            "morning-20261114: does not beat matched fixed timer",
+            "morning-20261115: stopped vehicles 1.3853x shipped",
+            "morning-20261115: does not beat matched fixed timer",
+            "morning-20261116: stopped vehicles 1.2313x shipped",
+            "morning-20261116: does not beat matched fixed timer",
+            "evening-20261114: stopped vehicles 1.9837x shipped",
+            "evening-20261114: completed trips fell by more than 0.5%",
+            "evening-20261114: does not beat matched fixed timer",
+            "evening-20261115: stopped vehicles 2.2714x shipped",
+            "evening-20261115: completed trips fell by more than 0.5%",
+            "evening-20261115: does not beat matched fixed timer",
+            "evening-20261116: stopped vehicles 1.7499x shipped",
+            "evening-20261116: completed trips fell by more than 0.5%",
+            "evening-20261116: does not beat matched fixed timer",
+            "offpeak-20261114: stopped vehicles 2.2331x shipped",
+            "offpeak-20261114: does not beat matched fixed timer",
+            "offpeak-20261115: stopped vehicles 2.2985x shipped",
+            "offpeak-20261115: does not beat matched fixed timer",
+            "offpeak-20261116: stopped vehicles 2.2083x shipped",
+            "offpeak-20261116: does not beat matched fixed timer"
+          ]
+        },
+        "graded": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0205791231016694,
+          "worst_ratio_to_shipped": 1.199200025621955,
+          "mean_ratio_to_fixed": 0.5794736238319396,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261114: stopped vehicles 1.0471x shipped",
+            "morning-20261114: completed trips fell by more than 0.5%",
+            "evening-20261114: stopped vehicles 1.0346x shipped",
+            "evening-20261115: stopped vehicles 1.1992x shipped",
+            "evening-20261116: stopped vehicles 1.0040x shipped"
+          ]
+        },
+        "calibrated": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.5711595558718536,
+          "passes_comparisons": true,
+          "eligible": true,
+          "violations": []
+        }
+      },
+      "cases": {
+        "shipped": {
+          "morning-20261115": {
+            "mean_stopped_vehicles": 85.09901402582975,
+            "arrived": 3892,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 508.0912606341841,
+            "unfinished_mean_age_seconds": 549.109865470852,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261114": {
+            "mean_stopped_vehicles": 88.00069434800722,
+            "arrived": 3934,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 527.4922213720989,
+            "unfinished_mean_age_seconds": 496.08415841584156,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261114": {
+            "mean_stopped_vehicles": 43.45188168309957,
+            "arrived": 4086,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 392.8367296832801,
+            "unfinished_mean_age_seconds": 241.71428571428572,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261116": {
+            "mean_stopped_vehicles": 89.00083321760867,
+            "arrived": 3907,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 512.260914227016,
+            "unfinished_mean_age_seconds": 537.5220417633411,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261115": {
+            "mean_stopped_vehicles": 39.023607832245524,
+            "arrived": 4121,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 384.6837877312561,
+            "unfinished_mean_age_seconds": 206.0552995391705,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261116": {
+            "mean_stopped_vehicles": 48.22830162477434,
+            "arrived": 4088,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 400.88588957055214,
+            "unfinished_mean_age_seconds": 243.86852589641435,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261114": {
+            "mean_stopped_vehicles": 5.502846826829607,
+            "arrived": 2018,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.44538653366584,
+            "unfinished_mean_age_seconds": 166.1290322580645,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261115": {
+            "mean_stopped_vehicles": 5.46368559922233,
+            "arrived": 2017,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.93313373253494,
+            "unfinished_mean_age_seconds": 170.98936170212767,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261116": {
+            "mean_stopped_vehicles": 5.794334120261075,
+            "arrived": 2016,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 316.4717923115327,
+            "unfinished_mean_age_seconds": 173.3578947368421,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "fixed": {
+          "morning-20261114": {
+            "mean_stopped_vehicles": 116.57464241077628,
+            "arrived": 3907,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 530.8685156651259,
+            "unfinished_mean_age_seconds": 714.7563805104409,
+            "model_hashes": {}
+          },
+          "morning-20261115": {
+            "mean_stopped_vehicles": 117.8879322316345,
+            "arrived": 3880,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 534.769847426946,
+            "unfinished_mean_age_seconds": 700.6724890829694,
+            "model_hashes": {}
+          },
+          "morning-20261116": {
+            "mean_stopped_vehicles": 109.58991806693514,
+            "arrived": 3904,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 509.8630172192239,
+            "unfinished_mean_age_seconds": 694.2695852534562,
+            "model_hashes": {}
+          },
+          "evening-20261114": {
+            "mean_stopped_vehicles": 86.19455631162339,
+            "arrived": 3982,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 455.46812799193754,
+            "unfinished_mean_age_seconds": 731.9325842696629,
+            "model_hashes": {}
+          },
+          "evening-20261115": {
+            "mean_stopped_vehicles": 88.63824468823775,
+            "arrived": 3958,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 459.9122940430925,
+            "unfinished_mean_age_seconds": 724.5552631578947,
+            "model_hashes": {}
+          },
+          "evening-20261116": {
+            "mean_stopped_vehicles": 84.39341758089154,
+            "arrived": 3990,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 452.4141312547146,
+            "unfinished_mean_age_seconds": 685.1925287356322,
+            "model_hashes": {}
+          },
+          "offpeak-20261114": {
+            "mean_stopped_vehicles": 12.288154422996806,
+            "arrived": 2013,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 340.4635,
+            "unfinished_mean_age_seconds": 175.68367346938774,
+            "model_hashes": {}
+          },
+          "offpeak-20261115": {
+            "mean_stopped_vehicles": 12.558394667407304,
+            "arrived": 2008,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 342.36591478696744,
+            "unfinished_mean_age_seconds": 191.18446601941747,
+            "model_hashes": {}
+          },
+          "offpeak-20261116": {
+            "mean_stopped_vehicles": 12.795583946674073,
+            "arrived": 2010,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 344.9454181271908,
+            "unfinished_mean_age_seconds": 185.8910891089109,
+            "model_hashes": {}
+          }
+        },
+        "graded": {
+          "morning-20261114": {
+            "mean_stopped_vehicles": 92.14636855992224,
+            "arrived": 3904,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 532.8275507581599,
+            "unfinished_mean_age_seconds": 576.574074074074,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261115": {
+            "mean_stopped_vehicles": 82.12609359811137,
+            "arrived": 3912,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 506.91997948191846,
+            "unfinished_mean_age_seconds": 531.1384976525821,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261114": {
+            "mean_stopped_vehicles": 44.956394945146506,
+            "arrived": 4102,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 395.8163365125948,
+            "unfinished_mean_age_seconds": 232.28813559322035,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261116": {
+            "mean_stopped_vehicles": 85.57950284682683,
+            "arrived": 3914,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 510.3491412458344,
+            "unfinished_mean_age_seconds": 528.1674528301887,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261115": {
+            "mean_stopped_vehicles": 46.79711151228996,
+            "arrived": 4116,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 402.660736046795,
+            "unfinished_mean_age_seconds": 211.67117117117118,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261116": {
+            "mean_stopped_vehicles": 48.41980280516595,
+            "arrived": 4109,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 404.0361328125,
+            "unfinished_mean_age_seconds": 215.2086956521739,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261114": {
+            "mean_stopped_vehicles": 5.476461602555201,
+            "arrived": 2019,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.25822532402793,
+            "unfinished_mean_age_seconds": 164.84782608695653,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261115": {
+            "mean_stopped_vehicles": 5.410915150673517,
+            "arrived": 2016,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.8107838242636,
+            "unfinished_mean_age_seconds": 171.32631578947368,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261116": {
+            "mean_stopped_vehicles": 5.725593667546174,
+            "arrived": 2020,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 316.12057797708025,
+            "unfinished_mean_age_seconds": 170.97802197802199,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "calibrated": {
+          "morning-20261114": {
+            "mean_stopped_vehicles": 88.00069434800722,
+            "arrived": 3934,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 527.4922213720989,
+            "unfinished_mean_age_seconds": 496.08415841584156,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-20261115": {
+            "mean_stopped_vehicles": 85.09901402582975,
+            "arrived": 3892,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 508.0912606341841,
+            "unfinished_mean_age_seconds": 549.109865470852,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-20261116": {
+            "mean_stopped_vehicles": 89.00083321760867,
+            "arrived": 3907,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 512.260914227016,
+            "unfinished_mean_age_seconds": 537.5220417633411,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261114": {
+            "mean_stopped_vehicles": 43.45188168309957,
+            "arrived": 4086,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 392.8367296832801,
+            "unfinished_mean_age_seconds": 241.71428571428572,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261115": {
+            "mean_stopped_vehicles": 39.023607832245524,
+            "arrived": 4121,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 384.6837877312561,
+            "unfinished_mean_age_seconds": 206.0552995391705,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261116": {
+            "mean_stopped_vehicles": 48.22830162477434,
+            "arrived": 4088,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 400.88588957055214,
+            "unfinished_mean_age_seconds": 243.86852589641435,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261114": {
+            "mean_stopped_vehicles": 5.502846826829607,
+            "arrived": 2018,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.44538653366584,
+            "unfinished_mean_age_seconds": 166.1290322580645,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261115": {
+            "mean_stopped_vehicles": 5.46368559922233,
+            "arrived": 2017,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.93313373253494,
+            "unfinished_mean_age_seconds": 170.98936170212767,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261116": {
+            "mean_stopped_vehicles": 5.794334120261075,
+            "arrived": 2016,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 316.4717923115327,
+            "unfinished_mean_age_seconds": 173.3578947368421,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          }
+        }
+      }
+    },
+    "holdout": {
+      "suite": "holdout",
+      "duration": 7200,
+      "wall_seconds": 140.79,
+      "scope": "Screening only; deployment also requires the full audit and an independent holdout, all at 7200 seconds.",
+      "criteria": "Zero collisions/teleports; no stopped-vehicle regression in any case; arrivals >=99.5% shipped; beat matched fixed timer when included.",
+      "summary": {
+        "shipped": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.6982785381386418,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261121: 2 colliding vehicles / 0 teleports",
+            "evening-20261121: does not beat matched fixed timer"
+          ]
+        },
+        "fixed": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.6369702846776266,
+          "worst_ratio_to_shipped": 2.377334632912726,
+          "mean_ratio_to_fixed": 1.0,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261121: stopped vehicles 1.0428x shipped",
+            "morning-20261121: does not beat matched fixed timer",
+            "morning-20261122: stopped vehicles 1.1291x shipped",
+            "morning-20261122: does not beat matched fixed timer",
+            "morning-20261123: stopped vehicles 1.0292x shipped",
+            "morning-20261123: does not beat matched fixed timer",
+            "evening-20261121: completed trips fell by more than 0.5%",
+            "evening-20261121: does not beat matched fixed timer",
+            "evening-20261122: stopped vehicles 1.9697x shipped",
+            "evening-20261122: completed trips fell by more than 0.5%",
+            "evening-20261122: does not beat matched fixed timer",
+            "offpeak-20261121: stopped vehicles 2.3773x shipped",
+            "offpeak-20261121: does not beat matched fixed timer",
+            "evening-20261123: stopped vehicles 1.7755x shipped",
+            "evening-20261123: completed trips fell by more than 0.5%",
+            "evening-20261123: does not beat matched fixed timer",
+            "offpeak-20261122: stopped vehicles 2.1751x shipped",
+            "offpeak-20261122: does not beat matched fixed timer",
+            "offpeak-20261123: stopped vehicles 2.3118x shipped",
+            "offpeak-20261123: does not beat matched fixed timer"
+          ]
+        },
+        "graded": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0004355420324362,
+          "worst_ratio_to_shipped": 1.0984514058502446,
+          "mean_ratio_to_fixed": 0.6887927642514943,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261123: 2 colliding vehicles / 0 teleports",
+            "morning-20261123: stopped vehicles 1.0709x shipped",
+            "morning-20261123: completed trips fell by more than 0.5%",
+            "morning-20261123: does not beat matched fixed timer",
+            "evening-20261122: stopped vehicles 1.0985x shipped",
+            "offpeak-20261121: stopped vehicles 1.0176x shipped",
+            "offpeak-20261122: stopped vehicles 1.0179x shipped",
+            "offpeak-20261123: stopped vehicles 1.0342x shipped"
+          ]
+        },
+        "calibrated": {
+          "cases": 9,
+          "mean_ratio_to_shipped": 1.0,
+          "worst_ratio_to_shipped": 1.0,
+          "mean_ratio_to_fixed": 0.6982785381386418,
+          "passes_comparisons": false,
+          "eligible": false,
+          "violations": [
+            "morning-20261121: 2 colliding vehicles / 0 teleports",
+            "evening-20261121: does not beat matched fixed timer"
+          ]
+        }
+      },
+      "cases": {
+        "shipped": {
+          "morning-20261122": {
+            "mean_stopped_vehicles": 101.60533259269546,
+            "arrived": 3857,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 544.9984391259105,
+            "unfinished_mean_age_seconds": 673.3326403326404,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261121": {
+            "mean_stopped_vehicles": 110.09943063463407,
+            "arrived": 3797,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 574.3477801268499,
+            "unfinished_mean_age_seconds": 784.7190388170055,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261123": {
+            "mean_stopped_vehicles": 99.76072767671157,
+            "arrived": 3861,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 547.7819646569646,
+            "unfinished_mean_age_seconds": 640.4486373165619,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261121": {
+            "mean_stopped_vehicles": 98.86571309540342,
+            "arrived": 3981,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 523.6113911290323,
+            "unfinished_mean_age_seconds": 396.9888268156425,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261122": {
+            "mean_stopped_vehicles": 43.0976253298153,
+            "arrived": 4094,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 393.4538103406028,
+            "unfinished_mean_age_seconds": 237.0327868852459,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261123": {
+            "mean_stopped_vehicles": 45.59769476461602,
+            "arrived": 4114,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 402.22360399902465,
+            "unfinished_mean_age_seconds": 215.03571428571428,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261121": {
+            "mean_stopped_vehicles": 5.271628940424941,
+            "arrived": 2022,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 315.9512195121951,
+            "unfinished_mean_age_seconds": 155.20224719101122,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261122": {
+            "mean_stopped_vehicles": 5.684071656714345,
+            "arrived": 2013,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 312.807,
+            "unfinished_mean_age_seconds": 178.79591836734693,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261123": {
+            "mean_stopped_vehicles": 5.456603249548674,
+            "arrived": 2019,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.48703888334995,
+            "unfinished_mean_age_seconds": 174.9891304347826,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "fixed": {
+          "morning-20261121": {
+            "mean_stopped_vehicles": 114.81099847243438,
+            "arrived": 3880,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 529.9829325058184,
+            "unfinished_mean_age_seconds": 695.5349344978166,
+            "model_hashes": {}
+          },
+          "morning-20261122": {
+            "mean_stopped_vehicles": 114.72712123316207,
+            "arrived": 3888,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 529.6095483870968,
+            "unfinished_mean_age_seconds": 709.1111111111111,
+            "model_hashes": {}
+          },
+          "morning-20261123": {
+            "mean_stopped_vehicles": 102.67143452298292,
+            "arrived": 3909,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 498.114476386037,
+            "unfinished_mean_age_seconds": 708.7878787878788,
+            "model_hashes": {}
+          },
+          "evening-20261121": {
+            "mean_stopped_vehicles": 91.17094847937787,
+            "arrived": 3953,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 467.3695431472081,
+            "unfinished_mean_age_seconds": 728.0493506493507,
+            "model_hashes": {}
+          },
+          "evening-20261122": {
+            "mean_stopped_vehicles": 84.88820997083738,
+            "arrived": 3978,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 452.5921815889029,
+            "unfinished_mean_age_seconds": 733.7576601671309,
+            "model_hashes": {}
+          },
+          "offpeak-20261121": {
+            "mean_stopped_vehicles": 12.53242605193723,
+            "arrived": 2016,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 345.8137793310035,
+            "unfinished_mean_age_seconds": 169.25263157894736,
+            "model_hashes": {}
+          },
+          "evening-20261123": {
+            "mean_stopped_vehicles": 80.9566726843494,
+            "arrived": 3973,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 444.35656565656564,
+            "unfinished_mean_age_seconds": 724.7753424657534,
+            "model_hashes": {}
+          },
+          "offpeak-20261122": {
+            "mean_stopped_vehicles": 12.363699486182474,
+            "arrived": 2008,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 339.77243107769425,
+            "unfinished_mean_age_seconds": 190.64077669902912,
+            "model_hashes": {}
+          },
+          "offpeak-20261123": {
+            "mean_stopped_vehicles": 12.614775725593667,
+            "arrived": 2013,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 343.4035,
+            "unfinished_mean_age_seconds": 180.8265306122449,
+            "model_hashes": {}
+          }
+        },
+        "graded": {
+          "morning-20261121": {
+            "mean_stopped_vehicles": 107.33856408832106,
+            "arrived": 3838,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 566.4760784313726,
+            "unfinished_mean_age_seconds": 688.9,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261122": {
+            "mean_stopped_vehicles": 93.79238994584085,
+            "arrived": 3887,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 521.4891584925142,
+            "unfinished_mean_age_seconds": 600.6385809312638,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261121": {
+            "mean_stopped_vehicles": 86.0552701013748,
+            "arrived": 4044,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 498.92929794095755,
+            "unfinished_mean_age_seconds": 288.36610169491524,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "morning-20261123": {
+            "mean_stopped_vehicles": 106.83335647826691,
+            "arrived": 3828,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 565.8141546526867,
+            "unfinished_mean_age_seconds": 748.9843137254902,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261122": {
+            "mean_stopped_vehicles": 47.34064713234273,
+            "arrived": 4087,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 402.3284241531664,
+            "unfinished_mean_age_seconds": 245.89243027888446,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "evening-20261123": {
+            "mean_stopped_vehicles": 45.437300374947924,
+            "arrived": 4099,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 401.1167400881057,
+            "unfinished_mean_age_seconds": 231.27083333333334,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261121": {
+            "mean_stopped_vehicles": 5.364393834189696,
+            "arrived": 2026,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 316.49528067560857,
+            "unfinished_mean_age_seconds": 150.8470588235294,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261122": {
+            "mean_stopped_vehicles": 5.7855853353700875,
+            "arrived": 2014,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 313.400299850075,
+            "unfinished_mean_age_seconds": 176.1443298969072,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          },
+          "offpeak-20261123": {
+            "mean_stopped_vehicles": 5.643105124288294,
+            "arrived": 2017,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 315.5194610778443,
+            "unfinished_mean_age_seconds": 172.78494623655914,
+            "model_hashes": {
+              "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+              "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+              "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+            }
+          }
+        },
+        "calibrated": {
+          "morning-20261121": {
+            "mean_stopped_vehicles": 110.09943063463407,
+            "arrived": 3797,
+            "collisions": 2,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 574.3477801268499,
+            "unfinished_mean_age_seconds": 784.7190388170055,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-20261122": {
+            "mean_stopped_vehicles": 101.60533259269546,
+            "arrived": 3857,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 544.9984391259105,
+            "unfinished_mean_age_seconds": 673.3326403326404,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "morning-20261123": {
+            "mean_stopped_vehicles": 99.76072767671157,
+            "arrived": 3861,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 547.7819646569646,
+            "unfinished_mean_age_seconds": 640.4486373165619,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261121": {
+            "mean_stopped_vehicles": 98.86571309540342,
+            "arrived": 3981,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 523.6113911290323,
+            "unfinished_mean_age_seconds": 396.9888268156425,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261122": {
+            "mean_stopped_vehicles": 43.0976253298153,
+            "arrived": 4094,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 393.4538103406028,
+            "unfinished_mean_age_seconds": 237.0327868852459,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "evening-20261123": {
+            "mean_stopped_vehicles": 45.59769476461602,
+            "arrived": 4114,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 402.22360399902465,
+            "unfinished_mean_age_seconds": 215.03571428571428,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261121": {
+            "mean_stopped_vehicles": 5.271628940424941,
+            "arrived": 2022,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 315.9512195121951,
+            "unfinished_mean_age_seconds": 155.20224719101122,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261122": {
+            "mean_stopped_vehicles": 5.684071656714345,
+            "arrived": 2013,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 312.807,
+            "unfinished_mean_age_seconds": 178.79591836734693,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          },
+          "offpeak-20261123": {
+            "mean_stopped_vehicles": 5.456603249548674,
+            "arrived": 2019,
+            "collisions": 0,
+            "teleports": 0,
+            "completed_mean_trip_seconds": 314.48703888334995,
+            "unfinished_mean_age_seconds": 174.9891304347826,
+            "model_hashes": {
+              "J0": "71f028455fb8e12047c591371c1aadc6bf8c82cc0bbdf0a438643f463b16020b",
+              "J1": "5980aa1719e1e3e7d6654c49cdcc080f94cd1ab860f161c2b3848122fd1e1390",
+              "J2": "38f552a68b8618a2a02ac5a03baa1e7b04aad0d759b4912777c04b3d7e7b9a2c"
+            }
+          }
+        }
+      }
+    }
+  },
+  "fine_tune_screen": {
+    "suite": "development",
+    "duration": 7200,
+    "wall_seconds": 90.64,
+    "scope": "Screening only; deployment also requires the full audit and an independent holdout, all at 7200 seconds.",
+    "criteria": "Zero collisions/teleports; no stopped-vehicle regression in any case; arrivals >=99.5% shipped; beat matched fixed timer when included.",
+    "summary": {
+      "shipped": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0,
+        "worst_ratio_to_shipped": 1.0,
+        "mean_ratio_to_fixed": 0.6065129390593806,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": []
+      },
+      "fixed": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.7420666608098865,
+        "worst_ratio_to_shipped": 2.1973088593742225,
+        "mean_ratio_to_fixed": 1.0,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "evening-179: stopped vehicles 1.7859x shipped",
+          "evening-179: completed trips fell by more than 0.5%",
+          "evening-179: does not beat matched fixed timer",
+          "morning-42: stopped vehicles 1.2430x shipped",
+          "morning-42: does not beat matched fixed timer",
+          "offpeak-316: stopped vehicles 2.1973x shipped",
+          "offpeak-316: completed trips fell by more than 0.5%",
+          "offpeak-316: does not beat matched fixed timer"
+        ]
+      },
+      "c101-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9766142760649871,
+        "worst_ratio_to_shipped": 1.0241506242849325,
+        "mean_ratio_to_fixed": 0.5911725489954849,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "offpeak-316: 2 colliding vehicles / 0 teleports",
+          "offpeak-316: stopped vehicles 1.0242x shipped"
+        ]
+      },
+      "c101-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9419973908890396,
+        "worst_ratio_to_shipped": 0.990336601331892,
+        "mean_ratio_to_fixed": 0.5749867018437099,
+        "passes_comparisons": true,
+        "eligible": true,
+        "violations": []
+      },
+      "c101-9": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9715391365633556,
+        "worst_ratio_to_shipped": 1.0163447033065078,
+        "mean_ratio_to_fixed": 0.5860153046999744,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "evening-179: stopped vehicles 1.0163x shipped",
+          "evening-179: completed trips fell by more than 0.5%"
+        ]
+      },
+      "c101-12": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0088722207082368,
+        "worst_ratio_to_shipped": 1.0337206050206738,
+        "mean_ratio_to_fixed": 0.6132115220703104,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "offpeak-316: stopped vehicles 1.0291x shipped",
+          "morning-42: stopped vehicles 1.0337x shipped",
+          "morning-42: completed trips fell by more than 0.5%"
+        ]
+      },
+      "c101-15": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.997498969149022,
+        "worst_ratio_to_shipped": 1.0414942589555,
+        "mean_ratio_to_fixed": 0.6087501464393563,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0415x shipped"
+        ]
+      },
+      "c101-18": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9873571542846685,
+        "worst_ratio_to_shipped": 1.0181264314816354,
+        "mean_ratio_to_fixed": 0.6010413301071752,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0181x shipped"
+        ]
+      },
+      "c202-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9867409275954322,
+        "worst_ratio_to_shipped": 0.9932597124807242,
+        "mean_ratio_to_fixed": 0.597623537914698,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "evening-179: completed trips fell by more than 0.5%",
+          "offpeak-316: 2 colliding vehicles / 0 teleports"
+        ]
+      },
+      "c202-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9967393752578716,
+        "worst_ratio_to_shipped": 1.0474144512559243,
+        "mean_ratio_to_fixed": 0.6075311969344285,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0474x shipped",
+          "offpeak-316: stopped vehicles 1.0292x shipped"
+        ]
+      },
+      "c202-9": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9754658736470424,
+        "worst_ratio_to_shipped": 1.0302253331619964,
+        "mean_ratio_to_fixed": 0.595259345266781,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0302x shipped",
+          "morning-42: completed trips fell by more than 0.5%"
+        ]
+      },
+      "c202-12": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0178213128930078,
+        "worst_ratio_to_shipped": 1.0902025698369933,
+        "mean_ratio_to_fixed": 0.614441906288251,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "evening-179: stopped vehicles 1.0902x shipped"
+        ]
+      },
+      "c202-15": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9634171936980499,
+        "worst_ratio_to_shipped": 0.9973138337561557,
+        "mean_ratio_to_fixed": 0.5850901622872905,
+        "passes_comparisons": true,
+        "eligible": true,
+        "violations": []
+      },
+      "c202-18": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9730724990330805,
+        "worst_ratio_to_shipped": 1.0298519196027,
+        "mean_ratio_to_fixed": 0.5941877660942839,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0299x shipped"
+        ]
+      },
+      "c303-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9563930506382738,
+        "worst_ratio_to_shipped": 0.9766701487340198,
+        "mean_ratio_to_fixed": 0.5792137791167864,
+        "passes_comparisons": true,
+        "eligible": true,
+        "violations": []
+      },
+      "c303-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9797319504289513,
+        "worst_ratio_to_shipped": 1.018206237874944,
+        "mean_ratio_to_fixed": 0.5904511551143438,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "offpeak-316: stopped vehicles 1.0182x shipped"
+        ]
+      },
+      "c303-9": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9697720935110445,
+        "worst_ratio_to_shipped": 1.0083072178281847,
+        "mean_ratio_to_fixed": 0.5848299273680179,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "offpeak-316: stopped vehicles 1.0083x shipped"
+        ]
+      },
+      "c303-12": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.948150671002414,
+        "worst_ratio_to_shipped": 0.9642341939014076,
+        "mean_ratio_to_fixed": 0.5724597943084165,
+        "passes_comparisons": true,
+        "eligible": true,
+        "violations": []
+      },
+      "c303-15": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9726353793560077,
+        "worst_ratio_to_shipped": 1.0106929315987996,
+        "mean_ratio_to_fixed": 0.5920953903300245,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0107x shipped"
+        ]
+      },
+      "c303-18": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 0.9536479680218012,
+        "worst_ratio_to_shipped": 0.9752027060637715,
+        "mean_ratio_to_fixed": 0.5785606810254676,
+        "passes_comparisons": false,
+        "eligible": false,
+        "violations": [
+          "evening-179: completed trips fell by more than 0.5%"
+        ]
+      }
+    },
+    "cases": {
+      "shipped": {
+        "evening-179": {
+          "mean_stopped_vehicles": 47.315928343285655,
+          "arrived": 4106,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 404.52577571463473,
+          "unfinished_mean_age_seconds": 223.2608695652174,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 91.85738091931677,
+          "arrived": 3884,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 515.9940583828468,
+          "unfinished_mean_age_seconds": 616.4735682819384,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.583391195667269,
+          "arrived": 2021,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.148406374502,
+          "unfinished_mean_age_seconds": 161.12222222222223,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        }
+      },
+      "fixed": {
+        "evening-179": {
+          "mean_stopped_vehicles": 84.49923621719206,
+          "arrived": 3977,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 454.5542381432896,
+          "unfinished_mean_age_seconds": 705.8531855955679,
+          "model_hashes": {}
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 114.18233578669629,
+          "arrived": 3888,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 527.5388387096774,
+          "unfinished_mean_age_seconds": 696.7305122494432,
+          "model_hashes": {}
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 12.268434939591723,
+          "arrived": 2008,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 340.84310776942357,
+          "unfinished_mean_age_seconds": 184.54368932038835,
+          "model_hashes": {}
+        }
+      },
+      "c101-3": {
+        "morning-42": {
+          "mean_stopped_vehicles": 90.27815581169283,
+          "arrived": 3895,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 512.5762493560021,
+          "unfinished_mean_age_seconds": 603.8826185101581,
+          "model_hashes": {
+            "J0": "e0393b5e866f3901cbc40375a0a694ad18bec6c8a4027fc70907184ed2309ff3",
+            "J1": "3d3703c167428fca061b6ee295e870090e315016a43e9b67b5741236449cadf0",
+            "J2": "76fd26a269d93cd47ff74f19c5f24db90c1e839df483885f3cab4ffcaef78e47"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.718233578669629,
+          "arrived": 2019,
+          "collisions": 2,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.5887337986042,
+          "unfinished_mean_age_seconds": 164.6195652173913,
+          "model_hashes": {
+            "J0": "e0393b5e866f3901cbc40375a0a694ad18bec6c8a4027fc70907184ed2309ff3",
+            "J1": "3d3703c167428fca061b6ee295e870090e315016a43e9b67b5741236449cadf0",
+            "J2": "76fd26a269d93cd47ff74f19c5f24db90c1e839df483885f3cab4ffcaef78e47"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 43.66712956533815,
+          "arrived": 4087,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 395.9317623956799,
+          "unfinished_mean_age_seconds": 236.50597609561754,
+          "model_hashes": {
+            "J0": "e0393b5e866f3901cbc40375a0a694ad18bec6c8a4027fc70907184ed2309ff3",
+            "J1": "3d3703c167428fca061b6ee295e870090e315016a43e9b67b5741236449cadf0",
+            "J2": "76fd26a269d93cd47ff74f19c5f24db90c1e839df483885f3cab4ffcaef78e47"
+          }
+        }
+      },
+      "c101-6": {
+        "evening-179": {
+          "mean_stopped_vehicles": 41.89584779891682,
+          "arrived": 4113,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 392.75878048780487,
+          "unfinished_mean_age_seconds": 216.82222222222222,
+          "model_hashes": {
+            "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+            "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+            "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 90.96972642688516,
+          "arrived": 3892,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 518.5088940448569,
+          "unfinished_mean_age_seconds": 599.6591928251121,
+          "model_hashes": {
+            "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+            "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+            "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.305374253575892,
+          "arrived": 2019,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.02243270189433,
+          "unfinished_mean_age_seconds": 164.6086956521739,
+          "model_hashes": {
+            "J0": "572e3d10675f3554e4f3eacf0aac0f7bf091bcea1dd3ba402b873ffa1418b444",
+            "J1": "989c32b4cea85f7190582bc1adabe099c826195697f69f2f94a61aa56c05f145",
+            "J2": "75a4080c02816970834cac5043e702cba8970e1090e24168d04223cc12fd97a4"
+          }
+        }
+      },
+      "c101-9": {
+        "morning-42": {
+          "mean_stopped_vehicles": 85.45563116233856,
+          "arrived": 3923,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 504.15294117647056,
+          "unfinished_mean_age_seconds": 529.566265060241,
+          "model_hashes": {
+            "J0": "c9f8f2a6c55bede5b634194edba93784311d2731962fc65f5f521d1efb6ab2d3",
+            "J1": "74702c9b1432ae3e4674af5122382136f08eea1ca6d3e4695f870fc79d5f6dea",
+            "J2": "cee4a92eace03f1060ac3e8ec7a1da0f1219dc8237569b902f7ce32d3b5c33c5"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 48.08929315372865,
+          "arrived": 4084,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 406.4465733235077,
+          "unfinished_mean_age_seconds": 250.3740157480315,
+          "model_hashes": {
+            "J0": "c9f8f2a6c55bede5b634194edba93784311d2731962fc65f5f521d1efb6ab2d3",
+            "J1": "74702c9b1432ae3e4674af5122382136f08eea1ca6d3e4695f870fc79d5f6dea",
+            "J2": "cee4a92eace03f1060ac3e8ec7a1da0f1219dc8237569b902f7ce32d3b5c33c5"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.404527149007082,
+          "arrived": 2015,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.2997002997003,
+          "unfinished_mean_age_seconds": 171.38541666666666,
+          "model_hashes": {
+            "J0": "c9f8f2a6c55bede5b634194edba93784311d2731962fc65f5f521d1efb6ab2d3",
+            "J1": "74702c9b1432ae3e4674af5122382136f08eea1ca6d3e4695f870fc79d5f6dea",
+            "J2": "cee4a92eace03f1060ac3e8ec7a1da0f1219dc8237569b902f7ce32d3b5c33c5"
+          }
+        }
+      },
+      "c101-12": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.746007498958478,
+          "arrived": 2016,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.8961557663505,
+          "unfinished_mean_age_seconds": 168.07368421052632,
+          "model_hashes": {
+            "J0": "2d834f110d1dd7162eb297983d9af327eedb18669bbd4209d3c04964fca09c5f",
+            "J1": "1108cbb30b319556604d63a98760aacab5493a790ec6254d8314a8b9d068356a",
+            "J2": "ef6804d59fc6ae658cf7a01eaed8bf7b05f41ba4c9bb56711731105b74a66ac4"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.60172198305791,
+          "arrived": 4093,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 400.2357843137255,
+          "unfinished_mean_age_seconds": 240.320987654321,
+          "model_hashes": {
+            "J0": "2d834f110d1dd7162eb297983d9af327eedb18669bbd4209d3c04964fca09c5f",
+            "J1": "1108cbb30b319556604d63a98760aacab5493a790ec6254d8314a8b9d068356a",
+            "J2": "ef6804d59fc6ae658cf7a01eaed8bf7b05f41ba4c9bb56711731105b74a66ac4"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 94.95486737953063,
+          "arrived": 3862,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 517.8791893998441,
+          "unfinished_mean_age_seconds": 660.8823529411765,
+          "model_hashes": {
+            "J0": "2d834f110d1dd7162eb297983d9af327eedb18669bbd4209d3c04964fca09c5f",
+            "J1": "1108cbb30b319556604d63a98760aacab5493a790ec6254d8314a8b9d068356a",
+            "J2": "ef6804d59fc6ae658cf7a01eaed8bf7b05f41ba4c9bb56711731105b74a66ac4"
+          }
+        }
+      },
+      "c101-15": {
+        "morning-42": {
+          "mean_stopped_vehicles": 95.66893487015692,
+          "arrived": 3878,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 520.3968952134541,
+          "unfinished_mean_age_seconds": 632.25,
+          "model_hashes": {
+            "J0": "fdac46bf6ae8429f109533e32d771406d899b69bb262aee0a8490a4c79f2d825",
+            "J1": "96424418902ae0d8e26de787067ca3f4b8ec9720a11e0255e4c326527a747658",
+            "J2": "24e13969a4442fe826b511982075594e633d6fdc168629bc1f8ce00e1111f74d"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.542563532842661,
+          "arrived": 2020,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.96013951170903,
+          "unfinished_mean_age_seconds": 162.92307692307693,
+          "model_hashes": {
+            "J0": "fdac46bf6ae8429f109533e32d771406d899b69bb262aee0a8490a4c79f2d825",
+            "J1": "96424418902ae0d8e26de787067ca3f4b8ec9720a11e0255e4c326527a747658",
+            "J2": "24e13969a4442fe826b511982075594e633d6fdc168629bc1f8ce00e1111f74d"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.34356339397306,
+          "arrived": 4086,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 399.2383992143383,
+          "unfinished_mean_age_seconds": 243.70119521912352,
+          "model_hashes": {
+            "J0": "fdac46bf6ae8429f109533e32d771406d899b69bb262aee0a8490a4c79f2d825",
+            "J1": "96424418902ae0d8e26de787067ca3f4b8ec9720a11e0255e4c326527a747658",
+            "J2": "24e13969a4442fe826b511982075594e633d6fdc168629bc1f8ce00e1111f74d"
+          }
+        }
+      },
+      "c101-18": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.562560755450632,
+          "arrived": 2018,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.75411471321695,
+          "unfinished_mean_age_seconds": 166.91397849462365,
+          "model_hashes": {
+            "J0": "62314422ad123212f5f16058d34ab93fb5d6fef799ec1760a392d4cafe9ef9a2",
+            "J1": "c91395d08574b6768fd5c35a14a7bab0e35855811bf1a033ec1811a155dfe470",
+            "J2": "cee765b789fc18da85ddedeaa91d3c1a33ae756eddd0fb60ac168715e1c0427a"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 44.84016108873767,
+          "arrived": 4091,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 399.4203040706229,
+          "unfinished_mean_age_seconds": 244.51012145748987,
+          "model_hashes": {
+            "J0": "62314422ad123212f5f16058d34ab93fb5d6fef799ec1760a392d4cafe9ef9a2",
+            "J1": "c91395d08574b6768fd5c35a14a7bab0e35855811bf1a033ec1811a155dfe470",
+            "J2": "cee765b789fc18da85ddedeaa91d3c1a33ae756eddd0fb60ac168715e1c0427a"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 93.52242744063325,
+          "arrived": 3884,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 520.7551020408164,
+          "unfinished_mean_age_seconds": 619.9449339207049,
+          "model_hashes": {
+            "J0": "62314422ad123212f5f16058d34ab93fb5d6fef799ec1760a392d4cafe9ef9a2",
+            "J1": "c91395d08574b6768fd5c35a14a7bab0e35855811bf1a033ec1811a155dfe470",
+            "J2": "cee765b789fc18da85ddedeaa91d3c1a33ae756eddd0fb60ac168715e1c0427a"
+          }
+        }
+      },
+      "c202-3": {
+        "morning-42": {
+          "mean_stopped_vehicles": 89.9409804193862,
+          "arrived": 3891,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 513.3937596699329,
+          "unfinished_mean_age_seconds": 598.4179775280899,
+          "model_hashes": {
+            "J0": "6e522a978cde93638d96b436dce978c81f88c96ecef659d2bf77d46a3acc8cd4",
+            "J1": "3a2a1fe60c5d07fdf8908d723dc1a05135450371595d383e963ac64eaef586fb",
+            "J2": "e3a2874744c95b126cc8956c050698a7cf66f2ee5b58e06fb9d37ffce85e27cc"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 46.73989723649493,
+          "arrived": 4079,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 402.2892277422528,
+          "unfinished_mean_age_seconds": 251.28185328185327,
+          "model_hashes": {
+            "J0": "6e522a978cde93638d96b436dce978c81f88c96ecef659d2bf77d46a3acc8cd4",
+            "J1": "3a2a1fe60c5d07fdf8908d723dc1a05135450371595d383e963ac64eaef586fb",
+            "J2": "e3a2874744c95b126cc8956c050698a7cf66f2ee5b58e06fb9d37ffce85e27cc"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.545757533675879,
+          "arrived": 2020,
+          "collisions": 2,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.94319880418533,
+          "unfinished_mean_age_seconds": 161.82417582417582,
+          "model_hashes": {
+            "J0": "6e522a978cde93638d96b436dce978c81f88c96ecef659d2bf77d46a3acc8cd4",
+            "J1": "3a2a1fe60c5d07fdf8908d723dc1a05135450371595d383e963ac64eaef586fb",
+            "J2": "e3a2874744c95b126cc8956c050698a7cf66f2ee5b58e06fb9d37ffce85e27cc"
+          }
+        }
+      },
+      "c202-6": {
+        "morning-42": {
+          "mean_stopped_vehicles": 96.21274822941258,
+          "arrived": 3874,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 518.8761978761979,
+          "unfinished_mean_age_seconds": 632.5,
+          "model_hashes": {
+            "J0": "8cdef1853893fffaeba6b599df46cf263e88e4bae877878392826f90568d4401",
+            "J1": "2bb489d205999f43e4d21768dec39cb87a8188d89303cc74f94f5d1de492ea85",
+            "J2": "217a9ff41e89f9160adca62a1e8a2e8a9caf27d6b95d34c1270d76fd57263225"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 43.228023885571446,
+          "arrived": 4116,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 396.57421398976356,
+          "unfinished_mean_age_seconds": 213.22972972972974,
+          "model_hashes": {
+            "J0": "8cdef1853893fffaeba6b599df46cf263e88e4bae877878392826f90568d4401",
+            "J1": "2bb489d205999f43e4d21768dec39cb87a8188d89303cc74f94f5d1de492ea85",
+            "J2": "217a9ff41e89f9160adca62a1e8a2e8a9caf27d6b95d34c1270d76fd57263225"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.74642410776281,
+          "arrived": 2018,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.68877805486284,
+          "unfinished_mean_age_seconds": 168.16129032258064,
+          "model_hashes": {
+            "J0": "8cdef1853893fffaeba6b599df46cf263e88e4bae877878392826f90568d4401",
+            "J1": "2bb489d205999f43e4d21768dec39cb87a8188d89303cc74f94f5d1de492ea85",
+            "J2": "217a9ff41e89f9160adca62a1e8a2e8a9caf27d6b95d34c1270d76fd57263225"
+          }
+        }
+      },
+      "c202-9": {
+        "morning-42": {
+          "mean_stopped_vehicles": 94.63380086099153,
+          "arrived": 3856,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 516.367681498829,
+          "unfinished_mean_age_seconds": 670.0809128630706,
+          "model_hashes": {
+            "J0": "906bc287274fb418b697490a09152f31c76533462a5028573230217d280ec2a3",
+            "J1": "3413bd2f1464db0b4e6f447194849eeb6e73ea06789a70f5db7de19522740040",
+            "J2": "4be01c0766d07f1d9a85f2f1e38f203c2d3388a4ab6eb73f2081a3daded4766d"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 42.431467851687266,
+          "arrived": 4122,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 394.6870284740813,
+          "unfinished_mean_age_seconds": 206.14814814814815,
+          "model_hashes": {
+            "J0": "906bc287274fb418b697490a09152f31c76533462a5028573230217d280ec2a3",
+            "J1": "3413bd2f1464db0b4e6f447194849eeb6e73ea06789a70f5db7de19522740040",
+            "J2": "4be01c0766d07f1d9a85f2f1e38f203c2d3388a4ab6eb73f2081a3daded4766d"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.580058325232606,
+          "arrived": 2020,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.1096163428002,
+          "unfinished_mean_age_seconds": 163.30769230769232,
+          "model_hashes": {
+            "J0": "906bc287274fb418b697490a09152f31c76533462a5028573230217d280ec2a3",
+            "J1": "3413bd2f1464db0b4e6f447194849eeb6e73ea06789a70f5db7de19522740040",
+            "J2": "4be01c0766d07f1d9a85f2f1e38f203c2d3388a4ab6eb73f2081a3daded4766d"
+          }
+        }
+      },
+      "c202-12": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.538119705596445,
+          "arrived": 2018,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.2069825436409,
+          "unfinished_mean_age_seconds": 166.69892473118279,
+          "model_hashes": {
+            "J0": "fa4595188630decb67c58b339feaa2c71ab6db163ebf2bb207a5797e0382e940",
+            "J1": "5c36e7db6e10e29728ebc6162bdff93372056c5b49ebd029b38e353c39ef4dd1",
+            "J2": "0fb5cba5111e861ff173e0e3d8583fe4fddbdbfa7d64b706a9f87870e56d1329"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 89.22746840716567,
+          "arrived": 3878,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 511.0382923673997,
+          "unfinished_mean_age_seconds": 608.9695652173913,
+          "model_hashes": {
+            "J0": "fa4595188630decb67c58b339feaa2c71ab6db163ebf2bb207a5797e0382e940",
+            "J1": "5c36e7db6e10e29728ebc6162bdff93372056c5b49ebd029b38e353c39ef4dd1",
+            "J2": "0fb5cba5111e861ff173e0e3d8583fe4fddbdbfa7d64b706a9f87870e56d1329"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 51.58394667407305,
+          "arrived": 4088,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 413.83828220858896,
+          "unfinished_mean_age_seconds": 242.412,
+          "model_hashes": {
+            "J0": "fa4595188630decb67c58b339feaa2c71ab6db163ebf2bb207a5797e0382e940",
+            "J1": "5c36e7db6e10e29728ebc6162bdff93372056c5b49ebd029b38e353c39ef4dd1",
+            "J2": "0fb5cba5111e861ff173e0e3d8583fe4fddbdbfa7d64b706a9f87870e56d1329"
+          }
+        }
+      },
+      "c202-15": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.56839327871129,
+          "arrived": 2021,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.0343625498008,
+          "unfinished_mean_age_seconds": 162.35555555555555,
+          "model_hashes": {
+            "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+            "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+            "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 90.69448687682267,
+          "arrived": 3888,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 513.2129032258065,
+          "unfinished_mean_age_seconds": 602.4977777777777,
+          "model_hashes": {
+            "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+            "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+            "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 42.84918761283155,
+          "arrived": 4094,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 394.59789267336436,
+          "unfinished_mean_age_seconds": 234.63524590163934,
+          "model_hashes": {
+            "J0": "bfa36eabc58590e1bd3161e5065f9c0ae5ccda5a145aa65ea3ccddff4d0e4027",
+            "J1": "bac75ddde48603cdafe6f059a5762cfd888cb36e41342590d471b6c36bbde6a8",
+            "J2": "40ec1b88772c32018361dda3bf517d95c1735dc6e579924164ecb856b2cb5559"
+          }
+        }
+      },
+      "c202-18": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.532287182335787,
+          "arrived": 2020,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.9078226208271,
+          "unfinished_mean_age_seconds": 163.30769230769232,
+          "model_hashes": {
+            "J0": "9070df8ae5d31a9ea8f1c7c097cd71802b4fdcbc53769b2dde36b28300fb2161",
+            "J1": "24b4c2969f1b52877cb2301034fe9c233e19decbd167429b1a939447c1b82bd4",
+            "J2": "fa747b9dcdeb7095a6f5de08752b429142f21947e5855908d71876287b364813"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 94.5995000694348,
+          "arrived": 3880,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 524.33359193173,
+          "unfinished_mean_age_seconds": 615.910480349345,
+          "model_hashes": {
+            "J0": "9070df8ae5d31a9ea8f1c7c097cd71802b4fdcbc53769b2dde36b28300fb2161",
+            "J1": "24b4c2969f1b52877cb2301034fe9c233e19decbd167429b1a939447c1b82bd4",
+            "J2": "fa747b9dcdeb7095a6f5de08752b429142f21947e5855908d71876287b364813"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 42.51423413414803,
+          "arrived": 4107,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 394.4528578407425,
+          "unfinished_mean_age_seconds": 223.52380952380952,
+          "model_hashes": {
+            "J0": "9070df8ae5d31a9ea8f1c7c097cd71802b4fdcbc53769b2dde36b28300fb2161",
+            "J1": "24b4c2969f1b52877cb2301034fe9c233e19decbd167429b1a939447c1b82bd4",
+            "J2": "fa747b9dcdeb7095a6f5de08752b429142f21947e5855908d71876287b364813"
+          }
+        }
+      },
+      "c303-3": {
+        "morning-42": {
+          "mean_stopped_vehicles": 87.69143174559089,
+          "arrived": 3906,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 509.43436938094015,
+          "unfinished_mean_age_seconds": 575.9116279069767,
+          "model_hashes": {
+            "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+            "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+            "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 44.37578114150812,
+          "arrived": 4105,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 397.896871945259,
+          "unfinished_mean_age_seconds": 224.63090128755366,
+          "model_hashes": {
+            "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+            "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+            "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.453131509512568,
+          "arrived": 2021,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.5771912350598,
+          "unfinished_mean_age_seconds": 161.13333333333333,
+          "model_hashes": {
+            "J0": "5ec8f6b9e85618c067baf07ed0a3867a3494393804baa9b810e776fb9a32f850",
+            "J1": "958463fac2dc7504f28e8149602bb01ad1b01a129ff16058f90bd0510563494e",
+            "J2": "89c1e768c3a83da661ef7986d63d2790fd1308cfdca06741a3f637c0a7c66bf1"
+          }
+        }
+      },
+      "c303-6": {
+        "morning-42": {
+          "mean_stopped_vehicles": 87.26357450354118,
+          "arrived": 3905,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 504.92137718396714,
+          "unfinished_mean_age_seconds": 567.3903002309469,
+          "model_hashes": {
+            "J0": "e1a0a211a6d7a66a2141595459ed404bb0a14b44e1ae602fead59962b2338537",
+            "J1": "88c1a573419f0defc4820fe861b7240790cd9825065db6b29024dd8d2ee09632",
+            "J2": "a6fd0656937a7cefc48b34b2edea1a513455f89b86d9abcdc1e9ed0e4f03f7c7"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.94375781141508,
+          "arrived": 4111,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 402.2852611029771,
+          "unfinished_mean_age_seconds": 219.72246696035242,
+          "model_hashes": {
+            "J0": "e1a0a211a6d7a66a2141595459ed404bb0a14b44e1ae602fead59962b2338537",
+            "J1": "88c1a573419f0defc4820fe861b7240790cd9825065db6b29024dd8d2ee09632",
+            "J2": "a6fd0656937a7cefc48b34b2edea1a513455f89b86d9abcdc1e9ed0e4f03f7c7"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.685043743924455,
+          "arrived": 2018,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.5216957605985,
+          "unfinished_mean_age_seconds": 166.83870967741936,
+          "model_hashes": {
+            "J0": "e1a0a211a6d7a66a2141595459ed404bb0a14b44e1ae602fead59962b2338537",
+            "J1": "88c1a573419f0defc4820fe861b7240790cd9825065db6b29024dd8d2ee09632",
+            "J2": "a6fd0656937a7cefc48b34b2edea1a513455f89b86d9abcdc1e9ed0e4f03f7c7"
+          }
+        }
+      },
+      "c303-9": {
+        "morning-42": {
+          "mean_stopped_vehicles": 86.8239133453687,
+          "arrived": 3911,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 505.29451000513086,
+          "unfinished_mean_age_seconds": 558.7400468384075,
+          "model_hashes": {
+            "J0": "e16ccc563754540ac991187f33636c4e21ddec2ea96d4510888781967e85ab52",
+            "J1": "ec99d50624d9a9e28e3b4a73cd5a84a6be90647ee600e0b3e349339bc71a0eaa",
+            "J2": "bb9ac1849114d50f3ea709891b5ef54efea5f602066aa7d64d22f3563d3c384b"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.22482988473823,
+          "arrived": 4102,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 400.5067253607239,
+          "unfinished_mean_age_seconds": 225.80769230769232,
+          "model_hashes": {
+            "J0": "e16ccc563754540ac991187f33636c4e21ddec2ea96d4510888781967e85ab52",
+            "J1": "ec99d50624d9a9e28e3b4a73cd5a84a6be90647ee600e0b3e349339bc71a0eaa",
+            "J2": "bb9ac1849114d50f3ea709891b5ef54efea5f602066aa7d64d22f3563d3c384b"
+          }
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.629773642549646,
+          "arrived": 2022,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.8143354902937,
+          "unfinished_mean_age_seconds": 159.8314606741573,
+          "model_hashes": {
+            "J0": "e16ccc563754540ac991187f33636c4e21ddec2ea96d4510888781967e85ab52",
+            "J1": "ec99d50624d9a9e28e3b4a73cd5a84a6be90647ee600e0b3e349339bc71a0eaa",
+            "J2": "bb9ac1849114d50f3ea709891b5ef54efea5f602066aa7d64d22f3563d3c384b"
+          }
+        }
+      },
+      "c303-12": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.3836967087904455,
+          "arrived": 2020,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.28051818634776,
+          "unfinished_mean_age_seconds": 163.0,
+          "model_hashes": {
+            "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+            "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+            "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 84.79141785863075,
+          "arrived": 3918,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 500.1349551856594,
+          "unfinished_mean_age_seconds": 546.4547619047619,
+          "model_hashes": {
+            "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+            "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+            "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.28801555339536,
+          "arrived": 4104,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 400.596431190418,
+          "unfinished_mean_age_seconds": 222.85042735042734,
+          "model_hashes": {
+            "J0": "00ab4e321f68653c974287f53ffc8bf03521b5d8e46f9b2cba982fe8fd32c23b",
+            "J1": "b4ad5887680f71c2c272a0618199e65c426e9a1dcd8e4abd21ebdd964cebf681",
+            "J2": "1d640c06024605e9283ce7f5e100f64d77c911be27957017b880107babfb63bb"
+          }
+        }
+      },
+      "c303-15": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.577975281210943,
+          "arrived": 2022,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.4509706321553,
+          "unfinished_mean_age_seconds": 157.7865168539326,
+          "model_hashes": {
+            "J0": "88c718de34625339e52869125c944b18552858db019f04e322b30b7bbd8a472c",
+            "J1": "8c805a9dbf924c94829094d92c2a419897f1173efb6c7b93f50ef5ef9823dd9b",
+            "J2": "990a016f318a78dd897d593eea372591180c3ee673031769946a2c64f5b85861"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 92.8396056103319,
+          "arrived": 3882,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 521.9216851899715,
+          "unfinished_mean_age_seconds": 618.4407894736842,
+          "model_hashes": {
+            "J0": "88c718de34625339e52869125c944b18552858db019f04e322b30b7bbd8a472c",
+            "J1": "8c805a9dbf924c94829094d92c2a419897f1173efb6c7b93f50ef5ef9823dd9b",
+            "J2": "990a016f318a78dd897d593eea372591180c3ee673031769946a2c64f5b85861"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 42.97153173170393,
+          "arrived": 4095,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 394.31749142577166,
+          "unfinished_mean_age_seconds": 233.65020576131687,
+          "model_hashes": {
+            "J0": "88c718de34625339e52869125c944b18552858db019f04e322b30b7bbd8a472c",
+            "J1": "8c805a9dbf924c94829094d92c2a419897f1173efb6c7b93f50ef5ef9823dd9b",
+            "J2": "990a016f318a78dd897d593eea372591180c3ee673031769946a2c64f5b85861"
+          }
+        }
+      },
+      "c303-18": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.444938203027357,
+          "arrived": 2020,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.81066268061784,
+          "unfinished_mean_age_seconds": 162.75824175824175,
+          "model_hashes": {
+            "J0": "2b82e988ca67707bf06d571a1d6eb605bc2e0650363be85c164eec550606d273",
+            "J1": "fc5996673493ca8b3d82bb7d3d25f9f897cd1d4e19159b88e01b344079772f8c",
+            "J2": "d470e4a404bcd6cc6dfe15c6fb74c82ee30d7700ed49d6ff8c6e04d2f8ad7621"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 88.6299125121511,
+          "arrived": 3901,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 511.837962962963,
+          "unfinished_mean_age_seconds": 570.2356979405034,
+          "model_hashes": {
+            "J0": "2b82e988ca67707bf06d571a1d6eb605bc2e0650363be85c164eec550606d273",
+            "J1": "fc5996673493ca8b3d82bb7d3d25f9f897cd1d4e19159b88e01b344079772f8c",
+            "J2": "d470e4a404bcd6cc6dfe15c6fb74c82ee30d7700ed49d6ff8c6e04d2f8ad7621"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 43.57214275795028,
+          "arrived": 4080,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 395.9759036144578,
+          "unfinished_mean_age_seconds": 245.44573643410854,
+          "model_hashes": {
+            "J0": "2b82e988ca67707bf06d571a1d6eb605bc2e0650363be85c164eec550606d273",
+            "J1": "fc5996673493ca8b3d82bb7d3d25f9f897cd1d4e19159b88e01b344079772f8c",
+            "J2": "d470e4a404bcd6cc6dfe15c6fb74c82ee30d7700ed49d6ff8c6e04d2f8ad7621"
+          }
+        }
+      }
+    }
+  },
+  "initial_screen": {
+    "suite": "development",
+    "duration": 7200,
+    "wall_seconds": 72.55,
+    "criteria": "Zero collisions/teleports; no stopped-vehicle regression in any case; arrivals >=99.5% shipped; beat matched fixed timer when included.",
+    "summary": {
+      "shipped": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0,
+        "worst_ratio_to_shipped": 1.0,
+        "mean_ratio_to_fixed": 0.5855535975404954,
+        "eligible": false,
+        "violations": []
+      },
+      "fixed": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.7861930767597851,
+        "worst_ratio_to_shipped": 2.1629309922016775,
+        "mean_ratio_to_fixed": 1.0,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.3079x shipped",
+          "morning-42: does not beat matched fixed timer",
+          "offpeak-316: stopped vehicles 2.1629x shipped",
+          "offpeak-316: completed trips fell by more than 0.5%",
+          "offpeak-316: does not beat matched fixed timer",
+          "evening-179: stopped vehicles 1.8878x shipped",
+          "evening-179: completed trips fell by more than 0.5%",
+          "evening-179: does not beat matched fixed timer"
+        ]
+      },
+      "seed101-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.045554797107526,
+        "worst_ratio_to_shipped": 1.1749719949760684,
+        "mean_ratio_to_fixed": 0.6239922341526062,
+        "eligible": false,
+        "violations": [
+          "evening-179: 2 colliding vehicles / 0 teleports",
+          "morning-42: stopped vehicles 1.1750x shipped",
+          "morning-42: completed trips fell by more than 0.5%"
+        ]
+      },
+      "seed101-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0615467163087553,
+        "worst_ratio_to_shipped": 1.1504108946486487,
+        "mean_ratio_to_fixed": 0.6300965814365272,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.1504x shipped",
+          "morning-42: completed trips fell by more than 0.5%",
+          "evening-179: stopped vehicles 1.0415x shipped"
+        ]
+      },
+      "seed202-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.0165052072332073,
+        "worst_ratio_to_shipped": 1.0825939904150297,
+        "mean_ratio_to_fixed": 0.6015278912967666,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0826x shipped",
+          "morning-42: completed trips fell by more than 0.5%",
+          "evening-179: stopped vehicles 1.0010x shipped"
+        ]
+      },
+      "seed202-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.079634822379871,
+        "worst_ratio_to_shipped": 1.1570418022670381,
+        "mean_ratio_to_fixed": 0.6349354743713196,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0897x shipped",
+          "evening-179: 2 colliding vehicles / 0 teleports",
+          "evening-179: stopped vehicles 1.1570x shipped"
+        ]
+      },
+      "seed303-3": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.065901088728636,
+        "worst_ratio_to_shipped": 1.1177174314475018,
+        "mean_ratio_to_fixed": 0.6285240224847688,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0978x shipped",
+          "evening-179: 2 colliding vehicles / 0 teleports",
+          "evening-179: stopped vehicles 1.1177x shipped"
+        ]
+      },
+      "seed303-6": {
+        "cases": 3,
+        "mean_ratio_to_shipped": 1.007148297875835,
+        "worst_ratio_to_shipped": 1.0405987983298821,
+        "mean_ratio_to_fixed": 0.5929694095074421,
+        "eligible": false,
+        "violations": [
+          "morning-42: stopped vehicles 1.0406x shipped",
+          "evening-179: stopped vehicles 1.0009x shipped"
+        ]
+      }
+    },
+    "cases": {
+      "shipped": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.662824607693376,
+          "arrived": 2021,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.34760956175296,
+          "unfinished_mean_age_seconds": 162.05555555555554,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 43.9940286071379,
+          "arrived": 4087,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 396.41089837997055,
+          "unfinished_mean_age_seconds": 239.54980079681275,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 90.00111095681156,
+          "arrived": 3884,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 508.18470679411007,
+          "unfinished_mean_age_seconds": 599.4691629955947,
+          "model_hashes": {
+            "J0": "7b513242c875664fa075da2b20d5f4b3675183ba4c484f32569d98a900beb274",
+            "J1": "2b666ee825e77a3f7949499c46a362d3d37c83cfd034bebe71c696e11c0004c3",
+            "J2": "82fc7626de34230fb5b092c7f645f994c9c0f83c20fc3657fc2f69554399e40a"
+          }
+        }
+      },
+      "fixed": {
+        "morning-42": {
+          "mean_stopped_vehicles": 117.70976253298153,
+          "arrived": 3872,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 533.4755117906193,
+          "unfinished_mean_age_seconds": 713.7210300429184,
+          "model_hashes": {}
+        },
+        "offpeak-316": {
+          "mean_stopped_vehicles": 12.248298847382308,
+          "arrived": 2008,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 340.76992481203007,
+          "unfinished_mean_age_seconds": 184.53398058252426,
+          "model_hashes": {}
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 83.05096514373004,
+          "arrived": 3996,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 453.1968365553603,
+          "unfinished_mean_age_seconds": 701.578947368421,
+          "model_hashes": {}
+        }
+      },
+      "seed101-3": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.5095125676989305,
+          "arrived": 2016,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.65901148277584,
+          "unfinished_mean_age_seconds": 169.83157894736843,
+          "model_hashes": {
+            "J0": "936a75a2c2d1b47d14d1f0412ca73da24302dffbc583b544fb454e14ad3f0dec",
+            "J1": "5eff2273a8e4b66dbc283eb76c2ecdff6c0404859a5ea21d5a0fd0469385031f",
+            "J2": "d7033e97c2ec8ada3d2ba36e24ab0f2c571813777fe5c30c9141f74e9cc32512"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 43.499791695597835,
+          "arrived": 4087,
+          "collisions": 2,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 394.86352479135985,
+          "unfinished_mean_age_seconds": 244.80478087649402,
+          "model_hashes": {
+            "J0": "936a75a2c2d1b47d14d1f0412ca73da24302dffbc583b544fb454e14ad3f0dec",
+            "J1": "5eff2273a8e4b66dbc283eb76c2ecdff6c0404859a5ea21d5a0fd0469385031f",
+            "J2": "d7033e97c2ec8ada3d2ba36e24ab0f2c571813777fe5c30c9141f74e9cc32512"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 105.74878489098737,
+          "arrived": 3830,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 545.398480482054,
+          "unfinished_mean_age_seconds": 742.0708661417323,
+          "model_hashes": {
+            "J0": "936a75a2c2d1b47d14d1f0412ca73da24302dffbc583b544fb454e14ad3f0dec",
+            "J1": "5eff2273a8e4b66dbc283eb76c2ecdff6c0404859a5ea21d5a0fd0469385031f",
+            "J2": "d7033e97c2ec8ada3d2ba36e24ab0f2c571813777fe5c30c9141f74e9cc32512"
+          }
+        }
+      },
+      "seed101-6": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.621441466462991,
+          "arrived": 2017,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.3463073852295,
+          "unfinished_mean_age_seconds": 168.81914893617022,
+          "model_hashes": {
+            "J0": "d456cbdeaceedbbe29372fae39a5ee1674508875664dcad40f03da260e05e5f2",
+            "J1": "d4bb90cc4d289f696e05f599755a8d5df19137538b500e4d0948f45c74ea11e8",
+            "J2": "e81b4ac76558c6c1f955982a0c8b4fc871629e6452843cb3293fa01505fcba66"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 103.53825857519789,
+          "arrived": 3848,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 548.7384615384616,
+          "unfinished_mean_age_seconds": 702.0755102040816,
+          "model_hashes": {
+            "J0": "d456cbdeaceedbbe29372fae39a5ee1674508875664dcad40f03da260e05e5f2",
+            "J1": "d4bb90cc4d289f696e05f599755a8d5df19137538b500e4d0948f45c74ea11e8",
+            "J2": "e81b4ac76558c6c1f955982a0c8b4fc871629e6452843cb3293fa01505fcba66"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 45.821413692542706,
+          "arrived": 4101,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 402.152397260274,
+          "unfinished_mean_age_seconds": 230.0295358649789,
+          "model_hashes": {
+            "J0": "d456cbdeaceedbbe29372fae39a5ee1674508875664dcad40f03da260e05e5f2",
+            "J1": "d4bb90cc4d289f696e05f599755a8d5df19137538b500e4d0948f45c74ea11e8",
+            "J2": "e81b4ac76558c6c1f955982a0c8b4fc871629e6452843cb3293fa01505fcba66"
+          }
+        }
+      },
+      "seed202-3": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.470073600888766,
+          "arrived": 2014,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.6646676661669,
+          "unfinished_mean_age_seconds": 174.0,
+          "model_hashes": {
+            "J0": "00bc34159701ba753de013067fff1d9cf1ebe583100662d3a91d4b4e27783795",
+            "J1": "517ae32d9fed9aad9a7433838293b9adbb1b4e25a5c30bdd2ffd8d0eb9b4676f",
+            "J2": "cd4f91ef033b88e4547d3f46e08f9cc4976b4d881dc1a6e4892785c37dbf26c7"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 97.43466185252048,
+          "arrived": 3860,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 530.8843254484013,
+          "unfinished_mean_age_seconds": 659.5564853556485,
+          "model_hashes": {
+            "J0": "00bc34159701ba753de013067fff1d9cf1ebe583100662d3a91d4b4e27783795",
+            "J1": "517ae32d9fed9aad9a7433838293b9adbb1b4e25a5c30bdd2ffd8d0eb9b4676f",
+            "J2": "cd4f91ef033b88e4547d3f46e08f9cc4976b4d881dc1a6e4892785c37dbf26c7"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 44.03624496597695,
+          "arrived": 4121,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 398.4089581304771,
+          "unfinished_mean_age_seconds": 210.1705069124424,
+          "model_hashes": {
+            "J0": "00bc34159701ba753de013067fff1d9cf1ebe583100662d3a91d4b4e27783795",
+            "J1": "517ae32d9fed9aad9a7433838293b9adbb1b4e25a5c30bdd2ffd8d0eb9b4676f",
+            "J2": "cd4f91ef033b88e4547d3f46e08f9cc4976b4d881dc1a6e4892785c37dbf26c7"
+          }
+        }
+      },
+      "seed202-6": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.618525204832662,
+          "arrived": 2016,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.9335996005991,
+          "unfinished_mean_age_seconds": 170.1157894736842,
+          "model_hashes": {
+            "J0": "bc55e0a217a9390241a7f68a86c6cd05732b8c6e896ed00e895f4f89e8a676e1",
+            "J1": "a78fc9e30dcf42b42e87b3a872f6c81bffe0f08525e021a280e7133c41d00843",
+            "J2": "e98e7e2fd3887623382928f144fdffc4afbd6c06fd7048aa38090e251de5e2dd"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 98.07290654075823,
+          "arrived": 3870,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 544.8148820326679,
+          "unfinished_mean_age_seconds": 648.0534188034188,
+          "model_hashes": {
+            "J0": "bc55e0a217a9390241a7f68a86c6cd05732b8c6e896ed00e895f4f89e8a676e1",
+            "J1": "a78fc9e30dcf42b42e87b3a872f6c81bffe0f08525e021a280e7133c41d00843",
+            "J2": "e98e7e2fd3887623382928f144fdffc4afbd6c06fd7048aa38090e251de5e2dd"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 50.90293014859047,
+          "arrived": 4068,
+          "collisions": 2,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 411.86485819975337,
+          "unfinished_mean_age_seconds": 264.5740740740741,
+          "model_hashes": {
+            "J0": "bc55e0a217a9390241a7f68a86c6cd05732b8c6e896ed00e895f4f89e8a676e1",
+            "J1": "a78fc9e30dcf42b42e87b3a872f6c81bffe0f08525e021a280e7133c41d00843",
+            "J2": "e98e7e2fd3887623382928f144fdffc4afbd6c06fd7048aa38090e251de5e2dd"
+          }
+        }
+      },
+      "seed303-3": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.561727537841967,
+          "arrived": 2014,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 313.99700149925036,
+          "unfinished_mean_age_seconds": 173.11340206185568,
+          "model_hashes": {
+            "J0": "eda396a2762ba0e0e3c8809a0411bd2701db4b1851059446aea71fc3da77a23c",
+            "J1": "492ea7c48655eaf31948b87b07b95798d840f3f3e9a4c23c76dc040d51a85cc7",
+            "J2": "8dc5ac22e82c0933ab16e71e60173a424f5bd1d7aaf62a24fdac86c4cf4d986b"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 98.80669351478961,
+          "arrived": 3877,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 543.2758799171843,
+          "unfinished_mean_age_seconds": 639.8633405639913,
+          "model_hashes": {
+            "J0": "eda396a2762ba0e0e3c8809a0411bd2701db4b1851059446aea71fc3da77a23c",
+            "J1": "492ea7c48655eaf31948b87b07b95798d840f3f3e9a4c23c76dc040d51a85cc7",
+            "J2": "8dc5ac22e82c0933ab16e71e60173a424f5bd1d7aaf62a24fdac86c4cf4d986b"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 49.17289265379809,
+          "arrived": 4081,
+          "collisions": 2,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 408.37364798426745,
+          "unfinished_mean_age_seconds": 254.07782101167317,
+          "model_hashes": {
+            "J0": "eda396a2762ba0e0e3c8809a0411bd2701db4b1851059446aea71fc3da77a23c",
+            "J1": "492ea7c48655eaf31948b87b07b95798d840f3f3e9a4c23c76dc040d51a85cc7",
+            "J2": "8dc5ac22e82c0933ab16e71e60173a424f5bd1d7aaf62a24fdac86c4cf4d986b"
+          }
+        }
+      },
+      "seed303-6": {
+        "offpeak-316": {
+          "mean_stopped_vehicles": 5.549229273711984,
+          "arrived": 2017,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 314.1706586826347,
+          "unfinished_mean_age_seconds": 169.06382978723406,
+          "model_hashes": {
+            "J0": "267dc93066bbf478a4421c24e3a3c2dcfd181cce6330d41ea3ef09e17dd42f3e",
+            "J1": "a2fd514a3251bbe7d71d6ec08f147064286ce5ba52cb9b0e0ee6e79029274e5f",
+            "J2": "1ba3f34db89cc0d10a68833c229432463d10b0bb3e27ff18708704e52e077f1e"
+          }
+        },
+        "morning-42": {
+          "mean_stopped_vehicles": 93.6550479100125,
+          "arrived": 3880,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 519.0325833979829,
+          "unfinished_mean_age_seconds": 622.0458515283843,
+          "model_hashes": {
+            "J0": "267dc93066bbf478a4421c24e3a3c2dcfd181cce6330d41ea3ef09e17dd42f3e",
+            "J1": "a2fd514a3251bbe7d71d6ec08f147064286ce5ba52cb9b0e0ee6e79029274e5f",
+            "J2": "1ba3f34db89cc0d10a68833c229432463d10b0bb3e27ff18708704e52e077f1e"
+          }
+        },
+        "evening-179": {
+          "mean_stopped_vehicles": 44.033884182752395,
+          "arrived": 4097,
+          "collisions": 0,
+          "teleports": 0,
+          "completed_mean_trip_seconds": 396.28966699314395,
+          "unfinished_mean_age_seconds": 231.19502074688796,
+          "model_hashes": {
+            "J0": "267dc93066bbf478a4421c24e3a3c2dcfd181cce6330d41ea3ef09e17dd42f3e",
+            "J1": "a2fd514a3251bbe7d71d6ec08f147064286ce5ba52cb9b0e0ee6e79029274e5f",
+            "J2": "1ba3f34db89cc0d10a68833c229432463d10b0bb3e27ff18708704e52e077f1e"
+          }
+        }
+      }
+    }
+  },
+  "sensor_contract": {
+    "morning": {
+      "samples": 7201,
+      "exact_vectors": 43206,
+      "exact_supervisor_observations": 21603,
+      "exact_decisions": 4320,
+      "rejection_checks": 12,
+      "duration": 7201,
+      "seed": 42,
+      "route": "corridor_routes.rou.xml",
+      "scope": "Ideal emulator only; full-link occupancy and turn intent use labelled SUMO oracles"
+    },
+    "evening": {
+      "samples": 7201,
+      "exact_vectors": 43206,
+      "exact_supervisor_observations": 21603,
+      "exact_decisions": 4320,
+      "rejection_checks": 12,
+      "duration": 7201,
+      "seed": 179,
+      "route": "corridor_routes_evening.rou.xml",
+      "scope": "Ideal emulator only; full-link occupancy and turn intent use labelled SUMO oracles"
+    },
+    "offpeak": {
+      "samples": 7201,
+      "exact_vectors": 43206,
+      "exact_supervisor_observations": 21603,
+      "exact_decisions": 4320,
+      "rejection_checks": 12,
+      "duration": 7201,
+      "seed": 316,
+      "route": "corridor_routes_offpeak.rou.xml",
+      "scope": "Ideal emulator only; full-link occupancy and turn intent use labelled SUMO oracles"
+    }
+  },
+  "live_server_check": {
+    "backend": "actual TraCI socket server",
+    "model": "calibrated fullness manifest",
+    "samples": [
+      {
+        "time": 6,
+        "vehicles": 33,
+        "signals": {
+          "J0": "rGGrrrrrrrGGrrrrrrrrGrG",
+          "J1": "rGGrrrrrrrrGGrrrrrrrrGrG",
+          "J2": "rGGrrrrrrrGGrrrrrrrGrG"
+        }
+      },
+      {
+        "time": 11,
+        "vehicles": 34,
+        "signals": {
+          "J0": "rGGrrrrrrrGGrrrrrrrrGrG",
+          "J1": "rGGrrrrrrrrGGrrrrrrrrGrG",
+          "J2": "rGGrrrrrrgGGrrrrrrrGrG"
+        }
+      },
+      {
+        "time": 16,
+        "vehicles": 34,
+        "signals": {
+          "J0": "rrrrrrGrrrrrrrrGGrrGrGr",
+          "J1": "rrrrrrGGrrrrrrrrGGrrGrGr",
+          "J2": "rrrrrrGrrrrrrrrGrrGrGr"
+        }
+      },
+      {
+        "time": 21,
+        "vehicles": 35,
+        "signals": {
+          "J0": "rrrrrrGrrrrrrrrGGrrGrGr",
+          "J1": "rrrrrrGGrrrrrrrrGGrrGrGr",
+          "J2": "rrrrrrGrrrrrrrrGrrGrGr"
+        }
+      },
+      {
+        "time": 26,
+        "vehicles": 37,
+        "signals": {
+          "J0": "rrrrrrGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrrGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrrGrrrrrrrrGrrGrGr"
+        }
+      },
+      {
+        "time": 31,
+        "vehicles": 40,
+        "signals": {
+          "J0": "rrrrrgGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrgGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrgGrrGrGr"
+        }
+      },
+      {
+        "time": 36,
+        "vehicles": 41,
+        "signals": {
+          "J0": "rrrrrgGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrgGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrgGrrGrGr"
+        }
+      },
+      {
+        "time": 41,
+        "vehicles": 42,
+        "signals": {
+          "J0": "rrrrrgGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrgGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrgGrrGrGr"
+        }
+      },
+      {
+        "time": 46,
+        "vehicles": 43,
+        "signals": {
+          "J0": "rrrrrgGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrgGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrgGrrGrGr"
+        }
+      },
+      {
+        "time": 51,
+        "vehicles": 45,
+        "signals": {
+          "J0": "rrrrrgGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrgGGrrrrrrrgGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrgGrrGrGr"
+        }
+      },
+      {
+        "time": 56,
+        "vehicles": 47,
+        "signals": {
+          "J0": "rrrrrrGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrrGGrrrrrrrrGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrrGrrGrGr"
+        }
+      },
+      {
+        "time": 61,
+        "vehicles": 51,
+        "signals": {
+          "J0": "rrrrrrGrrrrrrrgGGrrGrGr",
+          "J1": "rrrrrrGGrrrrrrrrGGrrGrGr",
+          "J2": "rrrrrgGrrrrrrrrGrrGrGr"
+        }
+      }
+    ]
+  },
+  "resume_parity": {
+    "episodes": 2,
+    "duration_per_episode": 5100,
+    "exact_policy_target_optimizer_replay_rng": true,
+    "learning_steps": {
+      "J0": 172842,
+      "J1": 172842,
+      "J2": 172842
+    }
+  }
+}

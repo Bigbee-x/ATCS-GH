@@ -14,8 +14,8 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="ATCS-GH Traffic Visualizer"
-config/description="Real-time 3D visualization of the ATCS-GH adaptive traffic control system. Connects to the Python DQN agent via WebSocket."
+config/name="TrafIQ Traffic Visualizer"
+config/description="Explore the N6 corridor: three junctions, adaptive signals, live traffic and pedestrian crossings."
 config/tags=PackedStringArray("3d", "traffic", "visualizer")
 run/main_scene="res://scenes/LauncherMenu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
@@ -33,7 +33,7 @@ window/stretch/mode="canvas_items"
 
 [dotnet]
 
-project/assembly_name="ATCS-GH Traffic Visualizer"
+project/assembly_name="TrafIQ Traffic Visualizer"
 
 [input]
 
@@ -47,3 +47,4 @@ reset_camera={
 
 anti_aliasing/quality/msaa_3d=2
 environment/defaults/default_clear_color=Color(0.12, 0.12, 0.18, 1)
+anti_aliasing/quality/use_taa=true
